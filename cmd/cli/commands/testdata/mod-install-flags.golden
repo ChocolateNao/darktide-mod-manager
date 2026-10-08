@@ -1,0 +1,50 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --no-enable
+o installed betterui v0.0.0 (disabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+e error: MOD_ALREADY_EXISTS: mod "betterui" is already installed as version 0.0.0
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --force
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers --version 3.0.0
+e error: INVALID_ARGUMENT: source "local" offers damagenumbers 0.0.0, not 3.0.0
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers --version 2.0.0
+e error: INVALID_ARGUMENT: source "local" offers damagenumbers 0.0.0, not 2.0.0
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers --version 0.0.0
+o installed damagenumbers v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  2
+o size:  795 B (795 bytes)
+o oldest: <time>
+o newest: <time>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local soundoverhaul --purge-cache
+o installed soundoverhaul v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  2
+o size:  795 B (795 bytes)
+o oldest: <time>
+o newest: <time>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install nosuchsource soundoverhaul
+e error: SOURCE_NOT_FOUND: unknown mod source "nosuchsource"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local nosuchmod
+e error: MOD_NOT_FOUND: mod "nosuchmod" not found in the configured local folders
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local
+e error: accepts 2 arg(s), received 1
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod uninstall betterui --purge
+o uninstalled betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod uninstall nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1

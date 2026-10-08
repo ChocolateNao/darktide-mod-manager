@@ -1,0 +1,60 @@
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  0
+o size:  0 B (0 bytes)
+o oldest: -
+o newest: -
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info --json
+o {
+o   "path": "<cache>",
+o   "total_size": "0 B",
+o   "files": 0,
+o   "total_bytes": 0
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (disabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  1
+o size:  406 B (406 bytes)
+o oldest: <time>
+o newest: <time>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-age-days 0
+o cache pruned: nothing removed; 406 B still cached
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-size-gb -1
+e error: INVALID_ARGUMENT: --max-size-gb cannot be negative, got -1
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-age-days -1
+e error: INVALID_ARGUMENT: --max-age-days cannot be negative, got -1
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-size-gb 0.0001
+o cache pruned: nothing removed; 406 B still cached
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  1
+o size:  406 B (406 bytes)
+o oldest: <time>
+o newest: <time>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache clear
+o cache cleared
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache clear
+o cache cleared
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  0
+o size:  0 B (0 bytes)
+o oldest: -
+o newest: -
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-size-gb not-a-number
+e error: invalid argument "not-a-number" for "--max-size-gb" flag: strconv.ParseFloat: parsing "not-a-number": invalid syntax
+! exit 1

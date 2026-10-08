@@ -1,0 +1,30 @@
+$ dmm --config <config> --cache <cache> --storage <storage> source auth local --user modder --api-key secret
+e error: AUTH_REQUIRED: mod source "local" does not support authentication
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --user modder
+e error: INVALID_ARGUMENT: no API key given; use --api-key-stdin or set DMM_NEXUS_API_KEY
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nosuchsource --user u --api-key k
+e error: SOURCE_NOT_FOUND: unknown mod source "nosuchsource"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --user u --api-key a --api-key-stdin
+e error: INVALID_ARGUMENT: --api-key and --api-key-stdin cannot be combined
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --api-key-env DMM_MISSING_VARIABLE
+e error: INVALID_ARGUMENT: environment variable DMM_MISSING_VARIABLE is empty or unset
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --api-key-stdin
+e error: INVALID_ARGUMENT: no API key given; use --api-key-stdin or set DMM_NEXUS_API_KEY
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --api-key-stdin
+o authenticated nexus
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> config get sources.nexus.api_key
+e error: NOT_FOUND: sources.nexus.api_key holds a credential and is not readable through the configuration API
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --api-key-stdin
+e error: AUTH_FAILED: authenticate mod source "nexus": AUTH_FAILED: Nexus rejected the API key (the service answers a refused key with the same 401 it uses for a missing one, so the status alone cannot tell them apart): AUTH_REQUIRED: authentication rejected the credentials for <nexus>/mods/batch: "{\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"Please provide a valid API Key\"}"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> config get sources.nexus.api_key
+e error: NOT_FOUND: sources.nexus.api_key holds a credential and is not readable through the configuration API
+! exit 1

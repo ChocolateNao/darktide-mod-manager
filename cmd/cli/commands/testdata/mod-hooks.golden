@@ -1,0 +1,90 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o This mod has no hook scripts.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --type inline --content console.log(hook.mod.id)
+o added inline script to pre_enable of betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o PHASE  #  TYPE  TIMEOUT  SCRIPT
+o pre_enable  1  inline  default  console.log(hook.mod.id)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --content console.log('second') --timeout 5 --env TOKEN=a=b
+o added inline script to pre_enable of betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o PHASE  #  TYPE  TIMEOUT  SCRIPT
+o pre_enable  1  inline  default  console.log(hook.mod.id)
+o pre_enable  2  inline  5s  console.log('second')
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui --json
+o [
+o   {
+o   "phase": "pre_enable",
+o   "type": "inline",
+o   "content": "console.log(hook.mod.id)",
+o   "position": 1
+o   },
+o   {
+o   "phase": "pre_enable",
+o   "type": "inline",
+o   "content": "console.log('second')",
+o   "env": [
+o   "TOKEN=a=b"
+o   ],
+o   "position": 2,
+o   "timeout": 5
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable --index 1
+o removed script 1 of pre_enable from betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o PHASE  #  TYPE  TIMEOUT  SCRIPT
+o pre_enable  1  inline  5s  console.log('second')
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable --index 9
+e error: INVALID_ARGUMENT: pre_enable of betterui has 1 script; there is no script 9
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable --index 0
+e error: INVALID_ARGUMENT: --index is 1-based, got 0; 0 names no script
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable --all --index 1
+e error: INVALID_ARGUMENT: --index and --all cannot be combined
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase not_a_phase --all
+e error: INVALID_ARGUMENT: unknown phase "not_a_phase"; use one of pre_install, post_install, pre_enable, post_enable, pre_disable, post_disable, pre_uninstall, post_uninstall, pre_update, post_update
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --type powershell --content Write-Host x
+e error: INVALID_ARGUMENT: unknown script type "powershell"; use one of inline, file, command, go
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable
+e error: INVALID_ARGUMENT: give the script with --content or --file
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --content a --file b
+e error: INVALID_ARGUMENT: --content and --file cannot be combined
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --content a --env NOEQUALS
+e error: INVALID_ARGUMENT: --env "NOEQUALS" is not NAME=VALUE
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --content  
+e error: INVALID_ARGUMENT: give the script with --content or --file
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add nothing-here --phase pre_enable --content a
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable
+o removed 1 script from pre_enable of betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o This mod has no hook scripts.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks remove betterui --phase pre_enable --all
+o removed 0 scripts from pre_enable of betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o This mod has no hook scripts.
+! exit 0

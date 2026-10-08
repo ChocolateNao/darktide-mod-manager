@@ -1,0 +1,31 @@
+$ dmm --config <config> --cache <cache> --storage <storage> source test
+o SOURCE  STATE  DETAIL
+o github  not configured  no credential stored; browsing still works
+o local  ok  
+o nexus  not configured  no credential stored; browsing still works
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source test --json
+o [
+o   {
+o   "source": "github",
+o   "state": "not configured"
+o   },
+o   {
+o   "source": "local",
+o   "state": "ok"
+o   },
+o   {
+o   "source": "nexus",
+o   "state": "not configured"
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source test local
+o SOURCE  STATE  DETAIL
+o local  ok  
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source test nosuchsource
+o SOURCE  STATE  DETAIL
+o nosuchsource  failed  SOURCE_NOT_FOUND: unknown mod source "nosuchsou…
+e error: AUTH_FAILED: 1 of 1 sources could not be reached with the stored credentials
+! exit 1

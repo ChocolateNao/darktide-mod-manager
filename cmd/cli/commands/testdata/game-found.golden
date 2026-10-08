@@ -1,0 +1,71 @@
+$ dmm --config <config> --cache <cache> --storage <storage> game detect
+o PATH  MODS  SOURCE  VERSION
+o <game>  <game>/mods  manual  1.0.3
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game detect --json
+o [
+o   {
+o   "path": "<game>",
+o   "mods_path": "<game>/mods",
+o   "source": "manual",
+o   "version": "1.0.3",
+o   "detected_at": "<time>",
+o   "valid": true
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game info
+o path:  <game>
+o valid:  yes
+o mods folder: <game>/mods
+o source:  manual
+o version:  1.0.3
+o app id:  -
+o notes:  -
+o detected:  <time>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game info --json
+o {
+o   "path": "<game>",
+o   "mods_path": "<game>/mods",
+o   "source": "manual",
+o   "version": "1.0.3",
+o   "detected_at": "<time>",
+o   "valid": true
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game path
+o <game>/mods
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game path --with-install
+o <game>/mods
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game validate <game>
+o path:  <game>
+o valid:  yes
+o mods folder: <game>/mods
+o source:  manual
+o version:  1.0.3
+o notes:  -
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game validate <local>
+e error: GAME_INVALID: "<local>" does not look like a Darktide installation: expected Darktide.exe or data/mods inside it
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> game validate  
+e error: GAME_INVALID: game path is empty
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> game validate
+e error: accepts 1 arg(s), received 0
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> game set <game>
+e error: unknown command "set" for "dmm game"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> config get game.path
+o <game>
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game set <local>
+e error: unknown command "set" for "dmm game"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> config get game.path
+o <game>
+! exit 0

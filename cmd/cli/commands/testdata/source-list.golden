@@ -1,0 +1,155 @@
+$ dmm --config <config> --cache <cache> --storage <storage> source list
+o ID  NAME  ENABLED  AUTH  SEARCH  NEEDS KEY  HAS KEY
+o github  GitHub Releases  no  no  yes  no  no
+o local  Local folders  yes  no  yes  no  no
+o nexus  Nexus Mods  no  no  yes  yes  no
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source list --json
+o [
+o   {
+o   "id": "github",
+o   "name": "GitHub Releases",
+o   "description": "Installs Darktide mods published as GitHub releases.",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": true,
+o   "requires_api_key": false,
+o   "has_api_key": false,
+o   "enabled": false,
+o   "authenticated": false
+o   },
+o   {
+o   "id": "local",
+o   "name": "Local folders",
+o   "description": "Mods already on this computer, discovered from folders you configure",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": false,
+o   "requires_api_key": false,
+o   "has_api_key": false,
+o   "enabled": true,
+o   "authenticated": false
+o   },
+o   {
+o   "id": "nexus",
+o   "name": "Nexus Mods",
+o   "description": "Nexus Mods catalogue; only the trending feed is public, everything else needs an API key",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": true,
+o   "requires_api_key": true,
+o   "has_api_key": false,
+o   "enabled": false,
+o   "authenticated": false
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source list --details
+o ID  NAME  ENABLED  AUTH  SEARCH  NEEDS KEY  HAS KEY
+o github  GitHub Releases  no  no  yes  no  no
+o local  Local folders  yes  no  yes  no  no
+o nexus  Nexus Mods  no  no  yes  yes  no
+o id:  github
+o name:  GitHub Releases
+o version:  1.0.0
+o description:  Installs Darktide mods published as GitHub releases.
+o enabled:  no
+o authenticated:  no
+o can search:  yes
+o can authenticate: yes
+o needs a key:  no
+o has a key:  no
+o 
+o id:  local
+o name:  Local folders
+o version:  1.0.0
+o description:  Mods already on this computer, discovered from folders you configure
+o enabled:  yes
+o authenticated:  no
+o can search:  yes
+o can authenticate: no
+o needs a key:  no
+o has a key:  no
+o 
+o id:  nexus
+o name:  Nexus Mods
+o version:  1.0.0
+o description:  Nexus Mods catalogue; only the trending feed is public, everything else needs an API key
+o enabled:  no
+o authenticated:  no
+o can search:  yes
+o can authenticate: yes
+o needs a key:  yes
+o has a key:  no
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source list --details --json
+o [
+o   {
+o   "id": "github",
+o   "name": "GitHub Releases",
+o   "description": "Installs Darktide mods published as GitHub releases.",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": true,
+o   "requires_api_key": false,
+o   "has_api_key": false,
+o   "enabled": false,
+o   "authenticated": false
+o   },
+o   {
+o   "id": "local",
+o   "name": "Local folders",
+o   "description": "Mods already on this computer, discovered from folders you configure",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": false,
+o   "requires_api_key": false,
+o   "has_api_key": false,
+o   "enabled": true,
+o   "authenticated": false
+o   },
+o   {
+o   "id": "nexus",
+o   "name": "Nexus Mods",
+o   "description": "Nexus Mods catalogue; only the trending feed is public, everything else needs an API key",
+o   "version": "1.0.0",
+o   "supports_search": true,
+o   "supports_auth": true,
+o   "requires_api_key": true,
+o   "has_api_key": false,
+o   "enabled": false,
+o   "authenticated": false
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better
+o ID  VERSION  SOURCE  NAME
+o betterui  0.0.0  local  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --source local
+o ID  VERSION  SOURCE  NAME
+o betterui  0.0.0  local  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --source local --tag archive
+e error: INVALID_ARGUMENT: --source searches one source with a text query only, so --tag cannot be used with it; drop --source to search every enabled source with those filters
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source search nothing-matches-this
+o Nothing matched.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --sort downloads
+o ID  VERSION  SOURCE  NAME
+o betterui  0.0.0  local  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --sort sideways
+e error: INVALID_ARGUMENT: unknown sort "sideways"; use relevance, updated, downloads or name
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --page 0 --page-size 1
+o ID  VERSION  SOURCE  NAME
+o betterui  0.0.0  local  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --page 99
+o Nothing matched.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --source nosuchsource
+e error: SOURCE_NOT_FOUND: unknown mod source "nosuchsource"
+! exit 1

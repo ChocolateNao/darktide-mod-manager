@@ -1,0 +1,18 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+e error: CONFIG_INVALID: parse config: invalid character 'n' looking for beginning of object key string
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source list
+e error: CONFIG_INVALID: parse config: invalid character 'n' looking for beginning of object key string
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> game info
+e error: CONFIG_INVALID: parse config: invalid character 'n' looking for beginning of object key string
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+e error: CONFIG_INVALID: parse config: invalid character 'n' looking for beginning of object key string
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> config get game.path
+e error: CONFIG_INVALID: parse config: invalid character 'n' looking for beginning of object key string
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> version
+o dmm dev
+! exit 0

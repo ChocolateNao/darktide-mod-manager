@@ -1,0 +1,23 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers
+o installed damagenumbers v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder betterui
+o load order set to 1 mod
+o 1 installed mod is not in the order, falling back to their priority
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder damagenumbers betterui
+o load order set to 2 mods
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder betterui betterui
+e error: INVALID_ARGUMENT: mod "betterui" appears twice in the load order
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder 
+o load order set to 1 mod
+o 2 installed mods are not in the order, falling back to their priority
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder nothing-here
+e error: MOD_NOT_FOUND: load order names mod "nothing-here", which is not installed
+! exit 1

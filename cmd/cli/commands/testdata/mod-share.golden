@@ -1,0 +1,30 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod share betterui
+e error: INVALID_ARGUMENT: mod "betterui" came from local, which has no shareable link; only nexus and github mods can be turned into a link
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod share betterui --json
+e error: INVALID_ARGUMENT: mod "betterui" came from local, which has no shareable link; only nexus and github mods can be turned into a link
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod share nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link https://www.nexusmods.com/darktide/mods/7001
+e error: INVALID_ARGUMENT: "https://www.nexusmods.com/darktide/mods/7001" is a web address; give a Nexus link (nxm link <game>/<mod>/<file>)
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link 900/7001
+e error: INVALID_ARGUMENT: "900/7001" is not a mod link; expected nxm link <game>/<mod>/<file>
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link nxm link fallout4/900/7001
+e error: INVALID_ARGUMENT: "nxm link fallout4/900/7001" is a link for "fallout4", and this manager only handles "warhammer40kdarktide"
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link nxm link darktide/900
+e error: INVALID_ARGUMENT: "nxm link darktide/900" is not a complete Nexus link; expected nxm://<game>/<mod id>/<file id>
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link 
+e error: INVALID_ARGUMENT: no link given
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod import-link
+e error: accepts 1 arg(s), received 0
+! exit 1

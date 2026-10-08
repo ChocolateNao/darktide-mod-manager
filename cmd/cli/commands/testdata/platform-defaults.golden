@@ -1,0 +1,79 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o No mods are installed.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> config show
+o # <config>
+o {
+o   "sources": {
+o   "github": {
+o   "enabled": false
+o   },
+o   "local": {
+o   "paths": [
+o   "<local>"
+o   ],
+o   "enabled": true
+o   },
+o   "nexus": {
+o   "enabled": false
+o   },
+o   "vortex": {
+o   "enabled": false
+o   }
+o   },
+o   "game": {
+o   "path": "<game>",
+o   "source": "auto",
+o   "mods_folder_override": "",
+o   "auto_detect": true
+o   },
+o   "ui": {
+o   "theme": "system",
+o   "language": "en",
+o   "compact_mode": false
+o   },
+o   "advanced": {
+o   "log_level": "info",
+o   "enable_experimental": false
+o   },
+o   "storage": {
+o   "path": "<storage>",
+o   "backup_retention_days": 7
+o   },
+o   "auto_update": {
+o   "check_interval_hours": 24,
+o   "enabled": false,
+o   "download_automatically": false,
+o   "notify_on_update": true
+o   },
+o   "cache": {
+o   "path": "<cache>",
+o   "max_size_gb": 5,
+o   "max_age_days": 30,
+o   "verify_hashes": true
+o   },
+o   "logging": {
+o   "level": "info",
+o   "max_size_mb": 10,
+o   "max_backups": 5,
+o   "max_age_days": 30,
+o   "compress": true
+o   },
+o   "hooks": {
+o   "default_timeout": 30,
+o   "allow_network": false,
+o   "allow_file_write": true,
+o   "max_timeout": 600
+o   }
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> cache info
+o path:  <cache>
+o files:  0
+o size:  0 B (0 bytes)
+o oldest: -
+o newest: -
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> config get game.path
+o <game>
+! exit 0

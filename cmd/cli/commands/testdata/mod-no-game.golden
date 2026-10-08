@@ -1,0 +1,19 @@
+$ dmm --config <config> --cache <cache> --storage <storage> game detect
+o No Darktide installation was found. Set one with: dmm --game <path> game info
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (disabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o ID  VERSION  SOURCE  STATE  NAME
+o betterui  0.0.0  local  disabled  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod enable betterui
+e error: GAME_NOT_FOUND: game path "<game>" does not exist or is not a directory: file does not exist
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod symlink-status
+o No mod has anything deployed.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game info
+e error: GAME_NOT_FOUND: game path "<game>" does not exist or is not a directory: file does not exist
+! exit 1

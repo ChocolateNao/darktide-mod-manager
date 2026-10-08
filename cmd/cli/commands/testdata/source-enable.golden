@@ -1,0 +1,30 @@
+$ dmm --config <config> --cache <cache> --storage <storage> source list
+o ID  NAME  ENABLED  AUTH  SEARCH  NEEDS KEY  HAS KEY
+o github  GitHub Releases  no  no  yes  no  no
+o local  Local folders  yes  no  yes  no  no
+o nexus  Nexus Mods  no  no  yes  yes  no
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source enable nexus
+o nexus enabled
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source list
+o ID  NAME  ENABLED  AUTH  SEARCH  NEEDS KEY  HAS KEY
+o github  GitHub Releases  no  no  yes  no  no
+o local  Local folders  yes  no  yes  no  no
+o nexus  Nexus Mods  yes  no  yes  yes  no
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> config get sources.nexus.enabled
+o true
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source disable nexus
+o nexus disabled
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> config get sources.nexus.enabled
+o false
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> source disable nosuchsource
+e error: SOURCE_NOT_FOUND: no mod source with id "nosuchsource" is registered
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> source enable
+e error: accepts 1 arg(s), received 0
+! exit 1

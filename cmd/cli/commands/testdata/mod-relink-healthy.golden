@@ -1,0 +1,21 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod relink
+o Every link is intact.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod symlink-status --json
+o [
+o   {
+o   "mod_id": "betterui",
+o   "entry": "textures",
+o   "state": "ok"
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod relink betterui
+o relinked betterui (nothing to repair)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod relink nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1

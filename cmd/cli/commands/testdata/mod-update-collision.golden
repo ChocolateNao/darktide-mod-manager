@@ -1,0 +1,14 @@
+$ dmm --config <config> --cache <cache> --storage <storage> source search better --source local
+o ID  VERSION  SOURCE  NAME
+o betterui  0.0.0  local  betterui
+o betterui  0.0.0  local  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+e error: MOD_NOT_FOUND: mod "betterui" is claimed by both "<local>/Better UI 1.0.0.zip" and "<local>/Better UI 1.3.0.zip"; rename one of the files so their names differ
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --force
+e error: MOD_NOT_FOUND: mod "betterui" is claimed by both "<local>/Better UI 1.0.0.zip" and "<local>/Better UI 1.3.0.zip"; rename one of the files so their names differ
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o No mods are installed.
+! exit 0

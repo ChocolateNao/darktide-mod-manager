@@ -1,0 +1,50 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check betterui
+o MOD  INSTALLED  REMOTE  STATE  SOURCE
+o betterui  0.0.0  0.0.0  up to date  local
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check betterui --json
+o [
+o   {
+o   "mod_id": "betterui",
+o   "source": "local",
+o   "local_version": "0.0.0",
+o   "remote_version": "0.0.0",
+o   "available": false
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check
+o MOD  INSTALLED  REMOTE  STATE  SOURCE
+o betterui  0.0.0  0.0.0  up to date  local
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check --json
+o [
+o   {
+o   "mod_id": "betterui",
+o   "source": "local",
+o   "local_version": "0.0.0",
+o   "remote_version": "0.0.0",
+o   "available": false
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o ID  VERSION  SOURCE  STATE  NAME
+o betterui  0.0.0  local  enabled  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update betterui
+o updated betterui to 0.0.0
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod update
+o MOD  INSTALLED  REMOTE  STATE  SOURCE
+o betterui  0.0.0  0.0.0  up to date  local
+! exit 0

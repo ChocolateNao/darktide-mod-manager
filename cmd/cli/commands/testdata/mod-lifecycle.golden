@@ -1,0 +1,83 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o No mods are installed.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o ID  VERSION  SOURCE  STATE  NAME
+o betterui  0.0.0  local  enabled  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list --json
+o [
+o   {
+o   "id": "betterui",
+o   "name": "betterui",
+o   "version": "0.0.0",
+o   "source": "local",
+o   "path": "<storage>/betterui/0.0.0",
+o   "mod_folder_name": "textures",
+o   "enabled": true
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod show  betterui  
+o id:  betterui
+o name:  betterui
+o version:  0.0.0
+o author:  -
+o source:  local
+o state:  enabled
+o priority:  0
+o path:  <storage>/betterui/0.0.0
+o installed:  <time>
+o updated:  <time>
+o description:  -
+o tags:  -
+o dependencies: -
+o conflicts:  -
+o hooks:  0
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod show BETTERUI
+e error: MOD_NOT_FOUND: mod "BETTERUI" is not installed
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod path betterui
+o <storage>/betterui/0.0.0
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod symlink-status
+o MOD  ENTRY  STATE
+o betterui  textures  ok
+o Every deployed link is intact.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod disable betterui
+o disabled betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o ID  VERSION  SOURCE  STATE  NAME
+o betterui  0.0.0  local  disabled  betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod enable betterui
+o enabled betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod relink betterui
+o relinked betterui (nothing to repair)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod reorder betterui
+o load order set to 1 mod
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod conflicts
+o No conflicts were found.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod update --check betterui
+o MOD  INSTALLED  REMOTE  STATE  SOURCE
+o betterui  0.0.0  0.0.0  up to date  local
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod uninstall betterui
+o uninstalled betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod list
+o No mods are installed.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod uninstall betterui
+e error: MOD_NOT_FOUND: mod "betterui" is not installed
+! exit 1

@@ -1,0 +1,37 @@
+$ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
+o installed betterui v0.0.0 (enabled)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --file <work>/hook.js
+o added inline script to pre_enable of betterui
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --file <work>/empty.js
+e error: HOOK_INVALID: pre_enable hook 2 has no script body
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --file no-such-file.js
+e error: NOT_FOUND: cannot read script no-such-file.js: open no-such-file.js: no such file or directory
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit betterui
+o {
+o   "pre_enable": [
+o   {
+o   "type": "inline",
+o   "content": "console.log('from a file')\n"
+o   }
+o   ]
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit betterui --from <work>/hooks.json
+o replaced the hooks of betterui with <work>/hooks.json (0 scripts)
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks list betterui
+o This mod has no hook scripts.
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit betterui --from no-such-file.json
+e error: NOT_FOUND: cannot read hooks from no-such-file.json: open no-such-file.json: no such file or directory
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit betterui --from <work>/hook.js
+e error: INVALID_ARGUMENT: cannot parse hooks from <work>/hook.js: it must be a JSON object of phase names to script lists: invalid character 'c' looking for beginning of value
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit nothing-here
+e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
+! exit 1
