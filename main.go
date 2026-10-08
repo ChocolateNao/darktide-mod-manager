@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-
 	"github.com/ChocolateNao/darktide-mod-manager/internal/commands"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/di"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
 
 //go:embed all:frontend/dist
@@ -65,7 +64,7 @@ func main() {
 		// the window down — so it is dropped rather than stored. Cancelling the
 		// command scope is the whole job here, and that needs no context.
 		OnShutdown: func(context.Context) { app.Shutdown() },
-		Bind: []interface{}{
+		Bind: []any{
 			app.Mods,
 			app.Sources,
 			app.Game,
