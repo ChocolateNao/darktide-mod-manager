@@ -1,0 +1,123 @@
+version: "2"
+
+run:
+  go: "1.27.0"
+  timeout: 1m
+
+# Linter settings
+linters:
+  enable:
+    # Code correctness
+    - bodyclose        # Check if HTTP response bodies are closed
+    - errcheck         # Ensure errors are handled
+    - govet            # Go vet (official checks)
+    - staticcheck      # Advanced static analysis
+    - gochecknoglobals # Remove global variables from the code
+    - goconst          # Repeated strings that could be replaced by a constant
+
+    # Style/readability
+    - revive           # More opinionated than golint
+    - godot            # Make sure every comment ands with a dot
+    - whitespace       # Detect trailing whitespace
+    - wsl_v5           # Control lines between block statements
+
+    # Performance
+    - prealloc         # Suggest preallocating slices
+
+    # Security
+    - gosec            # Security checks
+
+  disable:
+    - funlen           # Disable function length checks
+    - errcheck
+    - unused           # Report unused code
+    - goconst
+
+  settings:
+    goconst:
+      match-constant: true
+      min-occurrences: 4
+      ignore-calls: true
+      find-duplicates: true
+      ignore-string-values:
+        - 'error'
+        - 'data'
+        - 'message*'
+    revive:
+      rules:
+        - name: package-comments
+          disabled: true
+        - name: line-length-limit
+          disabled: true
+        - name: function-length
+          disabled: true
+    gosec:
+      excludes:
+        - "G104"  # Allow unhandled errors when explicitly ignored (_ = someFunc())
+        - "G107"  # Allow URL string building (if you dynamically construct URLs)
+        - "G118"  # Allow unused parameters (if you have a reason for them)
+        - "G204"  # Allow Subprocesses (TODO: review if this is a security risk)
+        - "G304"  # Allow file permissions (TODO: review if this is a security risk)
+    lll:
+      line-length: 100
+    govet:
+      enable-all: true
+      disable-all: false
+      disable:
+        - "shadow"  # Disable shadow checks
+    nestif:
+      min-complexity: 3
+    godot:
+      period: true
+      capital: false
+      scope: declarations
+
+  exclusions:
+    warn-unused: false
+    rules:
+      - path: examples
+        linters:
+          - gosec
+
+      - path: _test\.go
+        linters:
+          - gosec
+          - goconst
+          - prealloc
+
+      - linters:
+          - gochecknoglobals
+        text: "global variable"
+
+      - linters:
+          - lll
+        source: "^//go:generate "
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+
+  settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: 'interface{}'
+          replacement: 'any'
+        - pattern: 'a[b:len(a)]'
+          replacement: 'a[b:]'
+    golines:
+      max-len: 100
+      # Length of a tabulation.
+      tab-len: 4
+      # Shorten single-line comments.
+      shorten-comments: true
+      reformat-tags: false
+      # Split chained methods on the dots as opposed to the arguments.
+      chain-split-dots: false
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
