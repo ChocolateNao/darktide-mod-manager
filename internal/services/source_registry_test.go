@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/gamestest"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -186,7 +187,7 @@ func TestRegisterSourceFactoryRejectsBadInput(t *testing.T) {
 	{
 		err := RegisterSourceFactory(
 			"",
-			SourceFactory(func(domain.SourceConfig) (domain.ModSource, error) {
+			SourceFactory(func(SourceBuildContext) (domain.ModSource, error) {
 				return nil, nil
 			}),
 		)
@@ -207,7 +208,7 @@ func TestRegisterSourceFactoryRejectsBadInput(t *testing.T) {
 		), "blank id with nil factory: got %v, want ErrCodeInvalidArgument", err)
 	}
 
-	noop := SourceFactory(func(domain.SourceConfig) (domain.ModSource, error) { return nil, nil })
+	noop := SourceFactory(func(SourceBuildContext) (domain.ModSource, error) { return nil, nil })
 	{
 		err := RegisterSourceFactory("dup", noop)
 		require.NoError(t, err, "first registration: %v", err)
@@ -247,7 +248,7 @@ func TestRegisteredFactoryIDsIsSortedAndDeduped(t *testing.T) {
 		forgetFactory("mid")
 	})
 
-	noop := SourceFactory(func(domain.SourceConfig) (domain.ModSource, error) { return nil, nil })
+	noop := SourceFactory(func(SourceBuildContext) (domain.ModSource, error) { return nil, nil })
 
 	for _, id := range []string{"zed", "alpha", "mid"} {
 		{
@@ -475,10 +476,10 @@ func TestGetBuildsFactorySourceLazilyAndOnce(t *testing.T) {
 		builtCfg atomic.Pointer[domain.SourceConfig]
 	)
 
-	registerFactory(t, "lazy", func(cfg domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "lazy", func(ctx SourceBuildContext) (domain.ModSource, error) {
 		built.Add(1)
 
-		c := cfg
+		c := ctx.Config
 		builtCfg.Store(&c)
 
 		return &fakeSource{id: "lazy"}, nil
@@ -519,7 +520,7 @@ func TestGetBuildsFactorySourceLazilyAndOnce(t *testing.T) {
 func TestGetCachesAndReplaysFactoryFailures(t *testing.T) {
 	var attempts atomic.Int64
 
-	registerFactory(t, "broken", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "broken", func(SourceBuildContext) (domain.ModSource, error) {
 		attempts.Add(1)
 		return nil, errors.New("no api key")
 	})
@@ -564,7 +565,7 @@ func TestGetCachesAndReplaysFactoryFailures(t *testing.T) {
 }
 
 func TestGetRejectsFactoryThatBuildsTheWrongID(t *testing.T) {
-	registerFactory(t, "typo", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "typo", func(SourceBuildContext) (domain.ModSource, error) {
 		// A copy-paste slip in the plugin: the source is unusable because every
 		// later lookup goes through the id it was asked for.
 		return &fakeSource{id: "typo2"}, nil
@@ -589,7 +590,7 @@ func TestGetRejectsFactoryThatBuildsTheWrongID(t *testing.T) {
 }
 
 func TestGetRejectsFactoryReturningNothing(t *testing.T) {
-	registerFactory(t, "void", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "void", func(SourceBuildContext) (domain.ModSource, error) {
 		return nil, nil
 	})
 
@@ -623,9 +624,9 @@ func TestGetFallsBackToTheDefaultConfigWithoutAStore(t *testing.T) {
 		called bool
 	)
 
-	registerFactory(t, "nostore", func(cfg domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "nostore", func(ctx SourceBuildContext) (domain.ModSource, error) {
 		called = true
-		seen = cfg
+		seen = ctx.Config
 
 		return &fakeSource{id: "nostore"}, nil
 	})
@@ -642,7 +643,7 @@ func TestGetFallsBackToTheDefaultConfigWithoutAStore(t *testing.T) {
 }
 
 func TestGetToleratesAnUnloadableConfig(t *testing.T) {
-	registerFactory(t, "badcfg", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "badcfg", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "badcfg"}, nil
 	})
 
@@ -661,7 +662,7 @@ func TestGetToleratesAnUnloadableConfig(t *testing.T) {
 func TestConcurrentGetBuildsOneSharedSource(t *testing.T) {
 	var built atomic.Int64
 
-	registerFactory(t, "racy", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "racy", func(SourceBuildContext) (domain.ModSource, error) {
 		built.Add(1)
 		return &fakeSource{id: "racy"}, nil
 	})
@@ -728,7 +729,7 @@ func TestListIsSortedByIDAndSkipsUnresolvableSources(t *testing.T) {
 		}
 	}
 
-	registerFactory(t, "broken", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "broken", func(SourceBuildContext) (domain.ModSource, error) {
 		return nil, errors.New("boom")
 	})
 	// A broken source must not remove the healthy ones from the list.
@@ -775,7 +776,7 @@ func TestListIsEmptyNotNilForAFreshRegistry(t *testing.T) {
 }
 
 func TestListPrefersRegisteredSourcesOverFactories(t *testing.T) {
-	registerFactory(t, "both", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "both", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "both", name: "from factory"}, nil
 	})
 
@@ -834,7 +835,7 @@ func TestInfosDescribesCapabilities(t *testing.T) {
 }
 
 func TestInfoForUnresolvableSourceIsStillReturned(t *testing.T) {
-	registerFactory(t, "down", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "down", func(SourceBuildContext) (domain.ModSource, error) {
 		return nil, errors.New("network down")
 	})
 
@@ -1306,7 +1307,7 @@ func containsString(haystack []string, needle string) bool {
 // A source the user switched off is deliberately never built, so reporting it as
 // enabled would show a green tick beside a source the manager will not use.
 func TestInfoReportsTheConfigurationRatherThanTheBuild(t *testing.T) {
-	registerFactory(t, "switchable", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "switchable", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "switchable"}, nil
 	})
 
@@ -1503,4 +1504,239 @@ func TestForgetCredentialsRefusesWhatItCannotForget(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --------------------------------------------- game-scoped source factories
+
+// registerGameFactory installs a game-scoped factory and removes it on cleanup,
+// so tests never leak a registration into the next one.
+func registerGameFactory(t *testing.T, gameID, id string, factory SourceFactory) {
+	t.Helper()
+	forgetGameFactory(gameID, id)
+
+	{
+		err := RegisterGameSourceFactory(gameID, id, factory)
+		require.NoError(t, err, "RegisterGameSourceFactory(%q, %q) = %v", gameID, id, err)
+	}
+
+	t.Cleanup(func() { forgetGameFactory(gameID, id) })
+}
+
+func forgetGameFactory(gameID, id string) {
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+
+	delete(gameFactories, SourceKey(gameID, id))
+}
+
+func TestSourceKeyNormalisesBothHalves(t *testing.T) {
+	assert.Equal(t, "darktide:racemenu", SourceKey(" Darktide ", "  RaceMenu  "),
+		"SourceKey must fold both halves the way every lookup folds them")
+	assert.Equal(t, "darktide:github", SourceKey("darktide", "GITHUB"))
+}
+
+func TestRegisterGameSourceFactoryValidatesInput(t *testing.T) {
+	factory := SourceFactory(func(SourceBuildContext) (domain.ModSource, error) {
+		return &fakeSource{id: "x"}, nil
+	})
+
+	tests := []struct {
+		name   string
+		gameID string
+		id     string
+		fac    SourceFactory
+		want   appErrors.Code
+	}{
+		{
+			name: "blank game", gameID: "  ", id: "x", fac: factory,
+			want: appErrors.ErrCodeInvalidArgument,
+		},
+		{
+			name: "blank id", gameID: "darktide", id: " ", fac: factory,
+			want: appErrors.ErrCodeInvalidArgument,
+		},
+		{name: "nil factory", gameID: "darktide", id: "x", want: appErrors.ErrCodeInvalidArgument},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := RegisterGameSourceFactory(tc.gameID, tc.id, tc.fac)
+			{
+				code := appErrors.CodeOf(err)
+				assert.Equal(t, tc.want, code,
+					"RegisterGameSourceFactory(%q, %q) code = %q, want %q (err %v)",
+					tc.gameID, tc.id, code, tc.want, err)
+			}
+		})
+	}
+
+	registerGameFactory(t, "darktide", "dupe", factory)
+	err := RegisterGameSourceFactory("Darktide", "DUPE", factory)
+	assert.Equal(t, appErrors.ErrCodeSourceExists, appErrors.CodeOf(err),
+		"a second registration of the same game/id pair must be refused (err %v)", err)
+}
+
+func TestRegisteredGameFactoryIDsOnlyListsThatGame(t *testing.T) {
+	factory := SourceFactory(func(SourceBuildContext) (domain.ModSource, error) {
+		return nil, nil
+	})
+
+	registerGameFactory(t, "darktide", "bravo", factory)
+	registerGameFactory(t, "darktide", "alpha", factory)
+	registerGameFactory(t, "stub-game", "alpha", factory)
+
+	assert.Equal(t, []string{"alpha", "bravo"}, RegisteredGameFactoryIDs("darktide"),
+		"ids for one game, sorted")
+	assert.Equal(t, []string{"alpha"}, RegisteredGameFactoryIDs("stub-game"))
+	assert.Nil(t, RegisteredGameFactoryIDs("  "), "a blank game has no ids")
+	assert.NotContains(t, RegisteredFactoryIDs(), "alpha",
+		"game-scoped ids must not leak into the generic list")
+}
+
+func TestRegistryPrefersTheActiveGamesFactory(t *testing.T) {
+	const id = "dual-source"
+
+	registerFactory(t, id, func(SourceBuildContext) (domain.ModSource, error) {
+		return &fakeSource{id: id, name: "generic"}, nil
+	})
+	registerGameFactory(t, "test-game", id, func(SourceBuildContext) (domain.ModSource, error) {
+		return &fakeSource{id: id, name: "scoped"}, nil
+	})
+
+	{
+		got, err := NewSourceRegistry().WithGame(gamestest.Def{IDValue: "test-game"}).Get(id)
+		require.NoError(t, err, "Get(%q)", id)
+		assert.Equal(t, "scoped", got.Name(),
+			"the active game's factory must win over the generic one")
+	}
+
+	{
+		got, err := NewSourceRegistry().Get(id)
+		require.NoError(t, err, "Get(%q) without a game", id)
+		assert.Equal(t, "generic", got.Name(),
+			"a registry with no game must only see generic factories")
+	}
+
+	{
+		got, err := NewSourceRegistry().WithGame(gamestest.Def{IDValue: "other-game"}).Get(id)
+		require.NoError(t, err, "Get(%q) for another game", id)
+		assert.Equal(t, "generic", got.Name(),
+			"another game must not inherit this game's factory")
+	}
+}
+
+func TestGameScopedFactoryIsVisibleUnderItsPlainID(t *testing.T) {
+	const id = "only-on-one-game"
+
+	registerGameFactory(t, "test-game", id, func(SourceBuildContext) (domain.ModSource, error) {
+		return &fakeSource{id: id, name: "scoped"}, nil
+	})
+
+	active := NewSourceRegistry().WithGame(gamestest.Def{IDValue: "test-game"})
+	assert.True(t, active.Has(id), "Has(%q) under the owning game", id)
+	assert.Contains(t, active.IDs(), id, "the source must be listed under its plain id")
+
+	{
+		got, err := active.Get(id)
+		require.NoError(t, err, "Get(%q)", id)
+		assert.Equal(t, "scoped", got.Name())
+	}
+
+	{
+		other := NewSourceRegistry().WithGame(gamestest.Def{IDValue: "other-game"})
+		assert.False(t, other.Has(id), "Has(%q) under a game that does not own it", id)
+
+		_, err := other.Get(id)
+		assert.Equal(t, appErrors.ErrCodeSourceNotFound, appErrors.CodeOf(err),
+			"Get(%q) under a game that does not own it (err %v)", id, err)
+	}
+}
+
+func TestFactoryBuildContextCarriesGameAndConfig(t *testing.T) {
+	const id = "context-probe"
+
+	var (
+		gotGameID string
+		gotAPIKey string
+	)
+
+	registerFactory(t, id, func(ctx SourceBuildContext) (domain.ModSource, error) {
+		if ctx.Game != nil {
+			gotGameID = ctx.Game.ID()
+		}
+
+		gotAPIKey = ctx.Config.APIKey
+
+		return &fakeSource{id: id}, nil
+	})
+
+	cfg := domain.DefaultConfig()
+	cfg.SetSource(id, domain.SourceConfig{Enabled: true, APIKey: "tok"})
+
+	r := NewSourceRegistry().
+		WithGame(gamestest.Def{IDValue: "test-game"}).
+		WithConfig(func() *domain.Config { return &cfg })
+
+	{
+		_, err := r.Get(id)
+		require.NoError(t, err, "Get(%q)", id)
+	}
+
+	assert.Equal(t, "test-game", gotGameID, "the active game handed to the factory")
+	assert.Equal(t, "tok", gotAPIKey, "the source's config block handed to the factory")
+}
+
+func TestRebuildForGameSwitchesTheGameAndDropsCachedState(t *testing.T) {
+	const id = "rebuild-probe"
+
+	registerGameFactory(t, "sietch", id, func(SourceBuildContext) (domain.ModSource, error) {
+		return &fakeSource{id: id, name: "sietch"}, nil
+	})
+
+	registry := NewSourceRegistry().WithGame(gamestest.Def{IDValue: "darktide"})
+
+	_, err := registry.Get(id)
+	assert.Equal(t, appErrors.ErrCodeSourceNotFound, appErrors.CodeOf(err),
+		"before the switch this game does not own the source (err %v)", err)
+
+	registry.RebuildForGame(gamestest.Def{IDValue: "sietch"})
+
+	got, err := registry.Get(id)
+	require.NoError(t, err, "Get(%q) after the rebuild", id)
+	assert.Equal(t, "sietch", got.Name(), "the new game's factory built the source")
+
+	registry.RebuildForGame(gamestest.Def{IDValue: "darktide"})
+
+	_, err = registry.Get(id)
+	assert.Equal(t, appErrors.ErrCodeSourceNotFound, appErrors.CodeOf(err),
+		"switching away must drop the other game's source (err %v)", err)
+}
+
+func TestRebuildForGameClearsRecordedFailures(t *testing.T) {
+	const id = "flaky-source"
+
+	var builds int64
+
+	registerFactory(t, id, func(SourceBuildContext) (domain.ModSource, error) {
+		atomic.AddInt64(&builds, 1)
+
+		return nil, appErrors.New(appErrors.ErrCodeSourceUnavailable, "still down")
+	})
+
+	registry := NewSourceRegistry()
+	_, err := registry.Get(id)
+	require.Error(t, err, "first build fails")
+
+	_, err = registry.Get(id)
+	require.Error(t, err, "second lookup replays the failure")
+
+	assert.Equal(t, int64(1), atomic.LoadInt64(&builds),
+		"a recorded failure must not re-run the factory")
+
+	registry.RebuildForGame(gamestest.Def{IDValue: "darktide"})
+
+	_, _ = registry.Get(id)
+
+	assert.Equal(t, int64(2), atomic.LoadInt64(&builds),
+		"the rebuild must clear the failure cache")
 }

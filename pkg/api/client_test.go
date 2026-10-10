@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -155,14 +157,14 @@ func TestClosedClientAccessorsDegradeQuietly(t *testing.T) {
 
 	assert.False(
 		t,
-		client.SupportsHookType(context.Background(), string(HookTypeInline)),
+		client.SupportsHookType(context.Background(), string(LangJS)),
 		"SupportsHookType on a closed client claimed a runner exists",
 	)
 
 	assert.Equal(
 		t,
 		time.Duration(0),
-		client.HookTimeout(context.Background(), HookScript{}),
+		client.HookTimeout(context.Background(), HookScript{}, nil),
 		"HookTimeout on a closed client",
 	)
 
@@ -773,7 +775,7 @@ func TestListSourcesStillDescribesABrokenSource(t *testing.T) {
 
 	require.NoError(t, services.RegisterSourceFactory(
 		"stubbroken",
-		func(domain.SourceConfig) (domain.ModSource, error) {
+		func(services.SourceBuildContext) (domain.ModSource, error) {
 			return nil, appErrors.New(appErrors.ErrCodeAuthFailed, "the credentials are wrong")
 		},
 	), "RegisterSourceFactory")
@@ -845,20 +847,20 @@ func TestHookDiscoveryReportsWhatThisBuildCanRun(t *testing.T) {
 		"SupportsHookType claimed a runner for an unknown hook type",
 	)
 
-	script := HookScript{Type: HookTypeInline, Content: "1"}
+	script := HookScript{Language: LangJS, Content: "1"}
 	assert.Equal(
 		t,
-		30*time.Second,
-		client.HookTimeout(ctx, script),
-		"HookTimeout for a script with no timeout, want the 30s default",
+		10*time.Second,
+		client.HookTimeout(ctx, script, nil),
+		"HookTimeout for a script with no timeout, want the 10s default",
 	)
 
-	script.Timeout = 5
+	script.Timeout = 15
 	assert.Equal(
 		t,
-		5*time.Second,
-		client.HookTimeout(ctx, script),
-		"HookTimeout for a script asking for 5s",
+		15*time.Second,
+		client.HookTimeout(ctx, script, nil),
+		"HookTimeout for a script asking for 15s",
 	)
 }
 
@@ -866,7 +868,7 @@ func TestHookTypesAndPhasesCoverTheDomain(t *testing.T) {
 	types := HookTypes()
 	require.NotEmpty(t, types, "HookTypes returned nothing")
 
-	want := domain.HookTypes()
+	want := domain.ScriptLanguages()
 	assert.Len(t, types, len(want), "HookTypes returned types, want the domain's")
 
 	for i, hookType := range want {
@@ -889,12 +891,16 @@ func TestValidateHookScriptChecksTheScript(t *testing.T) {
 
 	err = client.ValidateHookScript(
 		ctx,
-		HookScript{Type: HookTypeInline, Content: "1+1"},
+		HookScript{Language: LangJS, Content: "1+1"},
 		nil,
 	)
 	assert.NoError(t, err, "a valid script was rejected")
 
-	err = client.ValidateHookScript(ctx, HookScript{Type: "powershell", Content: "Get-Date"}, nil)
+	err = client.ValidateHookScript(
+		ctx,
+		HookScript{Language: "powershell", Content: "Get-Date"},
+		nil,
+	)
 	assert.True(
 		t,
 		IsAppError(err, ErrCodeHookInvalid),
@@ -919,11 +925,11 @@ func TestRunHookScriptsCarriesTheContainmentRules(t *testing.T) {
 
 	mod := &domain.Mod{ID: "better_ui", Version: "1.2.0"}
 	require.NoError(t, client.RunHookScripts(context.Background(), []HookScript{
-		{Type: HookTypeInline, Content: "console.log(hook.mod.id)"},
+		{Language: LangJS, Content: "console.log(dmm.context.mod.id)"},
 	}, mod), "a well-formed inline hook failed")
 
 	err = client.RunHookScripts(context.Background(), []HookScript{
-		{Type: HookTypeCommand, Content: "true", WorkingDir: "/etc"},
+		{Language: LangLua, Content: "true", WorkingDir: "/etc"},
 	}, mod)
 	assert.True(
 		t,
@@ -1000,4 +1006,25 @@ func TestErrorsAreReExportedWithStableCodes(t *testing.T) {
 		New(ErrCodeNotFound, "missing").Error(),
 		"New produced an error with an empty message",
 	)
+}
+
+func TestRunHookScriptsRunsBothLanguages(t *testing.T) {
+	executor := services.NewHookExecutor(services.HookExecutorDeps{})
+
+	providers := host.Providers{}
+	require.NoError(t, hooks.RegisterAll(executor, providers), "RegisterAll")
+
+	client, err := NewClientFromServices(ClientDeps{Hooks: executor})
+	require.NoError(t, err, "NewClientFromServices")
+
+	defer client.Close()
+
+	ctx := context.Background()
+	mod := &Mod{ID: "better_ui", Name: "Better UI"}
+
+	scripts := []HookScript{
+		{Language: LangJS, Content: `console.log("js ok"); dmm.context.mod.id`},
+		{Language: LangLua, Content: `print("lua ok"); local id = dmm.context.mod.id`},
+	}
+	require.NoError(t, client.RunHookScripts(ctx, scripts, mod), "RunHookScripts")
 }

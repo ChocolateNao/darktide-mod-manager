@@ -36,6 +36,7 @@ func newRepo(t *testing.T) (ModRepository, *sql.DB) {
 func fullMod() *domain.Mod {
 	return &domain.Mod{
 		ID:          "better_ui",
+		GameID:      "darktide",
 		Name:        "Better UI",
 		Version:     "1.4.2",
 		Author:      "someone",
@@ -57,14 +58,14 @@ func fullMod() *domain.Mod {
 		Priority:      50,
 		Hooks: domain.ModHooks{
 			PostInstall: []domain.HookScript{{
-				Type:       domain.HookTypeInline,
+				Language:   domain.LangJS,
 				Content:    "console.log('hi')",
 				Timeout:    10,
 				WorkingDir: "/tmp",
 				Env:        []string{"A=1", "B=2"},
 			}},
 			PreUninstall: []domain.HookScript{
-				{Type: domain.HookTypeFile, Content: "cleanup.sh", Timeout: 5},
+				{Language: domain.LangLua, Content: "print('bye')", Timeout: 5},
 			},
 		},
 	}
@@ -81,6 +82,7 @@ func assertModEqual(t *testing.T, want, got *domain.Mod) {
 		field string
 	}{
 		{want.ID, got.ID, "ID"},
+		{want.GameID, got.GameID, "GameID"},
 		{want.Name, got.Name, "Name"},
 		{want.Version, got.Version, "Version"},
 		{want.Author, got.Author, "Author"},
@@ -173,16 +175,16 @@ func assertModEqual(t *testing.T, want, got *domain.Mod) {
 	pre := got.Hooks.For(domain.PhasePreUninstall)
 	assert.False(
 		t,
-		len(pre) != 1 || pre[0].Content != "cleanup.sh",
+		len(pre) != 1 || pre[0].Content != "print('bye')",
 		"pre-uninstall hook did not round-trip: %+v",
 		pre,
 	)
 
 	assert.Equal(
 		t,
-		domain.HookTypeInline,
-		got.Hooks.For(domain.PhasePostInstall)[0].Type,
-		"expected the inline hook type to survive",
+		domain.LangJS,
+		got.Hooks.For(domain.PhasePostInstall)[0].Language,
+		"expected the javascript hook language to survive",
 	)
 }
 
@@ -1030,6 +1032,103 @@ func TestModRepositoryLoadOrderRejectsInvalidInput(t *testing.T) {
 	)
 }
 
+func TestModRepositoryGameFilters(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+
+	seedMods(t, repo,
+		&domain.Mod{ID: "a1", GameID: "darktide", Enabled: true},
+		&domain.Mod{ID: "a2", GameID: "darktide"},
+		&domain.Mod{ID: "b1", GameID: "sietch", Enabled: true},
+	)
+
+	got, err := repo.ListByGame(ctx, "darktide")
+	require.NoError(t, err, "list darktide mods")
+	assert.Equal(t, "a1,a2", strings.Join(modIDs(got), ","),
+		"canonical order (enabled first) within one game")
+
+	got, err = repo.ListByGame(ctx, "sietch")
+	require.NoError(t, err, "list sietch mods")
+	assert.Equal(t, "b1", strings.Join(modIDs(got), ","), "only sietch's mods")
+
+	got, err = repo.ListByGame(ctx, "")
+	require.NoError(t, err, "list legacy mods")
+	assert.Empty(t, got, "no legacy (empty game_id) rows expected, got %v", modIDs(got))
+
+	got, err = repo.ListEnabledByGame(ctx, "darktide")
+	require.NoError(t, err, "list enabled darktide mods")
+	assert.Equal(t, "a1", strings.Join(modIDs(got), ","),
+		"enabled filter combined with the game filter")
+
+	n, err := repo.CountByGame(ctx, "darktide")
+	require.NoError(t, err, "count darktide mods")
+	assert.Equal(t, 2, n, "darktide count")
+
+	n, err = repo.CountByGame(ctx, "sietch")
+	require.NoError(t, err, "count sietch mods")
+	assert.Equal(t, 1, n, "sietch count")
+
+	n, err = repo.CountByGame(ctx, "")
+	require.NoError(t, err, "count legacy mods")
+	assert.Equal(t, 0, n, "legacy count")
+
+	total, err := repo.Count(ctx)
+	require.NoError(t, err, "count all mods")
+	assert.Equal(t, 3, total, "unscoped count still spans every game")
+}
+
+func TestModRepositoryLoadOrderIsPerGame(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+
+	seedMods(t, repo,
+		&domain.Mod{ID: "a1", GameID: "darktide"},
+		&domain.Mod{ID: "a2", GameID: "darktide"},
+		&domain.Mod{ID: "b1", GameID: "sietch"},
+		&domain.Mod{ID: "b2", GameID: "sietch"},
+	)
+
+	require.NoError(t, repo.SetLoadOrderForGame(ctx, "darktide", []string{"a2", "a1"}),
+		"set darktide order")
+	require.NoError(t, repo.SetLoadOrderForGame(ctx, "sietch", []string{"b1", "b2"}),
+		"set sietch order")
+
+	order, err := repo.LoadOrderByGame(ctx, "darktide")
+	require.NoError(t, err, "load darktide order")
+	assert.Equal(t, "a2,a1", strings.Join(order, ","), "darktide order")
+
+	order, err = repo.LoadOrderByGame(ctx, "sietch")
+	require.NoError(t, err, "load sietch order")
+	assert.Equal(t, "b1,b2", strings.Join(order, ","), "sietch order")
+
+	// Replacing one game's order must not touch the other's rows.
+	require.NoError(t, repo.SetLoadOrderForGame(ctx, "darktide", []string{"a1", "a2"}),
+		"replace darktide order")
+
+	order, err = repo.LoadOrderByGame(ctx, "sietch")
+	require.NoError(t, err, "reload sietch order")
+	assert.Equal(t, "b1,b2", strings.Join(order, ","),
+		"sietch order must survive a darktide replacement")
+
+	// A mod belonging to another game is rejected...
+	requireCode(t, repo.SetLoadOrderForGame(ctx, "darktide", []string{"b1"}),
+		appErrors.ErrCodeModNotFound, "cross-game id")
+
+	// ...and the rejected call left the previous order in place.
+	order, err = repo.LoadOrderByGame(ctx, "darktide")
+	require.NoError(t, err, "reload darktide order")
+	assert.Equal(t, "a1,a2", strings.Join(order, ","),
+		"darktide order must be unchanged after a rejected write")
+
+	requireCode(t, repo.SetLoadOrderForGame(ctx, "darktide", []string{"a1", "a1"}),
+		appErrors.ErrCodeDuplicate, "duplicate id")
+
+	// The unscoped view still sees every row in the table.
+	all, err := repo.LoadOrder(ctx)
+	require.NoError(t, err, "load all order rows")
+	assert.Len(t, all, 4, "expected both games' rows, got %v", all)
+}
+
 func TestModRepositoryDeleteCascades(t *testing.T) {
 	repo, db := newRepo(t)
 	ctx := context.Background()
@@ -1600,7 +1699,7 @@ func TestEncodeDecodeHooks(t *testing.T) {
 
 	full := domain.ModHooks{
 		PostEnable: []domain.HookScript{
-			{Type: domain.HookTypeCommand, Content: "run.sh", Timeout: 3, Env: []string{"K=V"}},
+			{Language: domain.LangLua, Content: "print('run')", Timeout: 3, Env: []string{"K=V"}},
 		},
 	}
 
@@ -1615,7 +1714,7 @@ func TestEncodeDecodeHooks(t *testing.T) {
 	got := roundTripped.For(domain.PhasePostEnable)[0]
 	assert.False(
 		t,
-		got.Content != "run.sh" || got.Timeout != 3 || got.Type != domain.HookTypeCommand ||
+		got.Content != "print('run')" || got.Timeout != 3 || got.Language != domain.LangLua ||
 			len(got.Env) != 1,
 		"hook did not round-trip: %+v",
 		got,

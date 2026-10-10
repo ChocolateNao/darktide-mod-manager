@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,7 +118,7 @@ func TestModHooksEditing(t *testing.T) {
 	g.run(w, "mod", "install", "local", modID)
 	g.run(w, "mod", "hooks", "list", modID)
 	g.run(w, "mod", "hooks", "add", modID, "--phase", "pre_enable",
-		"--type", "inline", "--content", "console.log(hook.mod.id)")
+		"--type", "javascript", "--content", "console.log(dmm.context.mod.id)")
 	g.run(w, "mod", "hooks", "list", modID)
 	g.run(w, "mod", "hooks", "add", modID, "--phase", "pre_enable",
 		"--content", "console.log('second')", "--timeout", "5", "--env", "TOKEN=a=b")
@@ -171,8 +172,12 @@ func TestModHooksFromAFile(t *testing.T) {
 	// A hook set as the edit command accepts it: a pre_enable script and a
 	// post_enable one, so the whole set is replaced rather than merged.
 	hooks := filepath.Join(w.root, "hooks.json")
-	require.NoError(t, os.WriteFile(hooks, []byte(`{"PreEnable":[{"type":"inline","content":"a"}],`+
-		`"PostEnable":[{"type":"inline","content":"b"},{"type":"command","content":"echo c"}]}`), 0o644), "write hooks")
+	require.NoError(
+		t,
+		os.WriteFile(hooks, []byte(`{"PreEnable":[{"language":"javascript","content":"a"}],`+
+			`"PostEnable":[{"language":"javascript","content":"b"},{"language":"lua","content":"c"}]}`), 0o644),
+		"write hooks",
+	)
 
 	g := newGolden(t, "mod-hooks-file")
 	g.run(w, "mod", "install", "local", modID)
@@ -452,14 +457,26 @@ func TestSourceTestChecksEverySource(t *testing.T) {
 }
 
 func TestGameCommands(t *testing.T) {
-	// The four game commands answer four different questions, and `info` is
-	// allowed to warn about an unresolvable mods folder without failing: the
-	// installation itself was found and is worth reporting.
+	// The game commands answer different questions: the registry (list,
+	// current, use), the machine (detect), and the configured installation
+	// (info, path, validate). `info` is allowed to warn about an unresolvable
+	// mods folder without failing: the installation itself was found and is
+	// worth reporting.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
 
 	g := newGolden(t, "game-found")
+	g.run(w, "game", "list")
+	g.run(w, "game", "list", "--json")
+	g.run(w, "game", "current")
+	g.run(w, "game", "current", "--json")
+	g.run(w, "game", "use", "darktide")
+	g.run(w, "game", "use", "darktide", "--json")
+	// An unknown id is refused rather than falling back to whatever game was
+	// already active — a typo must not silently run the wrong game.
+	g.run(w, "game", "use", "nope")
+	g.run(w, "game", "switch", "darktide")
 	g.run(w, "game", "detect")
 	g.run(w, "game", "detect", "--json")
 	g.run(w, "game", "info")
@@ -483,13 +500,16 @@ func TestGameCommands(t *testing.T) {
 func TestGameCommandsWithNothingFound(t *testing.T) {
 	// No installation and no configured path: every command has to say so
 	// rather than print an empty table, and none of them may exit non-zero for
-	// a state that is not a failure.
+	// a state that is not a failure. The registry answers (list, current) do
+	// not depend on an installation at all and must work regardless.
 	w := newWorkspace(t)
 	cfg := defaultConfigFor(t)
-	cfg.Game.Path = ""
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "" })
 	w.writeConfigWith(t, &cfg)
 
 	g := newGolden(t, "game-missing")
+	g.run(w, "game", "list")
+	g.run(w, "game", "current")
 	g.run(w, "game", "detect")
 	g.run(w, "game", "info")
 	g.run(w, "game", "path")

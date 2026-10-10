@@ -2,7 +2,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod install local be
 o installed betterui v0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --file <work>/hook.js
-o added inline script to pre_enable of betterui
+o added lua script to pre_enable of betterui
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod hooks add betterui --phase pre_enable --file <work>/empty.js
 e error: HOOK_INVALID: pre_enable hook 2 has no script body
@@ -14,7 +14,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod hooks edit bette
 o {
 o   "pre_enable": [
 o   {
-o   "type": "inline",
+o   "language": "lua",
 o   "content": "console.log('from a file')\n"
 o   }
 o   ]

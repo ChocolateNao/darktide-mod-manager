@@ -12,13 +12,31 @@ import (
 
 func timeNow() time.Time { return time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC) }
 
-func TestHookTypeValid(t *testing.T) {
-	for _, ht := range []HookType{HookTypeInline, HookTypeFile, HookTypeCommand} {
-		assert.True(t, ht.Valid(), "%q should be valid", ht)
+func TestScriptLanguageValid(t *testing.T) {
+	for _, lang := range []ScriptLanguage{LangLua, LangJS} {
+		assert.True(t, lang.Valid(), "%q should be valid", lang)
 	}
 
-	for _, ht := range []HookType{"", "shell", "INLINE", "python"} {
-		assert.False(t, ht.Valid(), "%q should not be valid", ht)
+	for _, lang := range []ScriptLanguage{"", "shell", "LUA", "python", "go", "inline"} {
+		assert.False(t, lang.Valid(), "%q should not be valid", lang)
+	}
+}
+
+func TestParseScriptLanguage(t *testing.T) {
+	for _, in := range []string{"lua", "Lua", " LUA ", "javascript", "JavaScript", "js", "JS"} {
+		lang, err := ParseScriptLanguage(in)
+		assert.NoError(t, err, "ParseScriptLanguage(%q)", in)
+
+		if lang == LangJS {
+			assert.Equal(t, LangJS, lang)
+		} else {
+			assert.Equal(t, LangLua, lang)
+		}
+	}
+
+	for _, in := range []string{"", "shell", "python", "inline"} {
+		_, err := ParseScriptLanguage(in)
+		assert.Error(t, err, "ParseScriptLanguage(%q) must fail", in)
 	}
 }
 
@@ -72,7 +90,7 @@ func TestModHooksForCoversEveryPhase(t *testing.T) {
 	// every phase with a distinct script and check all are reachable.
 	var hooks ModHooks
 	for i, p := range HookPhases() {
-		hooks.Set(p, []HookScript{{Type: HookTypeInline, Content: string(rune('a' + i))}})
+		hooks.Set(p, []HookScript{{Language: LangJS, Content: string(rune('a' + i))}})
 	}
 
 	for i, p := range HookPhases() {
@@ -93,7 +111,7 @@ func TestModHooksForUnknownPhase(t *testing.T) {
 
 func TestModHooksSetUnknownPhaseIgnored(t *testing.T) {
 	h := ModHooks{}
-	h.Set("nope", []HookScript{{Type: HookTypeInline}})
+	h.Set("nope", []HookScript{{Language: LangJS}})
 
 	assert.True(t, h.Empty(), "unknown phase must not be stored")
 }
@@ -105,7 +123,7 @@ func TestModHooksSetNilReceiver(t *testing.T) {
 
 func TestModHooksCloneIsDeep(t *testing.T) {
 	orig := ModHooks{
-		PreEnable: []HookScript{{Type: HookTypeCommand, Content: "a", Env: []string{"K=V"}}},
+		PreEnable: []HookScript{{Language: LangLua, Content: "a", Env: []string{"K=V"}}},
 	}
 	clone := orig.Clone()
 	clone.PreEnable[0].Content = "b"
@@ -116,7 +134,7 @@ func TestModHooksCloneIsDeep(t *testing.T) {
 }
 
 func TestModHooksClonePreservesNil(t *testing.T) {
-	clone := ModHooks{PreEnable: []HookScript{{Type: HookTypeInline}}}.Clone()
+	clone := ModHooks{PreEnable: []HookScript{{Language: LangJS}}}.Clone()
 	assert.Nil(t, clone.PostEnable, "unset phases should stay nil after clone")
 }
 

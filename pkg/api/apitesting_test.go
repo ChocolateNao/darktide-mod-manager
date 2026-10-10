@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -127,5 +128,5 @@ var (
 // not care about hooks does not drag the runners into its binary — the golang
 // runner in particular registers a compiled-in function under a build tag.
 func hooksRegisterForTest(executor *services.HookExecutor) error {
-	return hooks.RegisterAll(executor)
+	return hooks.RegisterAll(executor, host.Providers{})
 }

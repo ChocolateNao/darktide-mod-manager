@@ -121,6 +121,56 @@ func TestNewDeployerNilProbeMeansCopyOnWindows(t *testing.T) {
 	)
 }
 
+func TestModeForHonoursThePreferredInstallMethod(t *testing.T) {
+	cases := []struct {
+		name      string
+		preferred string
+		platform  domain.Platform
+		want      DeployMode
+		probe     bool
+	}{
+		{
+			name:      "symlink preferred and possible",
+			platform:  domain.PlatformLinux,
+			preferred: domain.InstallMethodSymlink,
+			want:      DeploySymlink,
+		},
+		{
+			name:      "symlink preferred but impossible copies instead",
+			platform:  domain.PlatformWindows,
+			preferred: domain.InstallMethodSymlink,
+			want:      DeployCopy,
+		},
+		{
+			name:      "direct always copies",
+			platform:  domain.PlatformLinux,
+			preferred: domain.InstallMethodDirect,
+			want:      DeployCopy,
+		},
+		{
+			name:      "no preference uses the platform default",
+			platform:  domain.PlatformLinux,
+			preferred: "",
+			want:      DeploySymlink,
+		},
+		{
+			name:      "unknown preference uses the platform default",
+			platform:  domain.PlatformWindows,
+			preferred: "hardlink",
+			want:      DeployCopy,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := NewDeployerWithProbe(tc.platform, func() bool { return tc.probe })
+
+			got := d.ModeFor(tc.preferred)
+			assert.Equal(t, tc.want, got, "ModeFor(%q) = %v, want %v", tc.preferred, got, tc.want)
+		})
+	}
+}
+
 func TestDeploySymlinks(t *testing.T) {
 	symlinkCapable(t)
 	f := newModFixture(t)
@@ -644,12 +694,13 @@ func TestCanCreateSymlinks(t *testing.T) {
 	assert.True(t, CanCreateSymlinks(), "CanCreateSymlinks = false on a Unix host")
 }
 
+// The manifest package owns the names; the deployer only filters with them.
 func TestIsManifestName(t *testing.T) {
 	for _, name := range []string{"mod.toml", "MOD.TOML", "manifest.toml", "metadata.toml"} {
-		assert.True(t, isManifestName(name), "isManifestName(%q) = false", name)
+		assert.True(t, IsManifestName(name), "IsManifestName(%q) = false", name)
 	}
 
 	for _, name := range []string{"mod.json", "toml", "", "mod.toml.bak"} {
-		assert.False(t, isManifestName(name), "isManifestName(%q) = true", name)
+		assert.False(t, IsManifestName(name), "IsManifestName(%q) = true", name)
 	}
 }

@@ -888,7 +888,7 @@ func TestModPathEdgeCases(t *testing.T) {
 func TestValidateHook(t *testing.T) {
 	svc := &ModService{}
 
-	good := domain.HookScript{Type: domain.HookTypeInline, Content: "print(1)"}
+	good := domain.HookScript{Language: domain.LangJS, Content: "print(1)"}
 	{
 		err := svc.validateHook(good, domain.PhasePreInstall, 0)
 		assert.NoError(t, err, "a plain inline hook should be valid: %v", err)
@@ -898,21 +898,21 @@ func TestValidateHook(t *testing.T) {
 		name string
 		hook domain.HookScript
 	}{
-		{"unknown type", domain.HookScript{Type: "powershell", Content: "x"}},
+		{"unknown type", domain.HookScript{Language: "powershell", Content: "x"}},
 		{"blank type", domain.HookScript{Content: "x"}},
-		{"blank content", domain.HookScript{Type: domain.HookTypeInline}},
-		{"whitespace content", domain.HookScript{Type: domain.HookTypeInline, Content: "  \t\n"}},
+		{"blank content", domain.HookScript{Language: domain.LangJS}},
+		{"whitespace content", domain.HookScript{Language: domain.LangJS, Content: "  \t\n"}},
 		{
 			"negative timeout",
-			domain.HookScript{Type: domain.HookTypeInline, Content: "x", Timeout: -1},
+			domain.HookScript{Language: domain.LangJS, Content: "x", Timeout: -1},
 		},
 		{
 			"env without a separator",
-			domain.HookScript{Type: domain.HookTypeInline, Content: "x", Env: []string{"TOKEN"}},
+			domain.HookScript{Language: domain.LangJS, Content: "x", Env: []string{"TOKEN"}},
 		},
 		{
 			"env with a blank key",
-			domain.HookScript{Type: domain.HookTypeInline, Content: "x", Env: []string{"=secret"}},
+			domain.HookScript{Language: domain.LangJS, Content: "x", Env: []string{"=secret"}},
 		},
 	}
 	for _, tc := range cases {
@@ -939,9 +939,9 @@ func TestValidateHook(t *testing.T) {
 	}
 
 	withEnv := domain.HookScript{
-		Type:    domain.HookTypeInline,
-		Content: "x",
-		Env:     []string{"TOKEN=a=b"},
+		Language: domain.LangJS,
+		Content:  "x",
+		Env:      []string{"TOKEN=a=b"},
 	}
 	{
 		err := svc.validateHook(withEnv, domain.PhasePostInstall, 1)

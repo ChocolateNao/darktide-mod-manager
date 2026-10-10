@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,14 +23,14 @@ type fakePrompter struct {
 	err     error
 	answer  string
 	prompts []string
-	asked   int
+	asked   atomic.Int64
 	waits   bool
 }
 
 // ReadKey waits on ctx before answering, so a cancelled run is a cancellation
 // rather than a value that happened to be ready.
 func (f *fakePrompter) ReadKey(ctx context.Context, prompt string) (string, error) {
-	f.asked++
+	f.asked.Add(1)
 
 	f.prompts = append(f.prompts, prompt)
 	if f.waits {
@@ -52,7 +53,8 @@ func TestPromptForKeyNamesTheSourceAndSaysHowToFinish(t *testing.T) {
 
 	assert.Equal(t, "secret-key", key, "key = %q, want it trimmed", key)
 
-	assert.Equal(t, 1, ask.asked, "asked %d times, want exactly one line read", ask.asked)
+	assert.Equal(t, int64(1), ask.asked.Load(), "asked %d times, want exactly one line read",
+		ask.asked.Load())
 
 	prompt := ask.askedPrompt(t)
 	assert.Contains(t, prompt, "nexus API key", "prompt = %q, want it to name the source", prompt)
@@ -149,7 +151,7 @@ func TestPromptForKeyStopsWhenTheRunIsCancelled(t *testing.T) {
 
 	ask := &fakePrompter{answer: "too-late", waits: true}
 	go func() {
-		for ask.asked == 0 {
+		for ask.asked.Load() == 0 {
 			time.Sleep(time.Millisecond)
 		}
 

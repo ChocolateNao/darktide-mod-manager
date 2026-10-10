@@ -82,8 +82,8 @@ func TestWithConfigAlsoReachesFactories(t *testing.T) {
 
 	var built domain.SourceConfig
 
-	registerFactory(t, "withcfg", func(cfg domain.SourceConfig) (domain.ModSource, error) {
-		built = cfg
+	registerFactory(t, "withcfg", func(ctx SourceBuildContext) (domain.ModSource, error) {
+		built = ctx.Config
 		return &fakeSource{id: "withcfg"}, nil
 	})
 
@@ -229,7 +229,7 @@ func TestSearchAllReportsWhenEverythingIsDisabled(t *testing.T) {
 // "switched off" from "no such source", and the two are the same empty
 // description without it.
 func TestHasDistinguishesUnknownFromUnbuildable(t *testing.T) {
-	registerFactory(t, "hasfactory", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "hasfactory", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "hasfactory"}, nil
 	})
 
@@ -254,7 +254,7 @@ func TestHasDistinguishesUnknownFromUnbuildable(t *testing.T) {
 
 	assert.True(t, r.Has("  REGISTERED  "), "Has did not normalise the id")
 
-	registerFactory(t, "hasbroken", func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, "hasbroken", func(SourceBuildContext) (domain.ModSource, error) {
 		return nil, errBoom
 	})
 

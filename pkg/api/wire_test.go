@@ -324,13 +324,18 @@ func TestBundleStoresAValidatedGamePath(t *testing.T) {
 	opts := append(w.options(), WithGamePath(w.gameDir))
 	bundle := mustBundle(t, opts...)
 
-	assert.Equal(t, domain.CleanPath(w.gameDir), bundle.Config.Game.Path, "in-memory game path")
+	assert.Equal(
+		t,
+		domain.CleanPath(w.gameDir),
+		bundle.Config.ActiveSettings().Path,
+		"in-memory game path",
+	)
 	// The path must survive to the file, or the next process would have to be
 	// told again and a CLI invocation would prompt for something already known.
 	reloaded, err := storage.NewConfigStore(w.configPath).Load()
 	require.NoError(t, err, "reload config")
 
-	assert.Equal(t, domain.CleanPath(w.gameDir), reloaded.Game.Path, "stored game path")
+	assert.Equal(t, domain.CleanPath(w.gameDir), reloaded.ActiveSettings().Path, "stored game path")
 }
 
 func TestBundleRefusesABadGamePathWithoutPersistingIt(t *testing.T) {
@@ -363,7 +368,7 @@ func TestBundleRefusesABadGamePathWithoutPersistingIt(t *testing.T) {
 	reloaded, loadErr := storage.NewConfigStore(w.configPath).Load()
 	require.NoError(t, loadErr, "reload config")
 
-	assert.Equal(t, "", reloaded.Game.Path, "game path stored for a rejected path")
+	assert.Equal(t, "", reloaded.ActiveSettings().Path, "game path stored for a rejected path")
 }
 
 func TestBundleMergesSourceOptionsOverTheFile(t *testing.T) {
@@ -479,7 +484,7 @@ func TestBundleLogsButSurvivesAMisconfiguredSource(t *testing.T) {
 	const brokenID = "wire-test-broken"
 	require.NoError(t, services.RegisterSourceFactory(
 		brokenID,
-		func(domain.SourceConfig) (domain.ModSource, error) {
+		func(services.SourceBuildContext) (domain.ModSource, error) {
 			return nil, errBoomCause{}
 		},
 	), "register broken factory")
@@ -632,7 +637,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.makeGame(t)
 	w.saveConfig(t, func(cfg *domain.Config) {
-		cfg.Game.Path = w.gameDir
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
 		cfg.Sources["local"] = domain.SourceConfig{Enabled: true, Paths: []string{w.localDir}}
 	})
 	w.writeModArchive(t, "Better UI 1.2.0.zip")
@@ -656,7 +661,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 		"the mod was installed but not enabled, although a game installation is configured",
 	)
 
-	wantPayload := domain.ModVersionPath(w.storageRoot, mod.ID, mod.Version)
+	wantPayload := domain.ModStoragePath(w.storageRoot, mod.GameID, mod.ID, mod.Version)
 	assert.Equal(t, wantPayload, mod.LocalPath, "payload")
 
 	_, err = os.Stat(filepath.Join(wantPayload, "textures", "hud.dds"))
@@ -720,7 +725,9 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 func TestNewClientSurfacesTheCacheAndTheGame(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.makeGame(t)
-	w.saveConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.saveConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 
 	client, err := NewClient(context.Background(), w.options()...)
 	require.NoError(t, err, "new client")
@@ -788,7 +795,9 @@ func TestNewClientClosesWhatItOpened(t *testing.T) {
 func TestConfiguredGamePathDegradesToBlank(t *testing.T) {
 	store := &configStoreStub{cfg: configPtr(domain.DefaultConfig())}
 
-	store.cfg.Game.Path = "  /games/darktide  "
+	store.cfg.UpdateActiveSettings(
+		func(gs *domain.GameSettings) { gs.Path = "  /games/darktide  " },
+	)
 	assert.Equal(t, "/games/darktide", configuredGamePath(store), "game path trimmed value")
 
 	blank := &configStoreStub{cfg: configPtr(domain.DefaultConfig())}
@@ -804,9 +813,9 @@ func TestHookContextFuncRereadsTheConfiguration(t *testing.T) {
 	w := newWireWorkspace(t)
 	store := storage.NewConfigStore(w.configPath)
 	cfg := domain.DefaultConfig()
-	cfg.Game.Path = w.gameDir
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
 
-	cfg.Game.Source = "steam"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
 	require.NoError(t, store.Save(&cfg), "save config")
 
 	build := hookContextFunc(store, w.cacheRoot, w.storageRoot)
@@ -833,7 +842,7 @@ func TestHookContextFuncRereadsTheConfiguration(t *testing.T) {
 	// context must not close over the snapshot taken at wiring time.
 	moved := filepath.Join(filepath.Dir(w.gameDir), "Darktide (Steam)")
 
-	cfg.Game.Path = moved
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = moved })
 	require.NoError(t, store.Save(&cfg), "save config again")
 
 	second := build(

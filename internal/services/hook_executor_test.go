@@ -22,12 +22,12 @@ import (
 // ---------------------------------------------------------------- test doubles
 
 // recordingRunner is a HookRunner that records what it was handed and returns a
-// canned result. It also implements HookTyper so it can go through Register.
+// canned result. It also implements LanguageTyper so it can go through Register.
 type recordingRunner struct {
 	err      error
 	block    chan struct{}
 	observe  func(ctx context.Context, hook PreparedHook)
-	hookType domain.HookType
+	language domain.ScriptLanguage
 	calls    []servicesCall
 	mu       sync.Mutex
 	waitCtx  bool
@@ -35,21 +35,19 @@ type recordingRunner struct {
 
 type servicesCall struct {
 	WorkingDir string
-	ScriptPath string
 	Phase      domain.HookPhase
 	Env        []string
 	Context    domain.HookContext
 	Index      int
 }
 
-func (r *recordingRunner) HookType() domain.HookType { return r.hookType }
+func (r *recordingRunner) Language() domain.ScriptLanguage { return r.language }
 
 func (r *recordingRunner) Run(ctx context.Context, hook PreparedHook, mod *domain.Mod) error {
 	r.mu.Lock()
 	r.calls = append(r.calls, servicesCall{
 		WorkingDir: hook.WorkingDir,
 		Env:        append([]string{}, hook.Env...),
-		ScriptPath: hook.ScriptPath,
 		Phase:      hook.Context.Phase,
 		Index:      hook.Context.Index,
 		Context:    hook.Context,
@@ -83,7 +81,7 @@ func (r *recordingRunner) snapshot() []servicesCall {
 	return append([]servicesCall{}, r.calls...)
 }
 
-// untypedRunner implements HookRunner but not HookTyper, so Register must
+// untypedRunner implements HookRunner but not LanguageTyper, so Register must
 // refuse it.
 type untypedRunner struct{}
 
@@ -175,9 +173,9 @@ func TestNewHookExecutorAppliesDefaultTimeout(t *testing.T) {
 	h := NewHookExecutor(HookExecutorDeps{})
 	assert.Equal(
 		t,
-		30,
+		domain.DurationOf(10*time.Second),
 		h.Config().DefaultTimeout,
-		"default timeout = %ds, want 30",
+		"default timeout = %s, want 10s",
 		h.Config().DefaultTimeout,
 	)
 
@@ -193,11 +191,17 @@ func TestNewHookExecutorAppliesDefaultTimeout(t *testing.T) {
 
 func TestNewHookExecutorKeepsConfiguredTimeout(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 5, MaxTimeout: 120}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(5 * time.Second),
+				MaxTimeout:     domain.DurationOf(120 * time.Second),
+			},
+		},
 	)
 	assert.False(
 		t,
-		h.Config().DefaultTimeout != 5 || h.Config().MaxTimeout != 120,
+		h.Config().DefaultTimeout != domain.DurationOf(5*time.Second) ||
+			h.Config().MaxTimeout != domain.DurationOf(120*time.Second),
 		"config = %+v, want defaults 5 max 120",
 		h.Config(),
 	)
@@ -207,15 +211,26 @@ func TestNewHookExecutorKeepsConfiguredTimeout(t *testing.T) {
 // soon as a per-hook value was clamped up to it, so the ceiling is raised.
 func TestNewHookExecutorRaisesMaxBelowDefault(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 90, MaxTimeout: 10}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(90 * time.Second),
+				MaxTimeout:     domain.DurationOf(10 * time.Second),
+			},
+		},
 	)
 	{
 		got := h.Config().MaxTimeout
-		assert.Equal(t, 90, got, "max timeout = %d, want it raised to the default 90", got)
+		assert.Equal(
+			t,
+			domain.DurationOf(90*time.Second),
+			got,
+			"max timeout = %d, want it raised to the default 90",
+			got,
+		)
 	}
 
 	{
-		got := h.Timeout(domain.HookScript{})
+		got := h.Timeout(domain.HookScript{}, nil)
 		assert.Equal(t, 90*time.Second, got, "effective timeout = %s, want 90s", got)
 	}
 }
@@ -242,42 +257,89 @@ func TestNewHookExecutorNilLookPathIsReplaced(t *testing.T) {
 
 func TestTimeoutUsesDefaultWhenUnset(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 7, MaxTimeout: 600}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(7 * time.Second),
+				MaxTimeout:     domain.DurationOf(600 * time.Second),
+			},
+		},
 	)
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 0})
+		got := h.Timeout(domain.HookScript{Timeout: 0}, nil)
 		assert.Equal(t, 7*time.Second, got, "timeout = %s, want 7s", got)
 	}
 }
 
+// A declared timeout above the floor and within the ceiling is honoured as-is.
 func TestTimeoutHonoursPerHookOverride(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 30, MaxTimeout: 600}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(5 * time.Second),
+				MaxTimeout:     domain.DurationOf(600 * time.Second),
+			},
+		},
 	)
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 3})
-		assert.Equal(t, 3*time.Second, got, "timeout = %s, want 3s", got)
+		got := h.Timeout(domain.HookScript{Timeout: 10}, nil)
+		assert.Equal(t, 10*time.Second, got, "timeout = %s, want 10s", got)
 	}
 }
 
-// A hook asking for less than the default is honoured; the default is a fallback
-// for hooks that say nothing, not a floor.
-func TestTimeoutAllowsShorterThanDefault(t *testing.T) {
+// The default is a floor: a hook asking for less is raised to it.
+func TestTimeoutRaisesShorterThanDefaultToFloor(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 30, MaxTimeout: 600}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(30 * time.Second),
+				MaxTimeout:     domain.DurationOf(600 * time.Second),
+			},
+		},
 	)
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 1})
-		assert.Equal(t, time.Second, got, "timeout = %s, want 1s", got)
+		got := h.Timeout(domain.HookScript{Timeout: 1}, nil)
+		assert.Equal(t, 30*time.Second, got, "timeout = %s, want the 30s floor", got)
+	}
+}
+
+// A permission cap below the floor still wins: the ceiling is the effective
+// upper bound in every case (§3.7).
+func TestTimeoutCapOverridesLargerDeclaredValue(t *testing.T) {
+	h := NewHookExecutor(
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(10 * time.Second),
+				MaxTimeout:     domain.DurationOf(30 * time.Second),
+				Permissions: domain.HooksPermissionsConfig{
+					Mods: map[string]domain.ScriptPermissions{
+						"better_ui": {TimeoutSeconds: 2},
+					},
+				},
+			},
+		},
+	)
+	{
+		got := h.Timeout(domain.HookScript{Timeout: 15}, hookMod(t.TempDir()))
+		assert.Equal(t, 2*time.Second, got, "timeout = %s, want the 2s cap", got)
+	}
+
+	{
+		got := h.Timeout(domain.HookScript{}, hookMod(t.TempDir()))
+		assert.Equal(t, 2*time.Second, got, "unset script = %s, want the 2s cap", got)
 	}
 }
 
 func TestTimeoutClampsAboveMax(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 30, MaxTimeout: 60}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(30 * time.Second),
+				MaxTimeout:     domain.DurationOf(60 * time.Second),
+			},
+		},
 	)
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 9999})
+		got := h.Timeout(domain.HookScript{Timeout: 9999}, nil)
 		assert.Equal(t, 60*time.Second, got, "timeout = %s, want the 60s ceiling", got)
 	}
 }
@@ -286,10 +348,15 @@ func TestTimeoutClampsAboveMax(t *testing.T) {
 // maximum; a manifest-supplied timeout must not be able to buy unbounded runtime.
 func TestTimeoutClampsPastHardCeiling(t *testing.T) {
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 30, MaxTimeout: 100000}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(30 * time.Second),
+				MaxTimeout:     domain.DurationOf(100000 * time.Second),
+			},
+		},
 	)
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 100000})
+		got := h.Timeout(domain.HookScript{Timeout: 100000}, nil)
 		assert.Equal(
 			t,
 			maxHookTimeout,
@@ -301,7 +368,7 @@ func TestTimeoutClampsPastHardCeiling(t *testing.T) {
 	}
 
 	{
-		got := h.Timeout(domain.HookScript{Timeout: 0})
+		got := h.Timeout(domain.HookScript{Timeout: 0}, nil)
 		assert.Equal(t, 30*time.Second, got, "default timeout = %s, want 30s", got)
 	}
 }
@@ -312,7 +379,7 @@ func TestValidateRejectsUnknownType(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	h := newExecutor(t)
 
-	err := h.Validate(domain.HookScript{Type: "powershell", Content: "x"}, hookMod(modDir))
+	err := h.Validate(domain.HookScript{Language: "powershell", Content: "x"}, hookMod(modDir))
 	require.Equal(
 		t,
 		appErrors.ErrCodeHookInvalid,
@@ -330,7 +397,7 @@ func TestValidateRejectsBlankContent(t *testing.T) {
 	h := newExecutor(t)
 	for _, content := range []string{"", "   ", "\n\t "} {
 		err := h.Validate(
-			domain.HookScript{Type: domain.HookTypeCommand, Content: content},
+			domain.HookScript{Language: domain.LangLua, Content: content},
 			hookMod(modDir),
 		)
 		assert.Equal(
@@ -350,7 +417,7 @@ func TestValidateRejectsNegativeTimeout(t *testing.T) {
 	h := newExecutor(t)
 
 	err := h.Validate(
-		domain.HookScript{Type: domain.HookTypeCommand, Content: "echo hi", Timeout: -1},
+		domain.HookScript{Language: domain.LangLua, Content: "echo hi", Timeout: -1},
 		hookMod(modDir),
 	)
 	assert.Equal(
@@ -369,9 +436,9 @@ func TestValidateRejectsMalformedEnv(t *testing.T) {
 
 	for _, entry := range []string{"", "  ", "NOEQUALS", "=value"} {
 		script := domain.HookScript{
-			Type:    domain.HookTypeCommand,
-			Content: "echo hi",
-			Env:     []string{entry},
+			Language: domain.LangLua,
+			Content:  "echo hi",
+			Env:      []string{entry},
 		}
 
 		err := h.Validate(script, hookMod(modDir))
@@ -392,9 +459,9 @@ func TestValidateAcceptsEnvValueContainingEquals(t *testing.T) {
 	h := newExecutor(t)
 
 	script := domain.HookScript{
-		Type:    domain.HookTypeCommand,
-		Content: "echo hi",
-		Env:     []string{"TOKEN=a=b=c"},
+		Language: domain.LangLua,
+		Content:  "echo hi",
+		Env:      []string{"TOKEN=a=b=c"},
 	}
 	{
 		err := h.Validate(script, hookMod(modDir))
@@ -407,9 +474,9 @@ func TestValidateAcceptsEmptyEnvEntryInList(t *testing.T) {
 	h := newExecutor(t)
 
 	script := domain.HookScript{
-		Type:    domain.HookTypeCommand,
-		Content: "echo hi",
-		Env:     []string{"A=1", "", "B=2"},
+		Language: domain.LangLua,
+		Content:  "echo hi",
+		Env:      []string{"A=1", "", "B=2"},
 	}
 	{
 		err := h.Validate(
@@ -428,7 +495,7 @@ func TestValidateNilModIsFineForCommand(t *testing.T) {
 	// validate against, but it is still a legal hook (a global maintenance script).
 	{
 		err := h.Validate(
-			domain.HookScript{Type: domain.HookTypeCommand, Content: "echo hi"},
+			domain.HookScript{Language: domain.LangLua, Content: "echo hi"},
 			nil,
 		)
 		assert.NoError(t, err, "validate with nil mod: %v", err)
@@ -763,10 +830,10 @@ func TestEnvSkipsInheritedVariablesThatAreSetButEmpty(t *testing.T) {
 
 // ------------------------------------------------------------------- registry
 
-func TestRegisterUsesHookTyper(t *testing.T) {
+func TestRegisterUsesLanguageTyper(t *testing.T) {
 	h := newExecutor(t)
 
-	r := &recordingRunner{hookType: domain.HookTypeInline}
+	r := &recordingRunner{language: domain.LangJS}
 	{
 		err := h.Register(r)
 		require.NoError(t, err, "register: %v", err)
@@ -774,7 +841,7 @@ func TestRegisterUsesHookTyper(t *testing.T) {
 
 	assert.True(
 		t,
-		h.HasRunner(domain.HookTypeInline),
+		h.HasRunner(domain.LangJS),
 		"runner not registered under the type it reported",
 	)
 }
@@ -795,7 +862,7 @@ func TestRegisterRejectsNil(t *testing.T) {
 }
 
 // A runner that cannot name its type would otherwise be stored under a guess.
-func TestRegisterRejectsRunnerWithoutHookType(t *testing.T) {
+func TestRegisterRejectsRunnerWithoutLanguage(t *testing.T) {
 	h := newExecutor(t)
 
 	err := h.Register(untypedRunner{})
@@ -809,7 +876,7 @@ func TestRegisterRejectsRunnerWithoutHookType(t *testing.T) {
 	)
 }
 
-func TestRegisterRunnerRejectsUnknownType(t *testing.T) {
+func TestRegisterRunnerRejectsUnknownLanguage(t *testing.T) {
 	h := newExecutor(t)
 
 	err := h.RegisterRunner("ruby", &recordingRunner{})
@@ -826,7 +893,7 @@ func TestRegisterRunnerRejectsUnknownType(t *testing.T) {
 func TestRegisterRunnerRejectsNilRunner(t *testing.T) {
 	h := newExecutor(t)
 
-	err := h.RegisterRunner(domain.HookTypeInline, nil)
+	err := h.RegisterRunner(domain.LangJS, nil)
 	assert.Equal(
 		t,
 		appErrors.ErrCodeInvalidArgument,
@@ -841,16 +908,16 @@ func TestRegisterRunnerRejectsNilRunner(t *testing.T) {
 // a runner without a second registration path.
 func TestRegisterRunnerReplaces(t *testing.T) {
 	h := newExecutor(t)
-	first := &recordingRunner{hookType: domain.HookTypeInline}
+	first := &recordingRunner{language: domain.LangJS}
 
-	second := &recordingRunner{hookType: domain.HookTypeInline}
+	second := &recordingRunner{language: domain.LangJS}
 	{
-		err := h.RegisterRunner(domain.HookTypeInline, first)
+		err := h.RegisterRunner(domain.LangJS, first)
 		require.NoError(t, err)
 	}
 
 	{
-		err := h.RegisterRunner(domain.HookTypeInline, second)
+		err := h.RegisterRunner(domain.LangJS, second)
 		require.NoError(t, err, "replace: %v", err)
 	}
 
@@ -858,7 +925,7 @@ func TestRegisterRunnerReplaces(t *testing.T) {
 	{
 		err := h.Execute(
 			context.Background(),
-			[]domain.HookScript{{Type: domain.HookTypeInline, Content: "1"}},
+			[]domain.HookScript{{Language: domain.LangJS, Content: "1"}},
 			hookMod(modDir),
 		)
 		require.NoError(t, err, "execute: %v", err)
@@ -878,37 +945,42 @@ func TestRegisterRunnerReplaces(t *testing.T) {
 func TestUnregisterRemovesRunner(t *testing.T) {
 	h := newExecutor(t)
 	{
-		err := h.RegisterRunner(domain.HookTypeCommand, &recordingRunner{})
+		err := h.RegisterRunner(domain.LangLua, &recordingRunner{})
 		require.NoError(t, err)
 	}
 
-	require.True(t, h.Unregister(domain.HookTypeCommand), "Unregister reported nothing removed")
+	require.True(t, h.Unregister(domain.LangLua), "Unregister reported nothing removed")
 
-	assert.False(t, h.Unregister(domain.HookTypeCommand), "second Unregister reported a removal")
+	assert.False(t, h.Unregister(domain.LangLua), "second Unregister reported a removal")
 
-	assert.False(t, h.HasRunner(domain.HookTypeCommand), "runner still present")
+	assert.False(t, h.HasRunner(domain.LangLua), "runner still present")
 }
 
-func TestRunnerTypesIsSorted(t *testing.T) {
+func TestRunnerLanguagesIsSorted(t *testing.T) {
 	h := newExecutor(t)
 
-	for _, typ := range []domain.HookType{domain.HookTypeCommand, domain.HookTypeInline, domain.HookTypeFile} {
+	for _, lang := range []domain.ScriptLanguage{domain.LangLua, domain.LangJS} {
 		{
-			err := h.RegisterRunner(typ, &recordingRunner{hookType: typ})
+			err := h.RegisterRunner(lang, &recordingRunner{language: lang})
 			require.NoError(t, err)
 		}
 	}
 
-	got := h.RunnerTypes()
+	got := h.RunnerLanguages()
 
-	want := []domain.HookType{domain.HookTypeCommand, domain.HookTypeFile, domain.HookTypeInline}
-	assert.True(t, reflect.DeepEqual(got, want), "types = %v, want %v", got, want)
+	want := []domain.ScriptLanguage{domain.LangJS, domain.LangLua}
+	assert.True(t, reflect.DeepEqual(got, want), "languages = %v, want %v", got, want)
 }
 
-func TestRunnerTypesEmptyIsNotNil(t *testing.T) {
+func TestRunnerLanguagesEmptyIsNotNil(t *testing.T) {
 	{
-		got := newExecutor(t).RunnerTypes()
-		assert.False(t, got == nil || len(got) != 0, "types = %v, want an empty non-nil slice", got)
+		got := newExecutor(t).RunnerLanguages()
+		assert.False(
+			t,
+			got == nil || len(got) != 0,
+			"languages = %v, want an empty non-nil slice",
+			got,
+		)
 	}
 }
 
@@ -916,7 +988,7 @@ func TestRunnerTypesEmptyIsNotNil(t *testing.T) {
 
 func TestExecuteRunsScriptsInOrder(t *testing.T) {
 	game, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := NewHookExecutor(HookExecutorDeps{GamePath: func() string { return game }})
 	{
@@ -925,8 +997,8 @@ func TestExecuteRunsScriptsInOrder(t *testing.T) {
 	}
 
 	scripts := []domain.HookScript{
-		{Type: domain.HookTypeCommand, Content: "first"},
-		{Type: domain.HookTypeCommand, Content: "second"},
+		{Language: domain.LangLua, Content: "first"},
+		{Language: domain.LangLua, Content: "second"},
 	}
 	{
 		err := h.Execute(context.Background(), scripts, hookMod(modDir))
@@ -955,7 +1027,7 @@ func TestExecuteWithNoScriptsIsANoop(t *testing.T) {
 // already changed the world.
 func TestExecuteStopsAtFirstFailure(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand, err: errors.New("boom")}
+	r := &recordingRunner{language: domain.LangLua, err: errors.New("boom")}
 
 	h := newExecutor(t)
 	{
@@ -964,9 +1036,9 @@ func TestExecuteStopsAtFirstFailure(t *testing.T) {
 	}
 	// The fake fails every call, so the first script must be the last one to run.
 	scripts := []domain.HookScript{
-		{Type: domain.HookTypeCommand, Content: "first"},
-		{Type: domain.HookTypeCommand, Content: "never"},
-		{Type: domain.HookTypeCommand, Content: "also never"},
+		{Language: domain.LangLua, Content: "first"},
+		{Language: domain.LangLua, Content: "never"},
+		{Language: domain.LangLua, Content: "also never"},
 	}
 
 	err := h.Execute(context.Background(), scripts, hookMod(modDir))
@@ -991,7 +1063,7 @@ func TestExecuteUnknownTypeReportsRunnerNotFound(t *testing.T) {
 
 	err := h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	require.Equal(
@@ -1015,7 +1087,7 @@ func TestExecuteUnknownTypeReportsRunnerNotFound(t *testing.T) {
 // A pre-cancelled context must stop before a single hook runs.
 func TestExecuteRejectsPreCanceledContext(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := newExecutor(t)
 	{
@@ -1028,7 +1100,7 @@ func TestExecuteRejectsPreCanceledContext(t *testing.T) {
 
 	err := h.Execute(
 		ctx,
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	assert.Equal(
@@ -1048,7 +1120,7 @@ func TestExecuteRejectsPreCanceledContext(t *testing.T) {
 
 func TestExecuteAcceptsNilContext(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := newExecutor(t)
 	{
@@ -1059,7 +1131,7 @@ func TestExecuteAcceptsNilContext(t *testing.T) {
 	{
 		err := h.Execute(
 			nil,
-			[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+			[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 			hookMod(modDir),
 		)
 		assert.NoError(t, err, "execute with nil ctx: %v", err)
@@ -1073,14 +1145,19 @@ func TestExecuteAppliesTimeoutToContext(t *testing.T) {
 	var deadline time.Time
 
 	r := &recordingRunner{
-		hookType: domain.HookTypeCommand,
+		language: domain.LangLua,
 		observe: func(ctx context.Context, _ PreparedHook) {
 			deadline, _ = ctx.Deadline()
 		},
 	}
 
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 2, MaxTimeout: 60}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(2 * time.Second),
+				MaxTimeout:     domain.DurationOf(60 * time.Second),
+			},
+		},
 	)
 	{
 		err := h.Register(r)
@@ -1090,7 +1167,7 @@ func TestExecuteAppliesTimeoutToContext(t *testing.T) {
 	{
 		err := h.Execute(
 			context.Background(),
-			[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+			[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 			hookMod(modDir),
 		)
 		require.NoError(t, err, "execute: %v", err)
@@ -1111,10 +1188,15 @@ func TestExecuteAppliesTimeoutToContext(t *testing.T) {
 
 func TestExecuteReportsTimeoutWhenRunnerOutlivesDeadline(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand, waitCtx: true}
+	r := &recordingRunner{language: domain.LangLua, waitCtx: true}
 
 	h := NewHookExecutor(
-		HookExecutorDeps{Config: domain.HooksConfig{DefaultTimeout: 1, MaxTimeout: 2}},
+		HookExecutorDeps{
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(1 * time.Second),
+				MaxTimeout:     domain.DurationOf(2 * time.Second),
+			},
+		},
 	)
 	{
 		err := h.Register(r)
@@ -1125,7 +1207,7 @@ func TestExecuteReportsTimeoutWhenRunnerOutlivesDeadline(t *testing.T) {
 
 	err := h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	require.Equal(
@@ -1154,7 +1236,7 @@ func TestExecuteReportsTimeoutWhenRunnerOutlivesDeadline(t *testing.T) {
 // very different things to whoever retried.
 func TestExecuteReportsCancellationWhenParentCanceled(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand, waitCtx: true}
+	r := &recordingRunner{language: domain.LangLua, waitCtx: true}
 
 	h := newExecutor(t)
 	{
@@ -1171,7 +1253,7 @@ func TestExecuteReportsCancellationWhenParentCanceled(t *testing.T) {
 
 	err := h.Execute(
 		ctx,
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	assert.Equal(
@@ -1189,7 +1271,7 @@ func TestExecuteReportsCancellationWhenParentCanceled(t *testing.T) {
 // timeout.
 func TestExecutePlainFailureIsNotATimeout(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand, err: errors.New("nope")}
+	r := &recordingRunner{language: domain.LangLua, err: errors.New("nope")}
 
 	h := newExecutor(t)
 	{
@@ -1199,7 +1281,7 @@ func TestExecutePlainFailureIsNotATimeout(t *testing.T) {
 
 	err := h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	assert.Equal(
@@ -1215,7 +1297,7 @@ func TestExecutePlainFailureIsNotATimeout(t *testing.T) {
 func TestExecuteIncludesModLabelInFailure(t *testing.T) {
 	h := newExecutor(t)
 
-	r := &recordingRunner{hookType: domain.HookTypeCommand, err: errors.New("boom")}
+	r := &recordingRunner{language: domain.LangLua, err: errors.New("boom")}
 	{
 		err := h.Register(r)
 		require.NoError(t, err)
@@ -1223,7 +1305,7 @@ func TestExecuteIncludesModLabelInFailure(t *testing.T) {
 
 	err := h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		nil,
 	)
 	assert.False(
@@ -1239,7 +1321,7 @@ func TestExecuteOnNilExecutor(t *testing.T) {
 	//nolint:staticcheck // nil receiver is what is under test
 	err := h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		nil,
 	)
 	assert.Equal(
@@ -1256,7 +1338,7 @@ func TestExecuteOnNilExecutor(t *testing.T) {
 
 func TestExecutePhaseRunsOnlyThatPhase(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := NewHookExecutor(HookExecutorDeps{Context: HookContextPaths{}.Context})
 	{
@@ -1265,8 +1347,8 @@ func TestExecutePhaseRunsOnlyThatPhase(t *testing.T) {
 	}
 
 	hooks := domain.ModHooks{
-		PreEnable:  []domain.HookScript{{Type: domain.HookTypeCommand, Content: "pre"}},
-		PostEnable: []domain.HookScript{{Type: domain.HookTypeCommand, Content: "post"}},
+		PreEnable:  []domain.HookScript{{Language: domain.LangLua, Content: "pre"}},
+		PostEnable: []domain.HookScript{{Language: domain.LangLua, Content: "post"}},
 	}
 	{
 		err := h.ExecutePhase(
@@ -1310,7 +1392,7 @@ func TestExecutePhaseCoversEveryPhase(t *testing.T) {
 	// Every phase in the domain must be reachable through ExecutePhase; a phase
 	// added without a hooks test would otherwise be silently unexercised.
 	for _, phase := range domain.HookPhases() {
-		r := &recordingRunner{hookType: domain.HookTypeCommand}
+		r := &recordingRunner{language: domain.LangLua}
 
 		h := newExecutor(t)
 		{
@@ -1319,7 +1401,7 @@ func TestExecutePhaseCoversEveryPhase(t *testing.T) {
 		}
 
 		hooks := domain.ModHooks{}
-		hooks.Set(phase, []domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}})
+		hooks.Set(phase, []domain.HookScript{{Language: domain.LangLua, Content: "x"}})
 
 		{
 			err := h.ExecutePhase(context.Background(), phase, hooks, hookMod(modDir))
@@ -1355,7 +1437,7 @@ func TestPreparePopulatesHookContext(t *testing.T) {
 	})
 
 	p, err := h.Prepare(
-		domain.HookScript{Type: domain.HookTypeCommand, Content: "x"},
+		domain.HookScript{Language: domain.LangLua, Content: "x"},
 		hookMod(modDir),
 		domain.PhasePreEnable,
 		2,
@@ -1400,7 +1482,7 @@ func TestPrepareWithoutContextFuncLeavesEmptyContext(t *testing.T) {
 	h := newExecutor(t)
 
 	p, err := h.Prepare(
-		domain.HookScript{Type: domain.HookTypeCommand, Content: "x"},
+		domain.HookScript{Language: domain.LangLua, Content: "x"},
 		hookMod(modDir),
 		domain.PhasePreInstall,
 		0,
@@ -1417,20 +1499,11 @@ func TestPrepareWithoutContextFuncLeavesEmptyContext(t *testing.T) {
 
 func TestPrepareCarriesResolvedValues(t *testing.T) {
 	game, modDir := newGameDirs(t)
-	{
-		err := os.WriteFile(
-			filepath.Join(modDir, "hook.sh"),
-			[]byte("#!/bin/sh\nexit 0\n"),
-			0o755,
-		)
-		require.NoError(t, err)
-	}
-
 	h := NewHookExecutor(HookExecutorDeps{GamePath: func() string { return game }})
 
 	p, err := h.Prepare(domain.HookScript{
-		Type:       domain.HookTypeFile,
-		Content:    "hook.sh",
+		Language:   domain.LangLua,
+		Content:    "print('hi')",
 		WorkingDir: ".",
 		Env:        []string{"A=1"},
 	}, hookMod(modDir), domain.PhasePostEnable, 1)
@@ -1438,173 +1511,19 @@ func TestPrepareCarriesResolvedValues(t *testing.T) {
 
 	assert.Equal(t, modDir, p.WorkingDir, "working dir = %q, want %q", p.WorkingDir, modDir)
 
-	assert.Equal(
-		t,
-		filepath.Join(modDir, "hook.sh"),
-		p.ScriptPath,
-		"script path = %q",
-		p.ScriptPath,
-	)
+	assert.Equal(t, domain.LangLua, p.Script.Language, "language")
+	assert.Equal(t, "print('hi')", p.Script.Content, "content")
 
 	{
 		v, _ := envValue(p.Env, "A")
 		assert.Equal(t, "1", v, "env A = %q, want 1", v)
 	}
-}
 
-// ------------------------------------------------------------------- file path
-
-func TestScriptPathResolvesRelativeToMod(t *testing.T) {
-	_, modDir := newGameDirs(t)
-
-	target := filepath.Join(modDir, "setup.ps1")
-	{
-		err := os.WriteFile(target, []byte("x"), 0o644)
-		require.NoError(t, err)
-	}
-
-	h := newExecutor(t)
-
-	got, err := h.ScriptPath(
-		domain.HookScript{Type: domain.HookTypeFile, Content: "setup.ps1"},
-		hookMod(modDir),
-	)
-	require.NoError(t, err, "script path")
-
-	assert.Equal(t, target, got, "script path = %q, want %q", got, target)
-}
-
-// A mod manifest must not be able to name a script anywhere else on the disk.
-func TestScriptPathRejectsEscape(t *testing.T) {
-	_, modDir := newGameDirs(t)
-
-	outside := filepath.Join(t.TempDir(), "evil.sh")
-	{
-		err := os.WriteFile(outside, []byte("#!/bin/sh\n"), 0o755)
-		require.NoError(t, err)
-	}
-
-	h := newExecutor(t)
-
-	_, err := h.ScriptPath(
-		domain.HookScript{Type: domain.HookTypeFile, Content: outside},
-		hookMod(modDir),
-	)
 	assert.Equal(
 		t,
-		appErrors.ErrCodeHookInvalid,
-		appErrors.CodeOf(err),
-		"code = %q, want %v",
-		appErrors.CodeOf(err),
-		appErrors.ErrCodeHookInvalid,
-	)
-}
-
-func TestScriptPathRejectsDirectory(t *testing.T) {
-	_, modDir := newGameDirs(t)
-	{
-		err := os.MkdirAll(filepath.Join(modDir, "sub"), 0o755)
-		require.NoError(t, err)
-	}
-
-	h := newExecutor(t)
-
-	_, err := h.ScriptPath(
-		domain.HookScript{Type: domain.HookTypeFile, Content: "sub"},
-		hookMod(modDir),
-	)
-	assert.Equal(
-		t,
-		appErrors.ErrCodeHookInvalid,
-		appErrors.CodeOf(err),
-		"code = %q, want %v",
-		appErrors.CodeOf(err),
-		appErrors.ErrCodeHookInvalid,
-	)
-}
-
-func TestScriptPathRejectsMissingFile(t *testing.T) {
-	_, modDir := newGameDirs(t)
-	h := newExecutor(t)
-
-	_, err := h.ScriptPath(
-		domain.HookScript{Type: domain.HookTypeFile, Content: "gone.sh"},
-		hookMod(modDir),
-	)
-	assert.Equal(
-		t,
-		appErrors.ErrCodeHookInvalid,
-		appErrors.CodeOf(err),
-		"code = %q, want %v",
-		appErrors.CodeOf(err),
-		appErrors.ErrCodeHookInvalid,
-	)
-}
-
-func TestScriptPathRejectsBlankContent(t *testing.T) {
-	_, modDir := newGameDirs(t)
-
-	h := newExecutor(t)
-	{
-		_, err := h.ScriptPath(
-			domain.HookScript{Type: domain.HookTypeFile, Content: "  "},
-			hookMod(modDir),
-		)
-		assert.Equal(t, appErrors.ErrCodeHookInvalid, appErrors.CodeOf(
-			err,
-		), "code = %q, want %v", appErrors.CodeOf(err), appErrors.ErrCodeHookInvalid)
-	}
-}
-
-func TestScriptPathResolvesRelativeToGameWithoutModFolder(t *testing.T) {
-	game, _ := newGameDirs(t)
-
-	target := filepath.Join(game, "game-hook.sh")
-	{
-		err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755)
-		require.NoError(t, err)
-	}
-
-	h := NewHookExecutor(HookExecutorDeps{GamePath: func() string { return game }})
-
-	got, err := h.ScriptPath(
-		domain.HookScript{Type: domain.HookTypeFile, Content: "game-hook.sh"},
-		&domain.Mod{ID: "x"},
-	)
-	require.NoError(t, err, "script path")
-
-	assert.Equal(t, target, got, "script path = %q, want %q", got, target)
-}
-
-func TestScriptPathCannotResolveWithoutAnyRoot(t *testing.T) {
-	h := newExecutor(t)
-
-	_, err := h.ScriptPath(domain.HookScript{Type: domain.HookTypeFile, Content: "x.sh"}, nil)
-	assert.Equal(
-		t,
-		appErrors.ErrCodeHookInvalid,
-		appErrors.CodeOf(err),
-		"code = %q, want %v",
-		appErrors.CodeOf(err),
-		appErrors.ErrCodeHookInvalid,
-	)
-}
-
-func TestValidateChecksFileHooksThroughScriptPath(t *testing.T) {
-	_, modDir := newGameDirs(t)
-	h := newExecutor(t)
-
-	err := h.Validate(
-		domain.HookScript{Type: domain.HookTypeFile, Content: "missing.sh"},
-		hookMod(modDir),
-	)
-	assert.Equal(
-		t,
-		appErrors.ErrCodeHookInvalid,
-		appErrors.CodeOf(err),
-		"code = %q, want %v",
-		appErrors.CodeOf(err),
-		appErrors.ErrCodeHookInvalid,
+		h.Permissions(hookMod(modDir)),
+		p.Permissions,
+		"permissions should be resolved at prepare time",
 	)
 }
 
@@ -1613,7 +1532,7 @@ func TestValidateChecksFileHooksThroughScriptPath(t *testing.T) {
 func TestExecutePublishesStartedAndFinished(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	events := &collectingEvents{}
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := NewHookExecutor(HookExecutorDeps{Events: events})
 	{
@@ -1624,7 +1543,7 @@ func TestExecutePublishesStartedAndFinished(t *testing.T) {
 	{
 		err := h.Execute(
 			context.Background(),
-			[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+			[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 			hookMod(modDir),
 		)
 		require.NoError(t, err, "execute: %v", err)
@@ -1648,7 +1567,7 @@ func TestExecutePublishesStartedAndFinished(t *testing.T) {
 func TestExecutePublishesFailed(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	events := &collectingEvents{}
-	r := &recordingRunner{hookType: domain.HookTypeCommand, err: errors.New("boom")}
+	r := &recordingRunner{language: domain.LangLua, err: errors.New("boom")}
 
 	h := NewHookExecutor(HookExecutorDeps{Events: events})
 	{
@@ -1658,7 +1577,7 @@ func TestExecutePublishesFailed(t *testing.T) {
 
 	_ = h.Execute(
 		context.Background(),
-		[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 		hookMod(modDir),
 	)
 	got := events.types()
@@ -1670,12 +1589,15 @@ func TestExecutePublishesFailed(t *testing.T) {
 func TestExecuteEventsCarryPhaseAndTimeout(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	events := &collectingEvents{}
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := NewHookExecutor(
 		HookExecutorDeps{
 			Events: events,
-			Config: domain.HooksConfig{DefaultTimeout: 9, MaxTimeout: 60},
+			Config: domain.HooksConfig{
+				DefaultTimeout: domain.DurationOf(9 * time.Second),
+				MaxTimeout:     domain.DurationOf(60 * time.Second),
+			},
 		},
 	)
 	{
@@ -1684,7 +1606,7 @@ func TestExecuteEventsCarryPhaseAndTimeout(t *testing.T) {
 	}
 
 	hooks := domain.ModHooks{
-		PostDisable: []domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+		PostDisable: []domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 	}
 	{
 		err := h.ExecutePhase(
@@ -1700,14 +1622,14 @@ func TestExecuteEventsCarryPhaseAndTimeout(t *testing.T) {
 	require.True(t, ok, "payload type = %T, want hookEventData", events.snapshot()[0].Data)
 
 	assert.False(t, data.Phase != string(domain.PhasePostDisable) ||
-		data.Type != string(domain.HookTypeCommand), "payload = %+v", data)
+		data.Type != string(domain.LangLua), "payload = %+v", data)
 
 	assert.Equal(t, 9*time.Second, data.Timeout, "payload timeout = %s, want 9s", data.Timeout)
 }
 
 func TestExecuteWithoutEventSinkDoesNotPanic(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := newExecutor(t)
 	{
@@ -1718,7 +1640,7 @@ func TestExecuteWithoutEventSinkDoesNotPanic(t *testing.T) {
 	{
 		err := h.Execute(
 			context.Background(),
-			[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}},
+			[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
 			hookMod(modDir),
 		)
 		assert.NoError(t, err, "execute: %v", err)
@@ -1732,11 +1654,11 @@ func TestExecuteWithoutEventSinkDoesNotPanic(t *testing.T) {
 // neither.
 func TestRegisterDuringExecuteIsRaceFree(t *testing.T) {
 	game, modDir := newGameDirs(t)
-	first := &recordingRunner{hookType: domain.HookTypeCommand}
+	first := &recordingRunner{language: domain.LangLua}
 
 	h := NewHookExecutor(HookExecutorDeps{GamePath: func() string { return game }})
 	{
-		err := h.RegisterRunner(domain.HookTypeCommand, first)
+		err := h.RegisterRunner(domain.LangLua, first)
 		require.NoError(t, err)
 	}
 
@@ -1748,8 +1670,8 @@ func TestRegisterDuringExecuteIsRaceFree(t *testing.T) {
 
 		for range 50 {
 			_ = h.RegisterRunner(
-				domain.HookTypeCommand,
-				&recordingRunner{hookType: domain.HookTypeCommand},
+				domain.LangLua,
+				&recordingRunner{language: domain.LangLua},
 			)
 		}
 	}()
@@ -1761,7 +1683,7 @@ func TestRegisterDuringExecuteIsRaceFree(t *testing.T) {
 				err := h.Execute(
 					context.Background(),
 					[]domain.HookScript{
-						{Type: domain.HookTypeCommand, Content: "x"},
+						{Language: domain.LangLua, Content: "x"},
 					},
 					hookMod(modDir),
 				)
@@ -1775,7 +1697,7 @@ func TestRegisterDuringExecuteIsRaceFree(t *testing.T) {
 
 func TestRunnerIsInvokedUnderTestWithoutRace(t *testing.T) {
 	_, modDir := newGameDirs(t)
-	r := &recordingRunner{hookType: domain.HookTypeCommand}
+	r := &recordingRunner{language: domain.LangLua}
 
 	h := newExecutor(t)
 	{
@@ -1790,7 +1712,7 @@ func TestRunnerIsInvokedUnderTestWithoutRace(t *testing.T) {
 			defer wg.Done()
 
 			_ = h.Execute(context.Background(),
-				[]domain.HookScript{{Type: domain.HookTypeCommand, Content: "x"}}, hookMod(modDir))
+				[]domain.HookScript{{Language: domain.LangLua, Content: "x"}}, hookMod(modDir))
 		}()
 	}
 

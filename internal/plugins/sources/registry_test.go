@@ -8,9 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/github"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/local"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/nexus"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/gamestest"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/github"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/local"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/nexus"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -84,7 +85,7 @@ func registerFactory(t *testing.T, id string, factory services.SourceFactory) {
 
 // constantFactory always returns the same source, whatever the configuration.
 func constantFactory(source domain.ModSource) services.SourceFactory {
-	return func(domain.SourceConfig) (domain.ModSource, error) { return source, nil }
+	return func(services.SourceBuildContext) (domain.ModSource, error) { return source, nil }
 }
 
 // factoryCounter records how often a factory ran and with what configuration.
@@ -112,9 +113,9 @@ func countingFactory(t *testing.T, id string, source domain.ModSource) *factoryC
 	t.Helper()
 
 	counter := &factoryCounter{}
-	capture := func(cfg domain.SourceConfig) (domain.ModSource, error) {
+	capture := func(ctx services.SourceBuildContext) (domain.ModSource, error) {
 		counter.mu.Lock()
-		counter.calls = append(counter.calls, cfg)
+		counter.calls = append(counter.calls, ctx.Config)
 		counter.mu.Unlock()
 
 		return source, nil
@@ -185,7 +186,7 @@ func TestIDsIsSortedAndStable(t *testing.T) {
 // compile.
 func TestRegisterAllBuildsEveryBundledSource(t *testing.T) {
 	registry := newRegistry(t)
-	err := RegisterAll(registry, nil)
+	err := RegisterAll(registry, nil, nil)
 	require.NoError(t, err, "RegisterAll over the bundled sources: %v", err)
 
 	for _, want := range []string{github.SourceID, local.SourceID, nexus.SourceID} {
@@ -215,7 +216,7 @@ func TestRegisterAllIgnoresUnknownConfigurationBlocks(t *testing.T) {
 	cfg := map[string]domain.SourceConfig{
 		"not-a-real-source": {Enabled: true, APIKey: "k"},
 	}
-	err := RegisterAll(registry, cfg)
+	err := RegisterAll(registry, cfg, nil)
 	require.NoError(t, err, "RegisterAll with an unknown source block: %v", err)
 
 	ids := liveIDs(t, registry)
@@ -226,7 +227,7 @@ func TestRegisterAllRejectsANilRegistry(t *testing.T) {
 	// A nil registry is a wiring bug in the caller, not a user error. Failing
 	// here means the container reports it at start-up rather than a later call
 	// dereferencing nil.
-	err := RegisterAll(nil, nil)
+	err := RegisterAll(nil, nil, nil)
 	require.True(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
@@ -244,7 +245,7 @@ func TestRegisterAllSkipsAnExplicitlyDisabledSource(t *testing.T) {
 	registry := newRegistry(t)
 
 	cfg := map[string]domain.SourceConfig{disabled: {Enabled: false}}
-	err := RegisterAll(registry, cfg)
+	err := RegisterAll(registry, cfg, nil)
 	require.NoError(t, err, "RegisterAll with one disabled source: %v", err)
 
 	assert.Equal(
@@ -280,7 +281,7 @@ func TestRegisterAllTreatsAMissingBlockAsEnabled(t *testing.T) {
 		counter := countingFactory(t, id, &stubSource{id: id})
 
 		registry := newRegistry(t)
-		err := RegisterAll(registry, cfg)
+		err := RegisterAll(registry, cfg, nil)
 		require.NoError(t, err, "RegisterAll with a partial config: %v", err)
 
 		assert.Equal(
@@ -300,12 +301,12 @@ func TestRegisterAllTreatsAMissingBlockAsEnabled(t *testing.T) {
 // silently drops.
 func TestRegisterAllAcceptsAMixedCaseConfigurationKey(t *testing.T) {
 	const id = "registry-test-mixed-case"
-	registerFactory(t, id, func(cfg domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, id, func(ctx services.SourceBuildContext) (domain.ModSource, error) {
 		// The block reaching the factory is the assertion: the token has to be
 		// there, not merely the source.
-		if cfg.APIKey != "tok-1" {
+		if ctx.Config.APIKey != "tok-1" {
 			return nil, appErrors.New(appErrors.ErrCodeSourceUnavailable,
-				"factory for %q got APIKey %q, want %q", id, cfg.APIKey, "tok-1")
+				"factory for %q got APIKey %q, want %q", id, ctx.Config.APIKey, "tok-1")
 		}
 
 		return &stubSource{id: id}, nil
@@ -316,7 +317,7 @@ func TestRegisterAllAcceptsAMixedCaseConfigurationKey(t *testing.T) {
 	cfg := map[string]domain.SourceConfig{
 		"  Registry-Test-Mixed-Case  ": {Enabled: true, APIKey: "tok-1"},
 	}
-	err := RegisterAll(registry, cfg)
+	err := RegisterAll(registry, cfg, nil)
 	require.NoError(t, err, "RegisterAll with a mixed-case key: %v", err)
 
 	assert.Contains(t, liveIDs(t, registry), id, "registered %v, want %q", liveIDs(t, registry), id)
@@ -327,13 +328,13 @@ func TestRegisterAllAcceptsAMixedCaseConfigurationKey(t *testing.T) {
 // the manager from managing the mods it already has.
 func TestRegisterAllReportsAFailingSourceAndKeepsTheRest(t *testing.T) {
 	const broken = "registry-test-broken"
-	registerFactory(t, broken, func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, broken, func(services.SourceBuildContext) (domain.ModSource, error) {
 		return nil, appErrors.New(appErrors.ErrCodeAuthFailed, "the api key is wrong")
 	})
 
 	registry := newRegistry(t)
 
-	err := RegisterAll(registry, nil)
+	err := RegisterAll(registry, nil, nil)
 	require.True(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeSourceUnavailable),
@@ -374,12 +375,12 @@ func TestRegisterAllNamesEveryBrokenSource(t *testing.T) {
 	)
 	for _, id := range []string{first, second} {
 		id := id
-		registerFactory(t, id, func(domain.SourceConfig) (domain.ModSource, error) {
+		registerFactory(t, id, func(services.SourceBuildContext) (domain.ModSource, error) {
 			return nil, appErrors.New(appErrors.ErrCodeSourceUnavailable, "%s is unusable", id)
 		})
 	}
 
-	err := RegisterAll(newRegistry(t), nil)
+	err := RegisterAll(newRegistry(t), nil, nil)
 	if err == nil {
 		require.FailNow(t, "RegisterAll with two broken sources returned no error")
 	}
@@ -394,11 +395,11 @@ func TestRegisterAllNamesEveryBrokenSource(t *testing.T) {
 // lookup panic.
 func TestRegisterAllReportsAFactoryThatReturnsNothing(t *testing.T) {
 	const empty = "registry-test-nil-source"
-	registerFactory(t, empty, func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, empty, func(services.SourceBuildContext) (domain.ModSource, error) {
 		return nil, nil
 	})
 
-	err := RegisterAll(newRegistry(t), nil)
+	err := RegisterAll(newRegistry(t), nil, nil)
 	require.True(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeSourceUnavailable),
@@ -416,11 +417,11 @@ func TestRegisterAllReportsAFactoryThatReturnsNothing(t *testing.T) {
 // this function exists to prevent.
 func TestRegisterAllReportsASourceItCannotRegister(t *testing.T) {
 	const bad = "registry-test-blank-id"
-	registerFactory(t, bad, func(domain.SourceConfig) (domain.ModSource, error) {
+	registerFactory(t, bad, func(services.SourceBuildContext) (domain.ModSource, error) {
 		return &stubSource{id: "   "}, nil
 	})
 
-	err := RegisterAll(newRegistry(t), nil)
+	err := RegisterAll(newRegistry(t), nil, nil)
 	require.True(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeSourceUnavailable),
@@ -444,7 +445,7 @@ func TestRegisterAllIsQuietWhenASourceIsAlreadyRegistered(t *testing.T) {
 		require.FailNow(t, "pre-register %q: %v", id, err)
 	}
 
-	err := RegisterAll(registry, nil)
+	err := RegisterAll(registry, nil, nil)
 	require.NoError(t, err, "RegisterAll over an already-registered source: %v", err)
 
 	if ids := liveIDs(t, registry); !contains(ids, id) || !contains(ids, github.SourceID) {
@@ -454,7 +455,7 @@ func TestRegisterAllIsQuietWhenASourceIsAlreadyRegistered(t *testing.T) {
 
 func TestRegisterEnabledIsRegisterAllWithoutBlocks(t *testing.T) {
 	registry := newRegistry(t)
-	err := RegisterEnabled(registry)
+	err := RegisterEnabled(registry, nil)
 	require.NoError(t, err, "RegisterEnabled: %v", err)
 
 	want := IDs()
@@ -597,7 +598,7 @@ func TestRegisterAllIsSafeUnderConcurrentUse(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			errs[i] = RegisterAll(newRegistry(t), nil)
+			errs[i] = RegisterAll(newRegistry(t), nil, nil)
 		}(i)
 	}
 
@@ -628,3 +629,138 @@ func sortedKeys(blocks map[string]domain.SourceConfig) []string {
 
 	return out
 }
+
+// ----------------------------------------------------- game-aware RegisterAll
+
+func TestRegisterAllHandsTheActiveGameToEveryFactory(t *testing.T) {
+	const id = "game-context-probe"
+
+	var gotGameID string
+
+	registerFactory(t, id, func(ctx services.SourceBuildContext) (domain.ModSource, error) {
+		if ctx.Game != nil {
+			gotGameID = ctx.Game.ID()
+		}
+
+		return &stubSource{id: id}, nil
+	})
+
+	registry := newRegistry(t)
+	require.NoError(t, RegisterAll(registry, nil, gamestest.Def{IDValue: "test-game"}),
+		"RegisterAll with a game")
+
+	{
+		_, err := registry.Get(id)
+		require.NoError(t, err, "Get(%q)", id)
+	}
+
+	assert.Equal(t, "test-game", gotGameID,
+		"RegisterAll must hand the active game to each factory")
+}
+
+// registerGameFactory installs a game-scoped factory for the duration of one
+// test. The factory registry is process-wide, so without the cleanup a later
+// RegisterAll would build a source this test invented.
+func registerGameFactory(t *testing.T, gameID, id string, factory services.SourceFactory) {
+	t.Helper()
+
+	err := services.RegisterGameSourceFactory(gameID, id, factory)
+	require.NoError(t, err, "register game factory %q/%q: %v", gameID, id, err)
+
+	t.Cleanup(func() {
+		assert.True(t, services.UnregisterGameSourceFactory(gameID, id),
+			"cleanup: game factory %q/%q was not registered, so it was not removed",
+			gameID, id)
+	})
+}
+
+func TestRegisterAllBuildsGameScopedFactories(t *testing.T) {
+	const id = "only-for-test-game"
+
+	registerGameFactory(
+		t,
+		"test-game",
+		id,
+		func(services.SourceBuildContext) (domain.ModSource, error) {
+			return &stubSource{id: id}, nil
+		},
+	)
+
+	{
+		registry := newRegistry(t)
+		require.NoError(t, RegisterAll(registry, nil, gamestest.Def{IDValue: "test-game"}),
+			"RegisterAll for the owning game")
+
+		source, err := registry.Get(id)
+		require.NoError(t, err, "the owning game must get its own source: %v", err)
+		assert.Equal(t, id, source.ID())
+	}
+
+	{
+		registry := newRegistry(t)
+		require.NoError(t, RegisterAll(registry, nil, gamestest.Def{IDValue: "other-game"}),
+			"RegisterAll for another game")
+
+		_, err := registry.Get(id)
+		assert.Equal(t, appErrors.ErrCodeSourceNotFound, appErrors.CodeOf(err),
+			"a game that does not own the source must not see it (err %v)", err)
+	}
+}
+
+func TestRegisterAllPrefersTheGamesFactoryOverTheGenericOne(t *testing.T) {
+	const id = "overridden-source"
+
+	registerFactory(t, id, func(services.SourceBuildContext) (domain.ModSource, error) {
+		return &stubSource{id: id}, nil
+	})
+	registerGameFactory(
+		t,
+		"test-game",
+		id,
+		func(services.SourceBuildContext) (domain.ModSource, error) {
+			return &overriddenSource{id: id}, nil
+		},
+	)
+
+	registry := newRegistry(t)
+	require.NoError(t, RegisterAll(registry, nil, gamestest.Def{IDValue: "test-game"}),
+		"RegisterAll with both factories registered")
+
+	source, err := registry.Get(id)
+	require.NoError(t, err, "Get(%q)", id)
+	assert.Equal(t, "game", source.Version(),
+		"the game-scoped factory must win over the generic one")
+}
+
+// overriddenSource reports a different Version from stubSource so a test can
+// tell which of two factories built a source with the same id.
+type overriddenSource struct{ id string }
+
+func (s *overriddenSource) ID() string          { return s.id }
+func (s *overriddenSource) Name() string        { return s.id }
+func (s *overriddenSource) Description() string { return "" }
+func (s *overriddenSource) Version() string     { return "game" }
+
+func (s *overriddenSource) SupportsSearch() bool { return false }
+func (s *overriddenSource) SupportsAuth() bool   { return false }
+func (s *overriddenSource) RequiresAPIKey() bool { return false }
+
+func (s *overriddenSource) Search(
+	context.Context, domain.SearchQuery,
+) ([]domain.Mod, error) {
+	return nil, nil
+}
+
+func (s *overriddenSource) GetMod(context.Context, string) (*domain.Mod, error) {
+	return nil, nil
+}
+
+func (s *overriddenSource) Download(context.Context, *domain.Mod, string) (string, error) {
+	return "", nil
+}
+
+func (s *overriddenSource) Authenticate(context.Context, domain.AuthCredentials) error {
+	return nil
+}
+
+func (s *overriddenSource) ValidateCredentials(context.Context) error { return nil }

@@ -19,5 +19,5 @@ o load order set to 1 mod
 o 2 installed mods are not in the order, falling back to their priority
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod reorder nothing-here
-e error: MOD_NOT_FOUND: load order names mod "nothing-here", which is not installed
+e error: MOD_NOT_FOUND: load order names mod "nothing-here", which is not installed for game "darktide"
 ! exit 1

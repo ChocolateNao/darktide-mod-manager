@@ -13,7 +13,9 @@ import (
 func TestDetectGameFindsTheConfiguredInstallation(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	app := w.mustApp(t)
 
 	found, err := app.Game.DetectGame()
@@ -61,7 +63,9 @@ func TestDetectGameWithNothingToFind(t *testing.T) {
 func TestCurrentGamePrefersTheConfiguredPath(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	app := w.mustApp(t)
 
 	current, err := app.Game.CurrentGame()
@@ -161,9 +165,9 @@ func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 	assert.Equal(
 		t,
 		w.gameDir,
-		stored.Game.Path,
+		stored.ActiveSettings().Path,
 		"the game path on disk is %q, want %q",
-		stored.Game.Path,
+		stored.ActiveSettings().Path,
 		w.gameDir,
 	)
 
@@ -183,9 +187,9 @@ func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 	assert.Equal(
 		t,
 		w.gameDir,
-		stored.Game.Path,
+		stored.ActiveSettings().Path,
 		"a refused path overwrote the stored one: %q",
-		stored.Game.Path,
+		stored.ActiveSettings().Path,
 	)
 }
 
@@ -193,7 +197,9 @@ func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	app := w.mustApp(t)
 
 	path, err := app.Game.GetModsPath(nil)
@@ -217,6 +223,98 @@ func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 		"GetModsPath(install) = %q, want %q",
 		path,
 		other.ModsPath,
+	)
+}
+
+// TestSupportedGamesAnswersWithoutAnInstallation.
+//
+// The registry is a separate question from the filesystem: a settings screen
+// offers the games it can manage whether or not any of them are installed, so
+// listing must not fail just because nothing is installed yet.
+func TestSupportedGamesAnswersWithoutAnInstallation(t *testing.T) {
+	app := newWorkspace(t).mustApp(t)
+
+	games, err := app.Game.SupportedGames()
+	require.NoError(t, err, "SupportedGames: %v", err)
+	require.NotEmpty(t, games, "SupportedGames returned nothing at all")
+
+	var (
+		active        int
+		defaultMarked bool
+	)
+
+	for _, game := range games {
+		assert.NotEmpty(t, game.ID, "a game was listed without an id")
+		assert.NotEmpty(t, game.DisplayName, "game %q has no display name", game.ID)
+
+		if game.IsActive {
+			active++
+		}
+
+		if game.IsDefault {
+			defaultMarked = true
+		}
+	}
+
+	assert.Equal(t, 1, active, "SupportedGames marked %d games active, want 1", active)
+	assert.True(t, defaultMarked, "SupportedGames marked no game as the default")
+}
+
+// TestUseGameSwitchesAndRefusesUnknownIDs.
+func TestUseGameSwitchesAndRefusesUnknownIDs(t *testing.T) {
+	w := newWorkspace(t)
+	app := w.mustApp(t)
+	store := newConfigStore(t, w.configPath)
+
+	{
+		err := app.Game.UseGame(" Darktide ")
+		require.NoError(t, err, "UseGame: %v", err)
+	}
+
+	// The switch reached the file: a restart must come up on the same game,
+	// not on whatever the configuration happened to say before.
+	stored, err := store.Load()
+	require.NoError(t, err, "reload the configuration")
+
+	assert.Equal(
+		t,
+		"darktide",
+		stored.ActiveGame,
+		"the active game on disk is %q, want %q",
+		stored.ActiveGame,
+		"darktide",
+	)
+
+	games, err := app.Game.SupportedGames()
+	require.NoError(t, err, "SupportedGames after UseGame")
+
+	var active string
+
+	for _, game := range games {
+		if game.IsActive {
+			active = game.ID
+		}
+	}
+
+	assert.Equal(t, "darktide", active, "SupportedGames active = %q, want darktide", active)
+
+	{
+		err := app.Game.UseGame("nope")
+		require.True(t, appErrors.IsAppError(
+			err,
+			appErrors.ErrCodeGameNotFound,
+		), "UseGame with an unknown id error = %v, want GAME_NOT_FOUND", err)
+	}
+
+	stored, err = store.Load()
+	require.NoError(t, err, "reload after the refusal")
+
+	assert.Equal(
+		t,
+		"darktide",
+		stored.ActiveGame,
+		"a refused switch changed the stored game: %q",
+		stored.ActiveGame,
 	)
 }
 

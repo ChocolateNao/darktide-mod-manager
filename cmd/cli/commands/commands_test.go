@@ -377,8 +377,8 @@ func TestGlobalFlagsReachTheContainer(t *testing.T) {
 	// A flag that is parsed but not forwarded is a flag that silently does
 	// nothing, which is worse than one that does not exist.
 	w := newWorkspace(t)
-	// --game validates before it persists, so the directory has to be a real
-	// installation. A workspace alone is not one.
+	// --game takes a registry id, which must resolve at start-up; the
+	// container build below is where that resolution happens.
 	w.makeGame(t)
 	other := t.TempDir()
 
@@ -399,7 +399,7 @@ func TestGlobalFlagsReachTheContainer(t *testing.T) {
 		"--config", w.configPath,
 		"--cache", w.cacheRoot,
 		"--storage", w.storageRoot,
-		"--game", w.gameDir,
+		"--game", "darktide",
 		"cache", "info",
 	}
 	code := RunContext(context.Background(), env, args)
@@ -434,11 +434,11 @@ func TestGlobalFlagsReachTheContainer(t *testing.T) {
 
 	assert.Equal(
 		t,
-		w.gameDir,
-		seen.GamePath,
+		"darktide",
+		seen.GameID,
 		"--game reached the container as %q, want %q",
-		seen.GamePath,
-		w.gameDir,
+		seen.GameID,
+		"darktide",
 	)
 
 	assert.NotNil(
@@ -475,6 +475,7 @@ func TestAnUnsetPathIsPassedThroughBlank(t *testing.T) {
 		"CachePath":   seen.CachePath,
 		"StoragePath": seen.StoragePath,
 		"GamePath":    seen.GamePath,
+		"GameID":      seen.GameID,
 	} {
 		assert.Equal(t, "", got, "%s was invented as %q with no flag given", name, got)
 	}
@@ -555,6 +556,56 @@ func TestQuietSilencesStartUpDiagnosticsButNotErrors(t *testing.T) {
 	)
 }
 
+func TestTheGameFlagNamesAGameAndRefusesUnknownOnes(t *testing.T) {
+	// --game selects a game by registry id for this run. An unknown id has to
+	// fail start-up rather than quietly falling back to the configured game,
+	// because a typo that runs the wrong game is worse than one that stops.
+	w := newWorkspace(t)
+	w.makeGame(t)
+
+	run := func(extra ...string) (int, string, string) {
+		var out, errOut strings.Builder
+
+		env := Env{
+			Out: &out, Err: &errOut,
+			NewContainer: func(ctx context.Context, opts di.Options) (*di.Container, error) {
+				return di.NewContainer(ctx, opts)
+			},
+		}
+
+		args := append(
+			[]string{
+				"--config", w.configPath,
+				"--cache", w.cacheRoot,
+				"--storage", w.storageRoot,
+			},
+			extra...,
+		)
+		code := RunContext(context.Background(), env, append(args, "game", "current"))
+
+		return code, out.String(), errOut.String()
+	}
+
+	{
+		code, out, errOut := run("--game", "darktide")
+		require.Equal(
+			t,
+			ExitOK,
+			code,
+			"--game darktide exited %d, want 0 (stderr: %s)",
+			code,
+			errOut,
+		)
+		assert.Contains(t, out, "darktide", "`game current` did not report the named game: %q", out)
+	}
+
+	{
+		code, _, errOut := run("--game", "not-a-game")
+		assert.Equal(t, ExitError, code, "--game not-a-game exited %d, want %d", code, ExitError)
+		assert.Contains(t, errOut, "not registered", "nothing explained the refusal: %q", errOut)
+	}
+}
+
 func TestAnUnknownCommandIsRefusedWithASuggestion(t *testing.T) {
 	// cobra prints its own message here, and the exit code is what a script
 	// reads. SilenceErrors means this program prints the one line, so the
@@ -588,7 +639,7 @@ func TestNewRootCommandHasTheWholeTree(t *testing.T) {
 
 	want := []string{
 		// groups
-		"mod", "source", "game", "cache", "config", "version",
+		"mod", "source", "game", "cache", "config", "manifest", "version",
 		// mod
 		"list", "show", "install", "uninstall", "enable", "disable", "update",
 		"reorder", "path", "relink", "symlink-status", "conflicts", "share", "import-link",
@@ -596,11 +647,13 @@ func TestNewRootCommandHasTheWholeTree(t *testing.T) {
 		// source
 		"search", "auth", "test",
 		// game
-		"detect", "validate", "info",
+		"detect", "validate", "info", "use", "current",
 		// cache
 		"clear", "prune",
 		// config
 		"show", "get", "set", "edit",
+		// manifest
+		"init",
 	}
 	for _, name := range want {
 		assert.True(t, found[name], "the tree has no %q command", name)
@@ -633,7 +686,7 @@ func TestNewRootCommandHasTheWholeTree(t *testing.T) {
 func TestEveryGroupHasHelp(t *testing.T) {
 	// A group reached by name prints its own help rather than the root's, so a
 	// person who has forgotten `mod install`'s flags can find them.
-	for _, name := range []string{"mod", "source", "game", "cache", "config"} {
+	for _, name := range []string{"mod", "source", "game", "cache", "config", "manifest"} {
 		var out, errOut strings.Builder
 
 		env := Env{Out: &out, Err: &errOut}

@@ -63,7 +63,7 @@ func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 		assert.True(t, equalStrings(got, want), "HookPhases = %v, want %v", got, want)
 	}
 
-	for _, hookType := range domain.HookTypes() {
+	for _, hookType := range domain.ScriptLanguages() {
 		assert.True(
 			t,
 			contains(app.HookTypes(), string(hookType)),
@@ -87,7 +87,7 @@ func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 // every time it is enabled.
 func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
-	for _, hookType := range domain.HookTypes() {
+	for _, hookType := range domain.ScriptLanguages() {
 		assert.True(
 			t,
 			app.SupportsHookType(string(hookType)),
@@ -109,31 +109,37 @@ func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 func TestHookTimeoutIsReportedInMilliseconds(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
-	ms, err := app.HookTimeout(api.HookScript{Type: api.HookTypeInline}, nil)
+	ms, err := app.HookTimeout(api.HookScript{Language: api.LangJS}, nil)
 	require.NoError(t, err, "HookTimeout")
 
 	{
-		want := float64((30 * time.Second).Milliseconds())
+		want := float64((10 * time.Second).Milliseconds())
 		assert.Equal(t, want, ms, "default timeout = %v ms, want %v", ms, want)
 	}
 
-	ms, err = app.HookTimeout(api.HookScript{Type: api.HookTypeInline, Timeout: 5}, nil)
-	require.NoError(t, err, "HookTimeout with an override")
+	// The default is a floor, so a smaller declared value is raised to it.
+	ms, err = app.HookTimeout(api.HookScript{Language: api.LangJS, Timeout: 5}, nil)
+	require.NoError(t, err, "HookTimeout with an override below the floor")
 
-	assert.EqualValues(t, 5_000, ms, "overridden timeout = %v ms, want 5000", ms)
+	assert.EqualValues(t, 10_000, ms, "timeout below the floor = %v ms, want 10000", ms)
+
+	ms, err = app.HookTimeout(api.HookScript{Language: api.LangJS, Timeout: 15}, nil)
+	require.NoError(t, err, "HookTimeout with an override above the floor")
+
+	assert.EqualValues(t, 15_000, ms, "overridden timeout = %v ms, want 15000", ms)
 }
 
 // TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen.
 func TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
-	good := api.HookScript{Type: api.HookTypeInline, Content: "console.log('hi')"}
+	good := api.HookScript{Language: api.LangJS, Content: "console.log('hi')"}
 	{
 		err := app.ValidateHookScript(good, nil)
-		assert.NoError(t, err, "a valid inline script was refused: %v", err)
+		assert.NoError(t, err, "a valid javascript script was refused: %v", err)
 	}
 
-	bad := api.HookScript{Type: "powershell", Content: "Get-ChildItem"}
+	bad := api.HookScript{Language: "powershell", Content: "Get-ChildItem"}
 	{
 		err := app.ValidateHookScript(
 			bad,
@@ -153,7 +159,9 @@ func TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen(t *testing.T) {
 func TestEventsReachAHandlerSuppliedThroughTheContainer(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	w.writeModArchive(t, "better_ui", "1.2.0")
 
 	handler := &recordingHandler{}

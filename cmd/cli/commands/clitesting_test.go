@@ -169,7 +169,8 @@ func (w *workspace) writeConfig(t *testing.T) {
 	t.Helper()
 
 	cfg := domain.DefaultConfig()
-	cfg.Game.Path = w.gameDir
+	cfg.ActiveGame = "darktide"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
 	cfg.Cache.Path = w.cacheRoot
 	cfg.Storage.Path = w.storageRoot
 	cfg.Sources = map[string]domain.SourceConfig{
@@ -293,7 +294,8 @@ func (w *workspace) newCredentialProbe(t *testing.T, status int, body string) *c
 	w.stubBases = append(w.stubBases, server.URL)
 
 	cfg := domain.DefaultConfig()
-	cfg.Game.Path = w.gameDir
+	cfg.ActiveGame = "darktide"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
 	cfg.Cache.Path = w.cacheRoot
 	cfg.Storage.Path = w.storageRoot
 	cfg.Sources = map[string]domain.SourceConfig{
@@ -544,5 +546,9 @@ func (g *golden) want() {
 // test that needs a settings file without a game or a cache in it.
 func defaultConfigFor(t *testing.T) domain.Config {
 	t.Helper()
-	return domain.DefaultConfig()
+
+	cfg := domain.DefaultConfig()
+	cfg.ActiveGame = "darktide"
+
+	return cfg
 }

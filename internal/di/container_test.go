@@ -505,9 +505,9 @@ func TestNewContainerPersistsAValidGamePath(t *testing.T) {
 	assert.Equal(
 		t,
 		w.gameDir,
-		container.Config.Game.Path,
+		container.Config.ActiveSettings().Path,
 		"in-memory game path = %q, want %q",
-		container.Config.Game.Path,
+		container.Config.ActiveSettings().Path,
 		w.gameDir,
 	)
 	// And on disk, so the next launch — the CLI's, say — starts from the same
@@ -520,9 +520,9 @@ func TestNewContainerPersistsAValidGamePath(t *testing.T) {
 	assert.Equal(
 		t,
 		w.gameDir,
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 		"stored game path = %q, want %q",
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 		w.gameDir,
 	)
 }
@@ -630,7 +630,7 @@ func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 	const brokenID = "di-test-broken"
 	if err := services.RegisterSourceFactory(
 		brokenID,
-		func(domain.SourceConfig) (domain.ModSource, error) {
+		func(services.SourceBuildContext) (domain.ModSource, error) {
 			return nil, appErrors.New(appErrors.ErrCodeAuthFailed, "credentials are half-filled")
 		},
 	); err != nil {
@@ -712,7 +712,9 @@ func TestContainerInstallsThroughItsOwnPaths(t *testing.T) {
 	// the id instead, which is why the fixture uses a space.
 	w.writeModArchive(t, "better_ui", "1.2.0")
 
-	w.saveConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.saveConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 
 	opts := w.options()
 	opts.SourceConfigs = map[string]map[string]any{"local": {"paths": []any{w.localDir}}}
@@ -730,7 +732,7 @@ func TestContainerInstallsThroughItsOwnPaths(t *testing.T) {
 	)
 	// The payload must land under the container's storage root, which is the one
 	// thing that proves the option reached the mod service rather than the cache.
-	want := domain.ModVersionPath(container.StorageRoot, mod.ID, mod.Version)
+	want := domain.ModStoragePath(container.StorageRoot, mod.GameID, mod.ID, mod.Version)
 	assert.Equal(t, want, mod.LocalPath, "LocalPath = %q, want %q", mod.LocalPath, want)
 
 	_, err = os.Stat(filepath.Join(mod.LocalPath, "textures", "hud.dds"))

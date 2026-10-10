@@ -12,12 +12,12 @@ import (
 
 // stringConfigFields are the settings a caller sets by typing text.
 var stringConfigFields = map[string]string{
+	"active_game":                        "darktide",
 	"game.path":                          "/games/darktide",
 	"game.source":                        "steam",
 	"game.mods_folder_override":          "/games/darktide/mods",
 	"storage.path":                       "/var/lib/dmm",
 	"cache.path":                         "/var/cache/dmm",
-	"hooks.allow_network":                "",
 	"auto_update.last_check":             "2026-03-01T12:00:00Z",
 	"ui.theme":                           "dark",
 	"ui.language":                        "en",
@@ -31,7 +31,6 @@ var stringConfigFields = map[string]string{
 	"game.auto_detect":                   "",
 	"hooks.default_timeout":              "",
 	"hooks.max_timeout":                  "",
-	"hooks.allow_file_write":             "",
 	"auto_update.enabled":                "",
 	"auto_update.check_interval_hours":   "",
 	"auto_update.download_automatically": "",
@@ -44,8 +43,6 @@ var stringConfigFields = map[string]string{
 var boolConfigFields = map[string]bool{
 	"game.auto_detect":                   true,
 	"cache.verify_hashes":                false,
-	"hooks.allow_network":                true,
-	"hooks.allow_file_write":             false,
 	"auto_update.enabled":                false,
 	"auto_update.download_automatically": true,
 	"auto_update.notify_on_update":       true,
@@ -59,8 +56,8 @@ var intConfigFields = map[string]string{
 	"storage.backup_retention_days":    "7",
 	"cache.max_size_gb":                "25",
 	"cache.max_age_days":               "90",
-	"hooks.default_timeout":            "45",
-	"hooks.max_timeout":                "300",
+	"hooks.default_timeout":            "45s",
+	"hooks.max_timeout":                "5m0s",
 	"auto_update.check_interval_hours": "12",
 	"logging.max_size_mb":              "25",
 	"logging.max_backups":              "3",
@@ -718,4 +715,170 @@ func TestMergeSourceBlockLeavesTheFileAlone(t *testing.T) {
 	)
 
 	assert.Len(t, existing.Options, 2, "a merge gained a key in the file's own options")
+}
+
+func TestGameKeysReadAndWritePerGameSettings(t *testing.T) {
+	cfg := configPtr(domain.DefaultConfig())
+
+	// A game with no entry answers with the defaults rather than a failure:
+	// auto_detect is what a fresh installation would do.
+	got, err := ConfigValue(cfg, "games.sietch.auto_detect")
+	require.NoError(t, err, "ConfigValue for an unconfigured game")
+	assert.Equal(t, "true", got, "the default answer for a game with no entry")
+
+	require.NoError(t, SetConfigValue(cfg, "games.sietch.path", "/games/sietch"),
+		"SetConfigValue games.sietch.path")
+	require.NoError(t, SetConfigValue(cfg, "games.sietch.auto_detect", "no"),
+		"SetConfigValue games.sietch.auto_detect")
+	require.NoError(t, SetConfigValue(cfg, "games.darktide.path", "/games/darktide"),
+		"SetConfigValue for a second game")
+
+	got, err = ConfigValue(cfg, "games.sietch.path")
+	require.NoError(t, err, "read back sietch path")
+	assert.Equal(t, "/games/sietch", got, "sietch's own path")
+
+	got, err = ConfigValue(cfg, "games.sietch.auto_detect")
+	require.NoError(t, err, "read back sietch auto_detect")
+	assert.Equal(t, "false", got, "sietch's own auto_detect")
+
+	got, err = ConfigValue(cfg, "games.darktide.path")
+	require.NoError(t, err, "read back darktide path")
+	assert.Equal(t, "/games/darktide", got, "the games do not share a block")
+
+	// One game's switch must not move another's.
+	got, err = ConfigValue(cfg, "games.darktide.auto_detect")
+	require.NoError(t, err, "read back darktide auto_detect")
+	assert.Equal(t, "true", got, "darktide kept the default")
+
+	err = SetConfigValue(cfg, "games.sietch.nope", "x")
+	assert.True(t, IsAppError(err, ErrCodeNotFound),
+		"an unknown game setting returned %v, want not-found", err)
+}
+
+func TestInstallMethodKeyReadsTheGameDefaultUntilOverridden(t *testing.T) {
+	builtinsRegistered(t)
+
+	cfg := configPtr(domain.DefaultConfig())
+
+	// Darktide's own definition prefers symlinks, so an untouched setting reads
+	// back as the behaviour a user will actually get.
+	got, err := ConfigValue(cfg, "games.darktide.install_method")
+	require.NoError(t, err, "read the default answer")
+	assert.Equal(t, domain.InstallMethodSymlink, got, "the game's own preference")
+
+	// A game this build has no definition for has nothing to fall back to.
+	got, err = ConfigValue(cfg, "games.sietch.install_method")
+	require.NoError(t, err, "read a game with no definition")
+	assert.Empty(t, got, "no definition, no preference")
+
+	require.NoError(t, SetConfigValue(cfg, "games.darktide.install_method", "direct"),
+		"override the method")
+
+	got, err = ConfigValue(cfg, "games.darktide.install_method")
+	require.NoError(t, err, "read the override back")
+	assert.Equal(t, domain.InstallMethodDirect, got, "the override wins")
+
+	settings, ok := cfg.GameSettingsFor("darktide")
+	require.True(t, ok, "the game's block exists")
+	assert.Equal(t, domain.InstallMethodDirect, settings.InstallMethod,
+		"the override is stored on the game's block")
+
+	got, err = ConfigValue(cfg, "games.sietch.install_method")
+	require.NoError(t, err, "the other game is untouched")
+	assert.Empty(t, got, "one game's override must not leak into another's")
+
+	err = SetConfigValue(cfg, "games.darktide.install_method", "hardlink")
+	assert.True(t, IsAppError(err, ErrCodeInvalidArgument),
+		"an unknown method returned %v, want invalid-argument", err)
+
+	// Blank is how a user takes the override back.
+	require.NoError(t, SetConfigValue(cfg, "games.darktide.install_method", ""),
+		"clear the override")
+
+	got, err = ConfigValue(cfg, "games.darktide.install_method")
+	require.NoError(t, err, "read after clearing")
+	assert.Equal(t, domain.InstallMethodSymlink, got, "clearing hands the decision back")
+}
+
+func TestPermissionKeysReadAndWriteEveryScope(t *testing.T) {
+	cfg := configPtr(domain.DefaultConfig())
+
+	require.NoError(t, SetConfigValue(cfg, "hooks.permissions.default.timeout_seconds", "7"),
+		"set the default timeout cap")
+	require.NoError(t, SetConfigValue(cfg, "hooks.permissions.games.darktide.fs_write", "yes"),
+		"grant the game fs_write")
+	require.NoError(t, SetConfigValue(cfg, "hooks.permissions.mods.betterui.env_read", "true"),
+		"grant one mod env_read")
+
+	got, err := ConfigValue(cfg, "hooks.permissions.default.timeout_seconds")
+	require.NoError(t, err, "read the default timeout cap")
+	assert.Equal(t, "7", got, "timeout_seconds round-trip")
+
+	got, err = ConfigValue(cfg, "hooks.permissions.games.darktide.fs_write")
+	require.NoError(t, err, "read the game scope")
+	assert.Equal(t, "true", got, "fs_write round-trip")
+
+	got, err = ConfigValue(cfg, "hooks.permissions.mods.betterui.env_read")
+	require.NoError(t, err, "read the mod scope")
+	assert.Equal(t, "true", got, "env_read round-trip")
+
+	// A capability nobody granted reads false — the zero is the truthful
+	// answer, not a missing setting.
+	got, err = ConfigValue(cfg, "hooks.permissions.games.darktide.fs_read")
+	require.NoError(t, err, "read an ungranted capability")
+	assert.Equal(t, "false", got, "an ungranted capability is off")
+
+	// The merge the executor performs is keyed by these very blocks.
+	perms := cfg.Hooks.Permissions.For("darktide", "betterui")
+	assert.True(t, perms.FSWrite, "the game scope reaches the merge")
+	assert.True(t, perms.EnvRead, "the mod scope reaches the merge")
+	assert.Equal(t, 7, perms.TimeoutSeconds, "the default cap reaches the merge")
+
+	err = SetConfigValue(cfg, "hooks.permissions.default.nope", "true")
+	assert.True(t, IsAppError(err, ErrCodeNotFound),
+		"an unknown capability returned %v, want not-found", err)
+
+	err = SetConfigValue(cfg, "hooks.permissions.default.timeout_seconds", "-1")
+	assert.True(t, IsAppError(err, ErrCodeInvalidArgument),
+		"a negative timeout cap returned %v, want invalid-argument", err)
+
+	err = SetConfigValue(cfg, "hooks.permissions.default.timeout_seconds", "90000")
+	assert.True(t, IsAppError(err, ErrCodeInvalidArgument),
+		"an oversized timeout cap returned %v, want invalid-argument", err)
+}
+
+func TestPermissionKeyShapeRejectsMalformedForms(t *testing.T) {
+	cfg := configPtr(domain.DefaultConfig())
+
+	for _, key := range []string{
+		"hooks.permissions",
+		"hooks.permissions.",
+		"hooks.permissions.default",
+		"hooks.permissions.default.",
+		"hooks.permissions.games..fs_read",
+		"hooks.permissions.nope.darktide.fs_read",
+		"hooks.permissions.mods.betterui",
+	} {
+		_, err := ConfigValue(cfg, key)
+		assert.True(t, IsAppError(err, ErrCodeNotFound),
+			"ConfigValue(%q) returned %v, want not-found", key, err)
+
+		err = SetConfigValue(cfg, key, "x")
+		assert.True(t, IsAppError(err, ErrCodeNotFound),
+			"SetConfigValue(%q) returned %v, want not-found", key, err)
+	}
+}
+
+func TestConfigKeysListsTheDynamicPatterns(t *testing.T) {
+	keys := ConfigKeys()
+
+	for _, want := range []string{
+		"games.<id>.path",
+		"games.<id>.auto_detect",
+		"hooks.permissions.default.<capability>",
+		"hooks.permissions.games.<id>.<capability>",
+		"hooks.permissions.mods.<id>.<capability>",
+	} {
+		assert.Contains(t, keys, want, "ConfigKeys is the contract for the settings screen")
+	}
 }

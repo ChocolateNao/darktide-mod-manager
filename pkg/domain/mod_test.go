@@ -17,7 +17,7 @@ func TestModCloneIsDeep(t *testing.T) {
 		ConflictsWith: []string{"c"},
 		SourceData:    map[string]any{"k": "v"},
 		Hooks: ModHooks{
-			PreEnable: []HookScript{{Type: HookTypeInline, Content: "x", Env: []string{"A=1"}}},
+			PreEnable: []HookScript{{Language: LangJS, Content: "x", Env: []string{"A=1"}}},
 		},
 	}
 	clone := orig.Clone()
@@ -85,7 +85,7 @@ func TestModJSONRoundTrip(t *testing.T) {
 		Tags:         []string{"ui"},
 		Dependencies: []string{"core"},
 		Hooks: ModHooks{
-			PostEnable: []HookScript{{Type: HookTypeCommand, Content: "echo hi", Timeout: 5}},
+			PostEnable: []HookScript{{Language: LangLua, Content: "echo hi", Timeout: 5}},
 		},
 	}
 
@@ -237,18 +237,23 @@ func TestSanitizeSegmentNeverEscapes(t *testing.T) {
 	}
 }
 
-func TestModStoragePathSanitizesBothSegments(t *testing.T) {
-	got := ModStoragePath("/data", "../evil", "1.0/../../etc")
-	assert.True(t, PathWithin("/data/mods", got), "ModStoragePath escaped storage root: %q", got)
+func TestModStoragePathSanitizesEachSegment(t *testing.T) {
+	got := ModStoragePath("/data", "darktide", "../evil", "1.0/../../etc")
+	assert.True(
+		t,
+		PathWithin("/data/darktide", got),
+		"ModStoragePath escaped storage root: %q",
+		got,
+	)
 	// Separators are dropped but the leftover dot runs stay inside one segment,
 	// which is the property that matters: the result cannot traverse upwards.
-	want := "/data/mods/evil/1.0....etc"
+	want := "/data/darktide/evil/1.0....etc"
 	assert.Equal(t, want, got, "ModStoragePath")
 }
 
 func TestModStoragePathEmptySegments(t *testing.T) {
-	got := ModStoragePath("/data", "", "")
-	assert.Equal(t, "/data/mods/_/_", got, "ModStoragePath empty")
+	got := ModStoragePath("/data", "darktide", "", "")
+	assert.Equal(t, "/data/darktide/_/_", got, "ModStoragePath empty")
 }
 
 func TestEqualFoldUnicode(t *testing.T) {

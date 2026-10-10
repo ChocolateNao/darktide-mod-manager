@@ -127,7 +127,7 @@ func everyCommand() []command {
 			return err
 		}, "App.HookTimeout"},
 		{func(a *App) error {
-			return a.ValidateHookScript(api.HookScript{Type: api.HookTypeInline}, nil)
+			return a.ValidateHookScript(api.HookScript{Language: api.LangJS}, nil)
 		}, "App.ValidateHookScript"},
 	}
 }
@@ -279,14 +279,14 @@ func TestUninitialisedSetAccessors(t *testing.T) {
 func TestSupportsHookTypeNeedsAClient(t *testing.T) {
 	assert.False(
 		t,
-		New(Deps{}).SupportsHookType(string(api.HookTypeInline)),
+		New(Deps{}).SupportsHookType(string(api.LangJS)),
 		"a surface with no client claimed to support inline hooks",
 	)
 
 	var app *App
 	assert.False(
 		t,
-		app.SupportsHookType(string(api.HookTypeInline)),
+		app.SupportsHookType(string(api.LangJS)),
 		"a nil app claimed to support inline hooks",
 	)
 }

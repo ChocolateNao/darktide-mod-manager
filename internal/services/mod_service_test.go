@@ -776,7 +776,7 @@ func TestEnableModWithMissingPayloadIsInvalidMod(t *testing.T) {
 		&domain.Mod{
 			ID:        "ghost",
 			Version:   "1.0.0",
-			LocalPath: filepath.Join(h.storage, "mods", "ghost", "1.0.0"),
+			LocalPath: domain.ModStoragePath(h.storage, "", "ghost", "1.0.0"),
 			Enabled:   false,
 		},
 	)
@@ -1216,7 +1216,7 @@ func TestUninstallBlankIDIsRefused(t *testing.T) {
 func TestGetModHooksReturnsACopy(t *testing.T) {
 	h := newHarness(t)
 	hooks := domain.ModHooks{
-		PreEnable: []domain.HookScript{{Type: domain.HookTypeCommand, Content: "echo hi"}},
+		PreEnable: []domain.HookScript{{Language: domain.LangLua, Content: "echo hi"}},
 	}
 	h.index.put(&domain.Mod{ID: "better_ui", Version: "1.0.0", Hooks: hooks})
 
@@ -1255,7 +1255,7 @@ func TestUpdateModHooksStoresACopy(t *testing.T) {
 	h.index.put(&domain.Mod{ID: "better_ui", Version: "1.0.0"})
 
 	hooks := domain.ModHooks{
-		PreEnable: []domain.HookScript{{Type: domain.HookTypeCommand, Content: "echo hi"}},
+		PreEnable: []domain.HookScript{{Language: domain.LangLua, Content: "echo hi"}},
 	}
 	{
 		err := h.svc.UpdateModHooks(context.Background(), "better_ui", hooks)
@@ -1283,19 +1283,19 @@ func TestUpdateModHooksValidatesBeforeWriting(t *testing.T) {
 	}{
 		{
 			"unknown type",
-			domain.ModHooks{PreEnable: []domain.HookScript{{Type: "powershell", Content: "x"}}},
+			domain.ModHooks{PreEnable: []domain.HookScript{{Language: "powershell", Content: "x"}}},
 		},
 		{
 			"blank content",
 			domain.ModHooks{
-				PostEnable: []domain.HookScript{{Type: domain.HookTypeInline, Content: "   "}},
+				PostEnable: []domain.HookScript{{Language: domain.LangJS, Content: "   "}},
 			},
 		},
 		{
 			"negative timeout",
 			domain.ModHooks{
 				PreInstall: []domain.HookScript{
-					{Type: domain.HookTypeInline, Content: "x", Timeout: -1},
+					{Language: domain.LangJS, Content: "x", Timeout: -1},
 				},
 			},
 		},
@@ -1303,7 +1303,7 @@ func TestUpdateModHooksValidatesBeforeWriting(t *testing.T) {
 			"env without =",
 			domain.ModHooks{
 				PreDisable: []domain.HookScript{
-					{Type: domain.HookTypeCommand, Content: "x", Env: []string{"NOEQUALS"}},
+					{Language: domain.LangLua, Content: "x", Env: []string{"NOEQUALS"}},
 				},
 			},
 		},
@@ -1311,7 +1311,7 @@ func TestUpdateModHooksValidatesBeforeWriting(t *testing.T) {
 			"env with empty key",
 			domain.ModHooks{
 				PreDisable: []domain.HookScript{
-					{Type: domain.HookTypeCommand, Content: "x", Env: []string{"=v"}},
+					{Language: domain.LangLua, Content: "x", Env: []string{"=v"}},
 				},
 			},
 		},
@@ -1344,7 +1344,7 @@ func TestUpdateModHooksEnvValuesMayContainEquals(t *testing.T) {
 
 	hooks := domain.ModHooks{
 		PreEnable: []domain.HookScript{
-			{Type: domain.HookTypeCommand, Content: "x", Env: []string{"TOKEN=a=b=c"}},
+			{Language: domain.LangLua, Content: "x", Env: []string{"TOKEN=a=b=c"}},
 		},
 	}
 	{
@@ -1361,7 +1361,7 @@ func TestUpdateModHooksRejectsEveryPhase(t *testing.T) {
 	for _, phase := range domain.HookPhases() {
 		acc.Set(
 			phase,
-			[]domain.HookScript{{Type: domain.HookTypeInline, Content: "// " + string(phase)}},
+			[]domain.HookScript{{Language: domain.LangJS, Content: "// " + string(phase)}},
 		)
 
 		{
@@ -1398,8 +1398,8 @@ func TestUpdateModHooksRejectsEveryPhase(t *testing.T) {
 func TestUpdateModHooksClearingAPhase(t *testing.T) {
 	h := newHarness(t)
 	h.index.put(&domain.Mod{ID: "better_ui", Version: "1.0.0", Hooks: domain.ModHooks{
-		PreEnable:  []domain.HookScript{{Type: domain.HookTypeInline, Content: "x"}},
-		PostEnable: []domain.HookScript{{Type: domain.HookTypeInline, Content: "y"}},
+		PreEnable:  []domain.HookScript{{Language: domain.LangJS, Content: "x"}},
+		PostEnable: []domain.HookScript{{Language: domain.LangJS, Content: "y"}},
 	}})
 
 	{
@@ -1449,8 +1449,118 @@ func TestReorderModsStoresTheOrder(t *testing.T) {
 	assert.True(t, equalStrings(got, []string{"b", "a"}), "load order = %v, want [b a]", got)
 }
 
+func TestListModsScopesToTheActiveGame(t *testing.T) {
+	h := newHarness(t)
+	h.locator.withGameID("darktide")
+
+	h.index.put(&domain.Mod{ID: "mine", Version: "1.0.0", GameID: "darktide"})
+	h.index.put(&domain.Mod{ID: "theirs", Version: "1.0.0", GameID: "sietch"})
+	h.index.put(&domain.Mod{ID: "legacy", Version: "1.0.0"})
+
+	mods, err := h.svc.ListMods(context.Background())
+	require.NoError(t, err, "list: %v", err)
+
+	ids := make([]string, 0, len(mods))
+	for _, m := range mods {
+		ids = append(ids, m.ID)
+	}
+
+	assert.True(
+		t,
+		equalStrings(ids, []string{"mine"}),
+		"list = %v, want only the active game's mods", ids,
+	)
+}
+
+func TestInstallStampsTheActiveGameID(t *testing.T) {
+	h := newHarness(t).withArchive(t, modFixture("better_ui", "1.2.0"))
+	h.locator.withGameID("darktide")
+
+	installed, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+	require.NoError(t, err, "install: %v", err)
+
+	assert.Equal(t, "darktide", installed.GameID, "installed.GameID")
+	assert.Equal(
+		t,
+		domain.ModStoragePath(h.storage, "darktide", "better_ui", "1.2.0"),
+		installed.LocalPath,
+		"payload lands under the game id",
+	)
+}
+
+func TestEnablingAModDeploysWithTheConfiguredInstallMethod(t *testing.T) {
+	h := newHarness(t).withArchive(t, modFixture("better_ui", "1.2.0"))
+	h.locator.withGameID("darktide")
+
+	installed, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+	require.NoError(t, err, "install: %v", err)
+
+	err = h.svc.EnableMod(context.Background(), installed.ID)
+	require.NoError(t, err, "enable: %v", err)
+
+	assert.NotEmpty(t, h.deployer.deployModes, "a deployment happened")
+
+	h.locator.withInstallMethod(domain.InstallMethodDirect)
+
+	err = h.svc.DisableMod(context.Background(), installed.ID)
+	require.NoError(t, err, "disable: %v", err)
+
+	err = h.svc.EnableMod(context.Background(), installed.ID)
+	require.NoError(t, err, "re-enable: %v", err)
+
+	last := len(h.deployer.deployModes) - 1
+	assert.Equal(t, platform.DeployCopy, h.deployer.deployModes[last],
+		"the configured override reaches the deployer")
+}
+
+func TestEnablingAModDeploysWithTheGamesOwnInstallMethodByDefault(t *testing.T) {
+	h := newHarness(t).withArchive(t, modFixture("better_ui", "1.2.0"))
+	h.locator.withGameID("darktide").withGameInstallMethod(domain.InstallMethodSymlink)
+
+	installed, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+	require.NoError(t, err, "install: %v", err)
+
+	err = h.svc.EnableMod(context.Background(), installed.ID)
+	require.NoError(t, err, "enable: %v", err)
+
+	last := len(h.deployer.deployModes) - 1
+	assert.Equal(t, platform.DeploySymlink, h.deployer.deployModes[last],
+		"with no override the game definition decides")
+}
+
+func TestReorderModsIsScopedToTheActiveGame(t *testing.T) {
+	h := newHarness(t)
+	h.locator.withGameID("darktide")
+
+	h.index.put(&domain.Mod{ID: "a", Version: "1.0.0", GameID: "darktide"})
+	h.index.put(&domain.Mod{ID: "b", Version: "1.0.0", GameID: "sietch"})
+
+	err := h.svc.ReorderMods(context.Background(), []string{"b"})
+	require.Error(t, err, "a mod of another game must be rejected")
+	assert.Equal(
+		t,
+		appErrors.ErrCodeModNotFound,
+		appErrors.CodeOf(err),
+		"reorder error code",
+	)
+
+	require.NoError(t, h.svc.ReorderMods(context.Background(), []string{"a"}), "reorder")
+
+	got, err := h.svc.LoadOrder(context.Background())
+	require.NoError(t, err, "load order")
+
+	assert.True(t, equalStrings(got, []string{"a"}), "load order = %v, want [a]", got)
+
+	other, err := h.index.LoadOrderByGame(context.Background(), "sietch")
+	require.NoError(t, err, "other game's order")
+
+	assert.Empty(t, other, "the other game's order must stay empty, got %v", other)
+}
+
 func TestReorderModsTrimsAndSkipsBlanks(t *testing.T) {
 	h := newHarness(t)
+	h.index.put(&domain.Mod{ID: "a", Version: "1.0.0"})
+	h.index.put(&domain.Mod{ID: "b", Version: "1.0.0"})
 	{
 		err := h.svc.ReorderMods(context.Background(), []string{" a ", "", "   ", "b"})
 		require.NoError(t, err, "reorder: %v", err)

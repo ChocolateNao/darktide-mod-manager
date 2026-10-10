@@ -18,7 +18,9 @@ func modWorkspace(t *testing.T) (*workspace, *App) {
 	t.Helper()
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	w.writeModArchive(t, "better_ui", "1.2.0")
 
 	return w, w.mustApp(t)
@@ -67,7 +69,8 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 		installed.SourceID,
 	)
 
-	wantPath := domain.ModVersionPath(w.storageRoot, installed.ID, installed.Version)
+	wantPath := domain.ModStoragePath(w.storageRoot, installed.GameID, installed.ID,
+		installed.Version)
 	assert.Equal(
 		t,
 		wantPath,
@@ -372,10 +375,10 @@ func TestUpdateModHooksRoundTripsAndRefusesABadSet(t *testing.T) {
 
 	hooks := api.ModHooks{
 		PreEnable: []api.HookScript{
-			{Type: api.HookTypeInline, Content: "console.log('enabling')"},
+			{Language: api.LangJS, Content: "console.log('enabling')"},
 		},
 		PostInstall: []api.HookScript{
-			{Type: api.HookTypeInline, Content: "console.log('installed')", Timeout: 5},
+			{Language: api.LangJS, Content: "console.log('installed')", Timeout: 5},
 		},
 	}
 	{
@@ -403,8 +406,8 @@ func TestUpdateModHooksRoundTripsAndRefusesABadSet(t *testing.T) {
 	// A rejected set must leave the stored one alone, or one bad script in a
 	// settings form would silently clear the rest.
 	bad := api.ModHooks{
-		PreEnable:  []api.HookScript{{Type: api.HookTypeInline, Content: "kept"}},
-		PostEnable: []api.HookScript{{Type: "powershell", Content: "boom"}},
+		PreEnable:  []api.HookScript{{Language: api.LangJS, Content: "kept"}},
+		PostEnable: []api.HookScript{{Language: "powershell", Content: "boom"}},
 	}
 	{
 		err := app.Mods.UpdateModHooks(

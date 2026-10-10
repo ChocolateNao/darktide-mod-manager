@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/gamestest"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -86,7 +88,7 @@ type fakeDetector struct {
 	modsPath  func(*domain.GameInstallation, string) (string, error)
 	seenPaths []string
 	seenOver  []string
-	seenCfg   []domain.GameConfig
+	seenCfg   []domain.GameSettings
 	findCalls int
 	mu        sync.Mutex
 }
@@ -140,12 +142,24 @@ func (d *fakeDetector) calls() int {
 	return d.findCalls
 }
 
+func TestMain(m *testing.M) {
+	// Every locator lookup resolves the active game through the registry, so
+	// the built-ins have to be registered before any test runs.
+	games.Reset()
+	games.EnsureBuiltins()
+
+	os.Exit(m.Run())
+}
+
 // locatorWith builds a locator whose factory always returns det, and records the
 // configuration each detector was built from.
-func locatorWith(store ConfigStore, det InstallationDetector) (*GameLocator, *[]domain.GameConfig) {
-	var seen []domain.GameConfig
+func locatorWith(
+	store ConfigStore,
+	det InstallationDetector,
+) (*GameLocator, *[]domain.GameSettings) {
+	var seen []domain.GameSettings
 
-	factory := func(cfg domain.GameConfig) InstallationDetector {
+	factory := func(_ domain.GameDefinition, cfg domain.GameSettings) InstallationDetector {
 		seen = append(seen, cfg)
 		return det
 	}
@@ -231,7 +245,7 @@ func TestGameLocatorConfigHandsOutACopy(t *testing.T) {
 	cfg, err := loc.Config()
 	require.NoError(t, err, "Config")
 
-	cfg.Game.Path = "/mutated"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/mutated" })
 
 	again, err := loc.Config()
 	require.NoError(t, err, "Config (second): %v", err)
@@ -239,7 +253,7 @@ func TestGameLocatorConfigHandsOutACopy(t *testing.T) {
 	assert.NotEqual(
 		t,
 		"/mutated",
-		again.Game.Path,
+		again.ActiveSettings().Path,
 		"mutating the returned config changed the stored one",
 	)
 }
@@ -251,7 +265,7 @@ func TestGameLocatorConfigHandsOutACopy(t *testing.T) {
 func TestGameLocatorFindsNothingWithoutAutoDetect(t *testing.T) {
 	det := &fakeDetector{}
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = false
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = false })
 	loc := mustLocator(t, newFakeStore(&cfg), det)
 
 	installs, err := loc.FindInstallations(context.Background())
@@ -264,7 +278,8 @@ func TestGameLocatorFindsNothingWithoutAutoDetect(t *testing.T) {
 
 func TestGameLocatorAutoDetectRunsTheProbe(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{install("/games/darktide")}, nil
 	}}
@@ -285,7 +300,8 @@ func TestGameLocatorAutoDetectRunsTheProbe(t *testing.T) {
 
 func TestGameLocatorResultIsSortedByPath(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{
 			install("/games/zulu"),
@@ -315,7 +331,8 @@ func TestGameLocatorResultIsSortedByPath(t *testing.T) {
 
 func TestGameLocatorDeduplicatesCaseInsensitively(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{
 			install("/Games/Darktide"),
@@ -340,7 +357,8 @@ func TestGameLocatorDeduplicatesCaseInsensitively(t *testing.T) {
 
 func TestGameLocatorDropsEntriesWithoutAPath(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{
 			install("   "),
@@ -362,9 +380,9 @@ func TestGameLocatorDropsEntriesWithoutAPath(t *testing.T) {
 
 func TestGameLocatorConfiguredPathWinsOverTheProbe(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/darktide"
-	cfg.Game.Source = "steam"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/darktide" })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
 
 	configured := install("/games/darktide")
 	configured.Version = "1.0.5000"
@@ -410,8 +428,9 @@ func TestGameLocatorConfiguredPathWinsOverTheProbe(t *testing.T) {
 
 func TestGameLocatorInvalidConfiguredPathIsOmittedNotFatal(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/gone"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/gone" })
+
 	det := &fakeDetector{
 		validate: func(string) (*domain.GameInstallation, error) {
 			return nil, appErrors.New(appErrors.ErrCodeGameNotFound, "gone")
@@ -435,7 +454,8 @@ func TestGameLocatorInvalidConfiguredPathIsOmittedNotFatal(t *testing.T) {
 
 func TestGameLocatorKeepsPartialResultsFromAFailedProbe(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{install("/games/darktide")},
 			appErrors.New(appErrors.ErrCodeGameNotFound, "half the disk was unreadable")
@@ -450,7 +470,8 @@ func TestGameLocatorKeepsPartialResultsFromAFailedProbe(t *testing.T) {
 
 func TestGameLocatorProbeFailureWithCanceledContextIsFatal(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	ctx, cancel := context.WithCancel(context.Background())
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		cancel()
@@ -471,7 +492,8 @@ func TestGameLocatorProbeFailureWithCanceledContextIsFatal(t *testing.T) {
 
 func TestGameLocatorStopsWhenTheContextIsCanceledMidSweep(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+
 	ctx, cancel := context.WithCancel(context.Background())
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		return []domain.GameInstallation{
@@ -497,8 +519,9 @@ func TestGameLocatorStopsWhenTheContextIsCanceledMidSweep(t *testing.T) {
 
 func TestGameLocatorAlreadyCanceledContextSkipsEverything(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/darktide"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/darktide" })
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -535,9 +558,10 @@ func TestGameLocatorNilContextIsTreatedAsBackground(t *testing.T) {
 
 func TestGameLocatorAppliesTheConfiguredSourceHint(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/darktide"
-	cfg.Game.Source = "  Steam  "
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/darktide" })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "  Steam  " })
+
 	det := &fakeDetector{validate: func(string) (*domain.GameInstallation, error) {
 		out := install("/games/darktide")
 		return &out, nil
@@ -558,9 +582,10 @@ func TestGameLocatorAppliesTheConfiguredSourceHint(t *testing.T) {
 
 func TestGameLocatorUnknownSourceHintFallsBackToManual(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/darktide"
-	cfg.Game.Source = "not-a-launcher"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/darktide" })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "not-a-launcher" })
+
 	det := &fakeDetector{validate: func(string) (*domain.GameInstallation, error) {
 		out := install("/games/darktide")
 		return &out, nil
@@ -581,8 +606,9 @@ func TestGameLocatorUnknownSourceHintFallsBackToManual(t *testing.T) {
 
 func TestGameLocatorKeepsASourceTheProbeAlreadyKnew(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Source = "steam"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
+
 	det := &fakeDetector{find: func(context.Context) ([]domain.GameInstallation, error) {
 		found := install("/games/darktide")
 		found.Source = domain.GameSourceLutris
@@ -664,8 +690,9 @@ func TestGameLocatorValidatePropagatesDetectorErrors(t *testing.T) {
 
 func TestGameLocatorCurrentPrefersTheConfiguredPath(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Path = "/games/darktide"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/darktide" })
+
 	det := &fakeDetector{
 		validate: func(string) (*domain.GameInstallation, error) {
 			out := install("/games/darktide")
@@ -693,7 +720,7 @@ func TestGameLocatorCurrentPrefersTheConfiguredPath(t *testing.T) {
 
 func TestGameLocatorCurrentReportsNothingFound(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
 	loc := mustLocator(t, newFakeStore(&cfg), &fakeDetector{})
 
 	current, err := loc.Current(context.Background())
@@ -726,7 +753,10 @@ func TestGameLocatorGetModsPathRejectsNil(t *testing.T) {
 
 func TestGameLocatorGetModsPathForwardsTheTrimmedOverride(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.ModsFolderOverride = "  /games/darktide/custom-mods  "
+	cfg.UpdateActiveSettings(
+		func(gs *domain.GameSettings) { gs.ModsFolderOverride = "  /games/darktide/custom-mods  " },
+	)
+
 	det := &fakeDetector{
 		modsPath: func(_ *domain.GameInstallation, override string) (string, error) {
 			return override, nil
@@ -787,8 +817,8 @@ func TestGameLocatorGetModsPathPropagatesDetectorErrors(t *testing.T) {
 
 func TestGameLocatorSetGamePathPersistsTheValidatedPath(t *testing.T) {
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = true
-	cfg.Game.Source = "steam"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = true })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
 	store := newFakeStore(&cfg)
 	det := &fakeDetector{validate: func(path string) (*domain.GameInstallation, error) {
 		out := install(strings.TrimSpace(path))
@@ -808,23 +838,23 @@ func TestGameLocatorSetGamePathPersistsTheValidatedPath(t *testing.T) {
 	assert.Equal(
 		t,
 		"/games/darktide",
-		store.saved.Game.Path,
+		store.saved.ActiveSettings().Path,
 		"persisted path = %q, want the cleaned one",
-		store.saved.Game.Path,
+		store.saved.ActiveSettings().Path,
 	)
 	// Source is a *filter* on auto-detection, not a record of the last install,
 	// so pointing the manager at a directory must not silently narrow detection.
 	assert.Equal(
 		t,
-		"steam",
-		store.saved.Game.Source,
+		domain.GameSourceSteam,
+		store.saved.ActiveSettings().Source,
 		"configured source filter changed to %q",
-		store.saved.Game.Source,
+		store.saved.ActiveSettings().Source,
 	)
 
 	assert.True(
 		t,
-		store.saved.Game.AutoDetect,
+		store.saved.ActiveSettings().AutoDetect,
 		"SetGamePath turned auto-detect off; it should only touch the path",
 	)
 }
@@ -930,7 +960,7 @@ func TestGameLocatorRebuildsTheDetectorForEveryLookup(t *testing.T) {
 		require.NoError(t, err, "FindInstallations: %v", err)
 	}
 
-	store.cfg.Game.Path = "/games/second"
+	store.cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/games/second" })
 
 	{
 		_, err := loc.FindInstallations(context.Background())
@@ -966,8 +996,8 @@ func TestGameLocatorDefaultFactoryProbesTheConfiguredPath(t *testing.T) {
 	}
 
 	cfg := domain.DefaultConfig()
-	cfg.Game.AutoDetect = false
-	cfg.Game.Path = dir
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = false })
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = dir })
 	loc := NewGameLocator(newFakeStore(&cfg))
 
 	installs, err := loc.FindInstallations(context.Background())
@@ -995,7 +1025,7 @@ func TestGameLocatorDefaultFactoryProbesTheConfiguredPath(t *testing.T) {
 		installs[0].Source,
 		"source = %q, want manual (the default source hint is %q)",
 		installs[0].Source,
-		cfg.Game.Source,
+		cfg.ActiveSettings().Source,
 	)
 }
 
@@ -1036,4 +1066,118 @@ func TestGameLocatorNilFactoryFailsEveryProbeCleanly(t *testing.T) {
 			appErrors.ErrCodeGameNotFound,
 		), "GetModsPath: got %v, want game-not-found", err)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Active game registry
+// ---------------------------------------------------------------------------
+
+// restoreGames re-registers the built-ins after a test that mutated the
+// process-wide registry, so later tests resolve the default game again.
+func restoreGames(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		games.Reset()
+		games.EnsureBuiltins()
+	})
+}
+
+func TestGameLocatorActiveResolvesTheRegistryDefault(t *testing.T) {
+	games.Reset()
+	games.EnsureBuiltins()
+	restoreGames(t)
+
+	loc := mustLocator(t, newFakeStore(nil), &fakeDetector{})
+
+	def, settings, err := loc.Active()
+	require.NoError(t, err)
+	assert.Equal(t, "darktide", def.ID(), "empty config resolves the default game")
+	assert.Equal(t, domain.DefaultGameSettings(), settings, "defaults apply until configured")
+}
+
+func TestGameLocatorActiveRejectsAnUnknownGame(t *testing.T) {
+	games.Reset()
+	games.EnsureBuiltins()
+	restoreGames(t)
+
+	cfg := domain.DefaultConfig()
+	cfg.ActiveGame = "nope"
+	loc := mustLocator(t, newFakeStore(&cfg), &fakeDetector{})
+
+	_, _, err := loc.Active()
+	require.Error(t, err, "an unregistered active game must not resolve")
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound),
+		"Active: got %v, want game-not-found", err)
+}
+
+func TestGameLocatorSetActivePersistsTheRegisteredID(t *testing.T) {
+	games.Reset()
+	games.EnsureBuiltins()
+	restoreGames(t)
+	require.NoError(t, games.Register(gamestest.Def{IDValue: "sietch"}))
+
+	store := newFakeStore(nil)
+	loc := mustLocator(t, store, &fakeDetector{})
+
+	require.NoError(t, loc.SetActive("SIETCH"), "ids resolve case-insensitively")
+	require.NotNil(t, store.saved, "SetActive writes the configuration")
+	assert.Equal(t, "sietch", store.saved.ActiveGame, "the registered id is persisted")
+
+	saves := store.saves
+	err := loc.SetActive("missing")
+	require.Error(t, err, "an unregistered game must not become active")
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound),
+		"SetActive: got %v, want game-not-found", err)
+	assert.Equal(t, saves, store.saves, "a rejected switch must not write")
+}
+
+func TestGameLocatorInstallationsStampsEveryGame(t *testing.T) {
+	games.Reset()
+	games.EnsureBuiltins()
+	restoreGames(t)
+	require.NoError(t, games.Register(gamestest.Def{IDValue: "sietch"}))
+
+	det := &fakeDetector{
+		find: func(context.Context) ([]domain.GameInstallation, error) {
+			return []domain.GameInstallation{
+				{Path: "/games/shared", Valid: true},
+			}, nil
+		},
+	}
+	loc := mustLocator(t, newFakeStore(nil), det)
+
+	installs, err := loc.Installations(context.Background())
+	require.NoError(t, err)
+
+	var ids []string
+	for _, install := range installs {
+		ids = append(ids, install.GameID)
+		assert.Equal(t, "/games/shared", install.Path, "path survives stamping")
+		assert.True(t, install.Valid, "valid survives stamping")
+	}
+
+	var want []string
+	for _, def := range games.All() {
+		want = append(want, def.ID())
+	}
+
+	assert.Equal(t, want, ids, "one entry per registered game, grouped by game id")
+}
+
+func TestGameLocatorFindInstallationsStampsTheActiveGame(t *testing.T) {
+	games.Reset()
+	games.EnsureBuiltins()
+	restoreGames(t)
+
+	det := &fakeDetector{
+		find: func(context.Context) ([]domain.GameInstallation, error) {
+			return []domain.GameInstallation{{Path: "/games/one", Valid: true}}, nil
+		},
+	}
+	loc := mustLocator(t, newFakeStore(nil), det)
+
+	installs, err := loc.FindInstallations(context.Background())
+	require.NoError(t, err)
+	require.Len(t, installs, 1, "one detected install")
+	assert.Equal(t, "darktide", installs[0].GameID, "the active game id is stamped")
 }

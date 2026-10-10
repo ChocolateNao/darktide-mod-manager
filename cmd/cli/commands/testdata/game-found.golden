@@ -1,3 +1,50 @@
+$ dmm --config <config> --cache <cache> --storage <storage> game list
+o ID  NAME  DEFAULT  ACTIVE
+o darktide  Warhammer 40,000: Darktide  yes  yes
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game list --json
+o [
+o   {
+o   "id": "darktide",
+o   "name": "Warhammer 40,000: Darktide",
+o   "description": "A first-person co-op shooter set in the Warhammer 40,000 universe.",
+o   "default": true,
+o   "active": true
+o   }
+o ]
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game current
+o game:  darktide
+o name:  Warhammer 40,000: Darktide
+o default: yes
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game current --json
+o {
+o   "id": "darktide",
+o   "name": "Warhammer 40,000: Darktide",
+o   "description": "A first-person co-op shooter set in the Warhammer 40,000 universe.",
+o   "default": true,
+o   "active": true
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game use darktide
+o switched to darktide
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game use darktide --json
+o {
+o   "id": "darktide",
+o   "name": "Warhammer 40,000: Darktide",
+o   "description": "A first-person co-op shooter set in the Warhammer 40,000 universe.",
+o   "default": true,
+o   "active": true
+o }
+! exit 0
+$ dmm --config <config> --cache <cache> --storage <storage> game use nope
+e error: GAME_NOT_FOUND: game "nope" is not registered
+! exit 1
+$ dmm --config <config> --cache <cache> --storage <storage> game switch darktide
+o switched to darktide
+! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> game detect
 o PATH  MODS  SOURCE  VERSION
 o <game>  <game>/mods  manual  1.0.3
@@ -5,6 +52,7 @@ o <game>  <game>/mods  manual  1.0.3
 $ dmm --config <config> --cache <cache> --storage <storage> game detect --json
 o [
 o   {
+o   "game_id": "darktide",
 o   "path": "<game>",
 o   "mods_path": "<game>/mods",
 o   "source": "manual",
@@ -15,6 +63,7 @@ o   }
 o ]
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> game info
+o game:  darktide
 o path:  <game>
 o valid:  yes
 o mods folder: <game>/mods
@@ -26,6 +75,7 @@ o detected:  <time>
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> game info --json
 o {
+o   "game_id": "darktide",
 o   "path": "<game>",
 o   "mods_path": "<game>/mods",
 o   "source": "manual",
@@ -49,7 +99,7 @@ o version:  1.0.3
 o notes:  -
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> game validate <local>
-e error: GAME_INVALID: "<local>" does not look like a Darktide installation: expected Darktide.exe or data/mods inside it
+e error: GAME_INVALID: "<local>" does not look like a Warhammer 40,000: Darktide installation: expected Darktide.exe or data/mods inside it
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> game validate  
 e error: GAME_INVALID: game path is empty

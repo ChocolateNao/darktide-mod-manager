@@ -4,6 +4,20 @@ o No mods are installed.
 $ dmm --config <config> --cache <cache> --storage <storage> config show
 o # <config>
 o {
+o   "hooks": {
+o   "permissions": {
+o   "default": {
+o   "fs_read": true,
+o   "fs_write": false,
+o   "config_read": true,
+o   "config_write": false,
+o   "storage_read": true,
+o   "env_read": false
+o   }
+o   },
+o   "default_timeout": "10s",
+o   "max_timeout": "30s"
+o   },
 o   "sources": {
 o   "github": {
 o   "enabled": false
@@ -21,12 +35,13 @@ o   "vortex": {
 o   "enabled": false
 o   }
 o   },
-o   "game": {
+o   "games": {
+o   "darktide": {
 o   "path": "<game>",
-o   "source": "auto",
-o   "mods_folder_override": "",
 o   "auto_detect": true
+o   }
 o   },
+o   "active_game": "darktide",
 o   "ui": {
 o   "theme": "system",
 o   "language": "en",
@@ -58,12 +73,6 @@ o   "max_size_mb": 10,
 o   "max_backups": 5,
 o   "max_age_days": 30,
 o   "compress": true
-o   },
-o   "hooks": {
-o   "default_timeout": 30,
-o   "allow_network": false,
-o   "allow_file_write": true,
-o   "max_timeout": 600
 o   }
 o }
 ! exit 0

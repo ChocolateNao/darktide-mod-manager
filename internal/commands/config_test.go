@@ -17,7 +17,9 @@ import (
 func TestGetConfigHandsOutACopy(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	w.writeConfig(t, func(cfg *domain.Config) { cfg.Game.Path = w.gameDir })
+	w.writeConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+	})
 	app := w.mustApp(t)
 
 	first, err := app.Config.GetConfig()
@@ -26,13 +28,13 @@ func TestGetConfigHandsOutACopy(t *testing.T) {
 	require.Equal(
 		t,
 		w.gameDir,
-		first.Game.Path,
+		first.ActiveSettings().Path,
 		"game path = %q, want %q",
-		first.Game.Path,
+		first.ActiveSettings().Path,
 		w.gameDir,
 	)
 
-	first.Game.Path = "/somewhere/else"
+	first.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/somewhere/else" })
 	first.Cache.MaxSizeGB = 999
 
 	second, err := app.Config.GetConfig()
@@ -41,9 +43,9 @@ func TestGetConfigHandsOutACopy(t *testing.T) {
 	assert.Equal(
 		t,
 		w.gameDir,
-		second.Game.Path,
+		second.ActiveSettings().Path,
 		"editing the returned config changed the stored path to %q",
-		second.Game.Path,
+		second.ActiveSettings().Path,
 	)
 
 	assert.NotEqual(
