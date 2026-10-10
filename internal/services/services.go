@@ -49,10 +49,14 @@ type InstallationDetector interface {
 	GetModsPath(install *domain.GameInstallation, override string) (string, error)
 }
 
-// DetectorFactory builds a detector for one configuration snapshot.
+// DetectorFactory builds a detector for one registered game plus one game's
+// configuration snapshot.
 //
 // It is a function rather than a stored detector because the configured game
 // path has to be folded in as an extra candidate, and the configuration is
 // re-read on every lookup: a user who repoints the game in the UI must not need
 // the process restarted for detection to agree with the config file.
-type DetectorFactory func(cfg domain.GameConfig) InstallationDetector
+type DetectorFactory func(
+	game domain.GameDefinition,
+	cfg domain.GameSettings,
+) InstallationDetector

@@ -123,9 +123,9 @@ func (a *App) EventTypes() []string {
 	return out
 }
 
-// HookTypes lists the hook kinds this build can run. A frontend offering a hook
-// editor needs to know whether "go" is available: a build with nothing compiled
-// in accepts the script and fails every time it runs.
+// HookTypes lists the script languages this build can run. A frontend offering
+// a hook editor must ask first: a language with no registered runner would
+// accept the script and fail every time it runs.
 func (a *App) HookTypes() []string {
 	return api.HookTypes()
 }
@@ -161,7 +161,7 @@ func (a *App) HookTimeout(script api.HookScript, mod *api.Mod) (float64, error) 
 	}
 	defer cancel()
 
-	timeout := client.HookTimeout(ctx, script)
+	timeout := client.HookTimeout(ctx, script, mod)
 	// Milliseconds, because that is what a JavaScript caller can hand to
 	// setTimeout without a unit argument. The type is a plain float rather than a
 	// duration because a duration does not survive the bridge as anything a

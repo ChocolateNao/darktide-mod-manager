@@ -1,16 +1,17 @@
 // Package hooks wires the concrete hook runners into a services.HookExecutor.
 //
 // The runners live in sub-packages so that each one owns its concerns (the
-// JavaScript VM, the process-spawning shell runner, the in-binary Go registry)
-// and can be replaced without touching the executor. This package is the only
-// place that knows the full set: a new runner type is added by registering it
-// here and in domain.HookType.Valid.
+// JavaScript VM, the Lua state) and can be replaced without touching the
+// executor. This package is the only place that knows the full set: a new
+// language is added by registering it here and in domain.ScriptLanguage.Valid.
+// Both runners share the host package for every capability, so the surface a
+// script sees is identical whichever language it is written in.
 package hooks
 
 import (
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/golang"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/javascript"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/shell"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/lua"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -23,18 +24,19 @@ var errNilExecutor = appErrors.New(appErrors.ErrCodeInvalidArgument,
 
 // RegisterAll installs the built-in runners on an executor.
 //
-// Registration failures are returned, not swallowed: a missing runner means a
-// mod's hook silently does nothing, which is worse than a startup error. A nil
-// executor is rejected rather than dereferenced.
-func RegisterAll(exec *services.HookExecutor) error {
+// providers are the injected capabilities both runners hand to their scripts;
+// a runner never reaches for anything else. Registration failures are returned,
+// not swallowed: a missing runner means a mod's hook silently does nothing,
+// which is worse than a startup error. A nil executor is rejected rather than
+// dereferenced.
+func RegisterAll(exec *services.HookExecutor, providers host.Providers) error {
 	if exec == nil {
 		return errNilExecutor
 	}
 
 	runners := []services.HookRunner{
-		javascript.NewRunner(),
-		shell.NewRunner(),
-		golang.NewRunner(),
+		javascript.NewRunner(providers),
+		lua.NewRunner(providers),
 	}
 	for _, r := range runners {
 		if err := exec.Register(r); err != nil {
@@ -45,14 +47,9 @@ func RegisterAll(exec *services.HookExecutor) error {
 	return nil
 }
 
-// Types lists the script types RegisterAll installs runners for, in a stable
-// order. Tests assert against this so that forgetting a runner is a test
-// failure rather than a runtime surprise.
-func Types() []domain.HookType {
-	return []domain.HookType{
-		domain.HookTypeInline,
-		domain.HookTypeFile,
-		domain.HookTypeCommand,
-		domain.HookTypeGo,
-	}
+// Types lists the script languages RegisterAll installs runners for, in a
+// stable order. Tests assert against this so that forgetting a runner is a
+// test failure rather than a runtime surprise.
+func Types() []domain.ScriptLanguage {
+	return domain.ScriptLanguages()
 }

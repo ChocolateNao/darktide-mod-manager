@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	manifestpkg "github.com/ChocolateNao/darktide-mod-manager/internal/manifest"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
@@ -29,10 +30,6 @@ func (m DeployMode) Valid() bool {
 
 // String implements fmt.Stringer.
 func (m DeployMode) String() string { return string(m) }
-
-// manifestNames are manager metadata files that live next to a mod's payload but
-// must never be exposed to the game.
-var manifestNames = []string{"mod.toml", "manifest.toml", "metadata.toml"}
 
 // Deployer places a mod's storage folder into the game mods folder using
 // symlinks when the platform allows it and copying otherwise.
@@ -81,14 +78,39 @@ func (d *Deployer) SupportsSymlinks() bool {
 	return true
 }
 
-// Mode reports the deployment strategy in effect: symlinks on Unix, and on
-// Windows only when the probe confirms symlinks work.
+// Mode reports the deployment strategy this platform defaults to: symlinks on
+// Unix, and on Windows only when the probe confirms symlinks work.
 func (d *Deployer) Mode() DeployMode {
 	if d.SupportsSymlinks() {
 		return DeploySymlink
 	}
 
 	return DeployCopy
+}
+
+// ModeFor answers the question a deployment actually asks: given the game's
+// preferred install method, what happens here, now.
+//
+// A preference of symlink is honoured when the platform can create links and
+// quietly degrades to copying when it cannot — a user asking for symlinks on a
+// Windows box without Developer Mode is asking for their mods to work, and
+// failing the install would not be honouring that. The reverse never happens:
+// a request for direct copies is copied, because that is the whole point of
+// asking. Anything unrecognised, including the empty string, falls back to the
+// platform default.
+func (d *Deployer) ModeFor(preferred string) DeployMode {
+	switch strings.TrimSpace(preferred) {
+	case domain.InstallMethodSymlink:
+		if d.SupportsSymlinks() {
+			return DeploySymlink
+		}
+
+		return DeployCopy
+	case domain.InstallMethodDirect:
+		return DeployCopy
+	default:
+		return d.Mode()
+	}
 }
 
 // Deploy exposes the contents of srcDir at dstDir using the current mode. An
@@ -139,7 +161,7 @@ func (d *Deployer) DeployAs(srcDir, dstDir string, mode DeployMode) error {
 
 	for _, entry := range entries {
 		name := entry.Name()
-		if isManifestName(name) {
+		if manifestpkg.IsName(name) {
 			continue
 		}
 
@@ -224,7 +246,7 @@ func (d *Deployer) UndeployEntries(dstDir string, names []string) (int, error) {
 			continue
 		}
 
-		if isManifestName(name) {
+		if manifestpkg.IsName(name) {
 			continue
 		}
 
@@ -325,7 +347,7 @@ func (d *Deployer) VerifyFolder(dstDir string) (map[string]LinkState, int, error
 	total := 0
 
 	for _, entry := range entries {
-		if isManifestName(entry.Name()) {
+		if manifestpkg.IsName(entry.Name()) {
 			continue
 		}
 
@@ -356,7 +378,7 @@ func (d *Deployer) Repair(srcDir, dstDir string) ([]string, error) {
 
 	for _, entry := range entries {
 		name := entry.Name()
-		if isManifestName(name) {
+		if manifestpkg.IsName(name) {
 			continue
 		}
 
@@ -435,17 +457,7 @@ func CanCreateSymlinks() bool {
 // undeploy a file it never deployed.
 //
 // The comparison is on the base name only, so "pack/mod.toml" is recognised too.
-func IsManifestName(name string) bool { return isManifestName(filepath.Base(name)) }
-
-func isManifestName(name string) bool {
-	for _, m := range manifestNames {
-		if strings.EqualFold(name, m) {
-			return true
-		}
-	}
-
-	return false
-}
+func IsManifestName(name string) bool { return manifestpkg.IsName(filepath.Base(name)) }
 
 // removeEntry deletes a file, symlink or directory, replacing whatever is
 // already at the path.

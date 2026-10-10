@@ -66,6 +66,11 @@ type Options struct {
 	// GamePath overrides the configured game folder and is validated before it
 	// is stored, so a wrong path fails start-up instead of the first install.
 	GamePath string
+	// GameID selects the active game by its registry id for this process. An
+	// unknown id fails start-up rather than silently running against the
+	// configured game; switching the stored default is UseGame's job, not a
+	// launch flag's.
+	GameID string
 	// CachePath overrides where archives are cached.
 	CachePath string
 	// StoragePath overrides where mod payloads are kept. A headless run (a test,

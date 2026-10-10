@@ -36,12 +36,16 @@ func (m ModInstallMode) String() string { return string(m) }
 // where it lives on disk (LocalPath) so that the same struct can represent a
 // remote listing and an installed mod.
 type Mod struct {
-	UpdatedAt     time.Time      `json:"updated_at"`
-	InstalledAt   time.Time      `json:"installed_at"`
-	SourceData    map[string]any `json:"source_data,omitempty"`
-	Hash          string         `json:"hash,omitempty"`
-	LocalPath     string         `json:"local_path"`
-	SourceID      string         `json:"source_id"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	InstalledAt time.Time      `json:"installed_at"`
+	SourceData  map[string]any `json:"source_data,omitempty"`
+	Hash        string         `json:"hash,omitempty"`
+	LocalPath   string         `json:"local_path"`
+	SourceID    string         `json:"source_id"`
+	// GameID is the registry id of the game this mod belongs to. Storage
+	// paths, load order and the working set are all keyed by it, so state
+	// persists when the user switches the active game.
+	GameID        string         `json:"game_id,omitempty"`
 	Author        string         `json:"author"`
 	GameVersion   string         `json:"game_version,omitempty"`
 	ModFolderName string         `json:"mod_folder_name,omitempty"`

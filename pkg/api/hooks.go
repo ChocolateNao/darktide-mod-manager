@@ -17,31 +17,33 @@ type (
 	// HookScript is one hook: what to run, how long it may run, and the
 	// environment it may see.
 	HookScript = domain.HookScript
-	// HookType names a kind of hook script: inline JavaScript, a file, a shell
-	// command, or a compiled-in Go function.
-	HookType = domain.HookType
+	// ScriptLanguage names the language a hook script is written in.
+	ScriptLanguage = domain.ScriptLanguage
 	// HookPhase names a point in a mod's lifecycle where hooks run.
 	HookPhase = domain.HookPhase
+	// ScriptPermissions is the capability set a hook run is granted: the
+	// filesystem, config, storage and environment switches plus the
+	// timeout_seconds cap.
+	ScriptPermissions = domain.ScriptPermissions
 )
 
-// The hook script types. HookTypeGo is only usable when the manager was built
-// with compiled-in hooks; SupportsHookType reports what the running build
-// actually has.
+// The script languages the sandbox runs.
 const (
-	HookTypeInline  HookType = domain.HookTypeInline
-	HookTypeFile    HookType = domain.HookTypeFile
-	HookTypeCommand HookType = domain.HookTypeCommand
-	HookTypeGo      HookType = domain.HookTypeGo
+	LangLua        ScriptLanguage = domain.LangLua
+	LangJavascript ScriptLanguage = domain.LangJS
+	// LangJS is the short spelling of LangJavascript.
+	LangJS = LangJavascript
 )
 
-// HookTypes returns every hook script type the domain defines. It is not what
+// HookTypes returns every hook script language the domain defines. The name is
+// kept for the frontend contract; the values are the languages. It is not what
 // the running build can execute; SupportsHookType answers that.
 func HookTypes() []string {
-	types := domain.HookTypes()
+	langs := domain.ScriptLanguages()
 
-	out := make([]string, 0, len(types))
-	for _, t := range types {
-		out = append(out, string(t))
+	out := make([]string, 0, len(langs))
+	for _, l := range langs {
+		out = append(out, string(l))
 	}
 
 	return out
@@ -60,11 +62,11 @@ func HookPhases() []string {
 	return out
 }
 
-// SupportsHookType reports whether this build can execute the given hook type.
+// SupportsHookType reports whether this build can execute the given script
+// language. The parameter keeps its name for the frontend contract.
 //
-// A hook editor must ask before offering a choice: a manager built without a
-// shell cannot run a command hook, and offering one would let a user author a
-// mod that fails on their machine and works on a colleague's.
+// A hook editor must ask before offering a choice: it must not let a user
+// author a mod in a language this build cannot run.
 func (c *Client) SupportsHookType(ctx context.Context, hookType string) bool {
 	if err := c.ready(); err != nil {
 		return false
@@ -74,7 +76,12 @@ func (c *Client) SupportsHookType(ctx context.Context, hookType string) bool {
 		return false
 	}
 
-	return c.deps.Hooks.HasRunner(domain.HookType(strings.TrimSpace(hookType)))
+	lang, err := domain.ParseScriptLanguage(strings.TrimSpace(hookType))
+	if err != nil {
+		return false
+	}
+
+	return c.deps.Hooks.HasRunner(lang)
 }
 
 // ValidateHookScript checks one hook script without storing it, so an editor can
@@ -97,15 +104,51 @@ func (c *Client) ValidateHookScript(ctx context.Context, script HookScript, mod 
 	return c.deps.Hooks.Validate(script, mod)
 }
 
-// HookTimeout returns how long a script would be allowed to run: its own timeout
-// when it declares one, otherwise the configured default. A zero result means the
-// client has no hook executor.
-func (c *Client) HookTimeout(ctx context.Context, script HookScript) time.Duration {
+// HookTimeout returns how long a script would be allowed to run for the given
+// mod: its own timeout clamped into the effective floor and ceiling (the
+// configured default and the smallest of MaxTimeout and the permission cap for
+// this mod). A zero result means the client has no hook executor.
+func (c *Client) HookTimeout(ctx context.Context, script HookScript, mod *Mod) time.Duration {
 	if c == nil || c.deps.Hooks == nil {
 		return 0
 	}
 
-	return c.deps.Hooks.Timeout(script)
+	return c.deps.Hooks.Timeout(script, mod)
+}
+
+// HookPermissions returns the effective capability set for one mod under one
+// game: the mod's scope over the game's over the default, first true win per
+// capability, first non-zero timeout.
+//
+// gameID and modID are explicit rather than resolved here because the caller
+// is usually asking about something other than the live active game — a
+// settings screen showing what a mod would get, or a CLI query for a game the
+// process is not switched to. Blank names resolve the same way they do inside
+// the executor: an empty game id falls through to the default scope.
+func (c *Client) HookPermissions(
+	ctx context.Context,
+	gameID, modID string,
+) (ScriptPermissions, error) {
+	if err := c.ready(); err != nil {
+		return ScriptPermissions{}, err
+	}
+
+	if ctx != nil && ctx.Err() != nil {
+		return ScriptPermissions{}, appErrors.New(appErrors.ErrCodeOperationCanceled,
+			"operation stopped before permissions could be resolved")
+	}
+
+	store, err := c.configStore()
+	if err != nil {
+		return ScriptPermissions{}, err
+	}
+
+	cfg, err := store.Load()
+	if err != nil || cfg == nil {
+		return ScriptPermissions{}, err
+	}
+
+	return cfg.Hooks.Permissions.For(strings.TrimSpace(gameID), strings.TrimSpace(modID)), nil
 }
 
 // RunHookScripts executes scripts under the same containment rules the mod

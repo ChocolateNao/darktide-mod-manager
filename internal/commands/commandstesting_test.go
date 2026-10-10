@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/di"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/local"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/local"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
@@ -354,7 +354,7 @@ func registerBlockingSource(t *testing.T, id string) *blockingSource {
 	{
 		err := services.RegisterSourceFactory(
 			id,
-			func(domain.SourceConfig) (domain.ModSource, error) {
+			func(services.SourceBuildContext) (domain.ModSource, error) {
 				return stub, nil
 			},
 		)

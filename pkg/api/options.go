@@ -46,6 +46,7 @@ type settings struct {
 	logging             *logging.Service
 	configPath          string
 	gamePath            string
+	gameID              string
 	cachePath           string
 	storagePath         string
 	handlers            []EventHandler
@@ -150,6 +151,28 @@ func WithGamePath(path string) Option {
 		}
 
 		s.gamePath = trimmed
+
+		return nil
+	}
+}
+
+// WithGame starts the client on a specific registered game, overriding
+// active_game from the file for this run. An id the registry does not know is
+// a construction failure rather than a silent fallback — a typo must not
+// quietly start the game the user was trying to avoid.
+//
+// The choice is not written back here: wire() runs before anything can
+// persist, and a start-up that fails afterwards must not have changed the
+// file. UseGame is how a running process switches and keeps the switch.
+func WithGame(id string) Option {
+	return func(s *settings) error {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			return appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"game id must not be blank")
+		}
+
+		s.gameID = trimmed
 
 		return nil
 	}

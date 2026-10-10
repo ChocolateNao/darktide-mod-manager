@@ -94,8 +94,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/httpx"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/sourceutil"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/httpx"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/sourceutil"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -108,9 +108,11 @@ const SourceID = "nexus"
 // DefaultAPIBase is Nexus's v3 endpoint. Tests point this at a local server.
 const DefaultAPIBase = "https://api.nexusmods.com/v3"
 
-// DefaultGameDomain is the sub-domain a game lives on. Nexus is one service
-// hosting many games and nearly every endpoint is game-scoped. See the package
-// comment: v3 does not currently serve this domain.
+// DefaultGameDomain is this source's own fallback for the sub-domain a game
+// lives on. Nexus is one service hosting many games and nearly every endpoint
+// is game-scoped; the active game's SourceDefaults entry ("game_domain") wins
+// when it supplies one. See the package comment: v3 does not currently serve
+// this domain.
 const DefaultGameDomain = "warhammer40kdarktide"
 
 // DefaultTimeout bounds one HTTP exchange.
@@ -208,8 +210,22 @@ func WithTimeout(d time.Duration) Option {
 func init() {
 	_ = services.RegisterSourceFactory(
 		SourceID,
-		func(cfg domain.SourceConfig) (domain.ModSource, error) {
-			return New(cfg)
+		func(ctx services.SourceBuildContext) (domain.ModSource, error) {
+			// The game definition's default is applied as an option, so it
+			// lands between the source's own fallback (New's struct literal)
+			// and the user's configuration block (applied last inside New):
+			// config wins over the game, the game wins over the native default.
+			var opts []Option
+
+			if gameDomain := domain.SourceDefault(
+				ctx.Game,
+				SourceID,
+				optionGameDomain,
+			); gameDomain != "" {
+				opts = append(opts, WithGameDomain(gameDomain))
+			}
+
+			return New(ctx.Config, opts...)
 		},
 	)
 }

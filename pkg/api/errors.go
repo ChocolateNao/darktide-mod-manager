@@ -50,6 +50,7 @@ const (
 	ErrCodeHookFailed        Code = appErrors.ErrCodeHookFailed
 	ErrCodeHookTimeout       Code = appErrors.ErrCodeHookTimeout
 	ErrCodeHookInvalid       Code = appErrors.ErrCodeHookInvalid
+	ErrCodeHookDenied        Code = appErrors.ErrCodeHookDenied
 	ErrCodeInstallFailed     Code = appErrors.ErrCodeInstallFailed
 	ErrCodeUninstallFailed   Code = appErrors.ErrCodeUninstallFailed
 	ErrCodeOperationCanceled Code = appErrors.ErrCodeOperationCanceled

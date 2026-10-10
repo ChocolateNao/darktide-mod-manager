@@ -98,6 +98,46 @@ func (c *GameCommands) SetGamePath(path string) error {
 	return nil
 }
 
+// SupportedGames lists the games the manager can manage, with the default and
+// the active one marked. It is a registry read, not an installation search:
+// a game is listed whether or not it is installed.
+func (c *GameCommands) SupportedGames() ([]api.GameInfo, error) {
+	// SupportedGames reads the registry rather than the context, but ready()
+	// is still the way in: it is what waits for the services and what keeps
+	// the close pairing honest.
+	client, _, cancel, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	games, err := client.SupportedGames()
+	if err != nil {
+		return nil, c.fail(err, "list supported games")
+	}
+
+	return games, nil
+}
+
+// UseGame switches the active game and remembers the choice.
+//
+// The id is what `SupportedGames` reports; an unknown one is refused rather
+// than falling back to the configured game, because a typo silently running
+// the wrong game is worse than a failed switch.
+func (c *GameCommands) UseGame(id string) error {
+	client, ctx, cancel, err := c.ready()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	if err := client.UseGame(ctx, strings.TrimSpace(id)); err != nil {
+		return c.fail(err, "switch to game %q", id)
+	}
+
+	return nil
+}
+
 // GetModsPath returns the mods folder for an installation, or for the one in
 // use when install is nil.
 func (c *GameCommands) GetModsPath(install *api.GameInstallation) (string, error) {

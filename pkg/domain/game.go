@@ -59,9 +59,12 @@ func ParseGameSource(s string) (GameSource, bool) {
 	return "", false
 }
 
-// GameInstallation is a candidate Darktide installation found on this machine.
+// GameInstallation is a candidate installation of a supported game found on
+// this machine. GameID names the registered game it belongs to, so one scan
+// can report installs of every supported game at once.
 type GameInstallation struct {
 	DetectedAt time.Time  `json:"detected_at"`
+	GameID     string     `json:"game_id,omitempty"`
 	Path       string     `json:"path"`
 	Source     GameSource `json:"source"`
 	AppID      string     `json:"app_id"`
@@ -72,7 +75,9 @@ type GameInstallation struct {
 	Valid      bool       `json:"valid"`
 }
 
-// Known Darktide identifiers.
+// Known Darktide identifiers. These live here only until the platform layer is
+// driven entirely by domain.GameDefinition; the registry copy in
+// internal/games/darktide is the source of truth.
 const (
 	// SteamAppID is Darktide's Steam application ID. It also identifies the
 	// Proton compatdata directory on Linux.

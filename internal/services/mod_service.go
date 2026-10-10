@@ -12,8 +12,8 @@
 // # Where mod files live
 //
 // A mod's payload is extracted into manager storage, never into the game folder:
-// <storage>/<mod id>/<version>. The game folder only ever receives symlinks (or
-// copies, where symlinks are unavailable) pointing at that payload.
+// <storage>/<game id>/<mod id>/<version>. The game folder only ever receives
+// symlinks (or copies, where symlinks are unavailable) pointing at that payload.
 //
 // # Hook policy
 //
@@ -34,12 +34,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/rs/zerolog"
 )
+
+// defaultLoadOrderFile is the load order file name used when the active game
+// is not registered (an empty registry during tests, for example).
+const defaultLoadOrderFile = "mod_load_order.txt"
 
 // SourceProvider resolves a source id to a live source. services.SourceRegistry
 // satisfies it.
@@ -71,23 +76,32 @@ type PhaseRunner interface {
 
 // ModIndex is the persistence contract for installed mods. storage.ModRepository
 // satisfies it; it is restated here so a test can supply a much smaller fake.
+// The *ByGame methods scope a query to one game id; the unscoped ones stay
+// available for cross-game views.
 type ModIndex interface {
 	Save(ctx context.Context, m *domain.Mod) error
 	GetByID(ctx context.Context, id string) (*domain.Mod, error)
 	List(ctx context.Context) ([]domain.Mod, error)
 	ListEnabled(ctx context.Context) ([]domain.Mod, error)
+	ListByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
+	ListEnabledByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
 	UpdateEnabled(ctx context.Context, id string, enabled bool) error
 	UpdatePriority(ctx context.Context, id string, priority int) error
 	SaveFiles(ctx context.Context, modID string, files []domain.ModFile) error
 	GetFilesByMod(ctx context.Context, modID string) ([]domain.ModFile, error)
 	Delete(ctx context.Context, id string) error
 	SetLoadOrder(ctx context.Context, ids []string) error
+	SetLoadOrderForGame(ctx context.Context, gameID string, ids []string) error
 	LoadOrder(ctx context.Context) ([]string, error)
+	LoadOrderByGame(ctx context.Context, gameID string) ([]string, error)
 	Count(ctx context.Context) (int, error)
 }
 
 // ModLocator is the slice of GameLocator the lifecycle needs.
 type ModLocator interface {
+	// Active returns the game definition and settings the manager is
+	// currently operating for.
+	Active() (domain.GameDefinition, domain.GameSettings, error)
 	// Current returns the game installation in use, or ErrGameNotFound.
 	Current(ctx context.Context) (*domain.GameInstallation, error)
 	// GetModsPath resolves the mods folder for an installation.
@@ -97,6 +111,7 @@ type ModLocator interface {
 // FileDeployer is the slice of platform.Deployer the lifecycle needs.
 type FileDeployer interface {
 	Mode() platform.DeployMode
+	ModeFor(preferred string) platform.DeployMode
 	DeployAs(srcDir, dstDir string, mode platform.DeployMode) error
 	UndeployEntries(dstDir string, names []string) (int, error)
 	VerifyFolder(dstDir string) (map[string]platform.LinkState, int, error)
@@ -294,7 +309,8 @@ func NewModService(deps ModServiceDeps) (*ModService, error) {
 	}, nil
 }
 
-// ListMods returns every installed mod in the index's canonical order.
+// ListMods returns the installed mods of the active game in the index's
+// canonical order.
 func (s *ModService) ListMods(ctx context.Context) ([]domain.Mod, error) {
 	if s == nil || s.deps.Index == nil {
 		return nil, appErrors.New(
@@ -307,7 +323,12 @@ func (s *ModService) ListMods(ctx context.Context) ([]domain.Mod, error) {
 		return nil, err
 	}
 
-	return s.deps.Index.List(ctx)
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.deps.Index.ListByGame(ctx, gameID)
 }
 
 // GetMod returns one installed mod, or ErrModNotFound.
@@ -418,6 +439,15 @@ func (s *ModService) Install(
 		)
 	}
 
+	// The mod belongs to the game that is active right now; every later
+	// scoping decision (listing, load order, payload path) reads this id.
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil, err
+	}
+
+	installed.GameID = gameID
+
 	mergeSourceData(installed, opts.SourceData)
 	// Apply install_mode from SourceData if provided.
 	if modeStr, ok := installed.SourceData["install_mode"].(string); ok {
@@ -454,7 +484,7 @@ func (s *ModService) Install(
 		return nil, err
 	}
 
-	target := domain.ModVersionPath(root, installed.ID, installed.Version)
+	target := domain.ModStoragePath(root, installed.GameID, installed.ID, installed.Version)
 
 	// Pre-install hooks see a mod that is not yet on disk, so their LocalPath is
 	// empty rather than pointing at a folder that is about to be replaced.
@@ -787,7 +817,7 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod) error {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "no file deployer is configured")
 	}
 
-	if err := s.deps.Deployer.DeployAs(mod.LocalPath, dst, s.deps.Deployer.Mode()); err != nil {
+	if err := s.deps.Deployer.DeployAs(mod.LocalPath, dst, s.installMethod()); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
 			"deploy mod %q into %q", modLabel(mod), dst)
 	}
@@ -1211,7 +1241,12 @@ func (s *ModService) ReorderMods(ctx context.Context, modIDs []string) error {
 		ordered = append(ordered, id)
 	}
 
-	if err := s.deps.Index.SetLoadOrder(ctx, ordered); err != nil {
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return err
+	}
+
+	if err := s.deps.Index.SetLoadOrderForGame(ctx, gameID, ordered); err != nil {
 		return err
 	}
 
@@ -1222,7 +1257,8 @@ func (s *ModService) ReorderMods(ctx context.Context, modIDs []string) error {
 	return nil
 }
 
-// LoadOrder returns the explicit load order, or nil when none was ever set.
+// LoadOrder returns the active game's explicit load order, or nil when none
+// was ever set.
 func (s *ModService) LoadOrder(ctx context.Context) ([]string, error) {
 	if s == nil || s.deps.Index == nil {
 		return nil, appErrors.New(
@@ -1235,7 +1271,12 @@ func (s *ModService) LoadOrder(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	return s.deps.Index.LoadOrder(ctx)
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.deps.Index.LoadOrderByGame(ctx, gameID)
 }
 
 // ModPath returns the payload folder of an installed mod.
@@ -1303,7 +1344,12 @@ func (s *ModService) SymlinkStatus(ctx context.Context) ([]ModLinkStatus, error)
 		return nil, err
 	}
 
-	mods, err := s.deps.Index.List(ctx)
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil, err
+	}
+
+	mods, err := s.deps.Index.ListByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -1398,7 +1444,12 @@ func (s *ModService) RefreshMods(ctx context.Context) error {
 		return err
 	}
 
-	mods, err := s.deps.Index.List(ctx)
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return err
+	}
+
+	mods, err := s.deps.Index.ListByGame(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -1471,7 +1522,12 @@ func (s *ModService) CheckModUpdates(ctx context.Context) ([]domain.ModUpdateInf
 		return nil, err
 	}
 
-	mods, err := s.deps.Index.List(ctx)
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil, err
+	}
+
+	mods, err := s.deps.Index.ListByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -1833,6 +1889,46 @@ func (s *ModService) storageRoot() (string, error) {
 	return filepath.Clean(raw), nil
 }
 
+// activeGameID resolves the id of the game the service is currently operating
+// for. A headless wiring (no locator) and a registry that knows no games both
+// report the empty id — the legacy, not-yet-assigned scope.
+func (s *ModService) activeGameID() (string, error) {
+	if s.deps.Locator == nil {
+		return "", nil
+	}
+
+	def, _, err := s.deps.Locator.Active()
+	if err != nil {
+		if appErrors.CodeOf(err) == appErrors.ErrCodeGameNotFound {
+			return games.DefaultID(), nil
+		}
+
+		return "", err
+	}
+
+	return def.ID(), nil
+}
+
+// installMethod resolves how mods should reach the game folder for the game in
+// use: the per-game configuration override when the user set one, otherwise
+// the game definition's own preference, otherwise whatever this platform
+// defaults to.
+//
+// A missing locator or an unresolvable game is not an error here: a headless
+// service still has to deploy mods, and the platform default is the honest
+// answer when nothing else is known.
+func (s *ModService) installMethod() platform.DeployMode {
+	preferred := ""
+
+	if s.deps.Locator != nil {
+		if def, settings, err := s.deps.Locator.Active(); err == nil {
+			preferred = settings.InstallMethodOrDefault(def)
+		}
+	}
+
+	return s.deps.Deployer.ModeFor(preferred)
+}
+
 // gameInstall resolves the game installation in use, tolerating a missing
 // locator by reporting "no game".
 func (s *ModService) gameInstall(ctx context.Context) (*domain.GameInstallation, error) {
@@ -1908,10 +2004,24 @@ func (s *ModService) deploymentPath(ctx context.Context, mod *domain.Mod) (strin
 	return s.modsPath(ctx)
 }
 
-// syncLoadOrderFile writes the current load order to the mods folder's
-// mod_load_order.txt file. Only mods with InstallModeModsFolder and a
-// non-empty ModFolderName are included. The file is written atomically.
+// syncLoadOrderFile writes the active game's load order to the file the game
+// definition asks for. Only mods with InstallModeModsFolder and a non-empty
+// ModFolderName are included. The file is written atomically. A definition
+// that declares no load order file opts out of this step entirely.
 func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return err
+	}
+
+	loadOrderFile := defaultLoadOrderFile
+	if def, ok := games.Get(gameID); ok {
+		loadOrderFile = def.LoadOrderFile()
+		if strings.TrimSpace(loadOrderFile) == "" {
+			return nil
+		}
+	}
+
 	modsFolder, err := s.modsPath(ctx)
 	if err != nil {
 		// If the mods folder cannot be resolved, there's nothing to sync.
@@ -1920,7 +2030,7 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 		return nil
 	}
 
-	loadOrder, err := s.deps.Index.LoadOrder(ctx)
+	loadOrder, err := s.deps.Index.LoadOrderByGame(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -1948,7 +2058,7 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 	}
 	// Also include enabled mods that are not in the explicit load order,
 	// falling back to their priority order.
-	enabledMods, err := s.deps.Index.ListEnabled(ctx)
+	enabledMods, err := s.deps.Index.ListEnabledByGame(ctx, gameID)
 	if err != nil {
 		return err
 	}
@@ -1987,7 +2097,7 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 		content += "\n"
 	}
 
-	loadOrderPath := filepath.Join(modsFolder, "mod_load_order.txt")
+	loadOrderPath := filepath.Join(modsFolder, loadOrderFile)
 
 	return platform.AtomicWriteFile(loadOrderPath, []byte(content), 0o644)
 }
@@ -2053,9 +2163,9 @@ func (s *ModService) validateHook(
 	phase domain.HookPhase,
 	position int,
 ) error {
-	if !script.Type.Valid() {
+	if !script.Language.Valid() {
 		return appErrors.New(appErrors.ErrCodeHookInvalid,
-			"%s hook %d has unknown type %q", phase, position, script.Type)
+			"%s hook %d has unknown language %q", phase, position, script.Language)
 	}
 
 	if strings.TrimSpace(script.Content) == "" {

@@ -10,6 +10,12 @@ import (
 // ModSource is the plugin contract every mod provider implements. Adding a new
 // provider requires nothing in the core: implement this interface and register
 // a factory.
+//
+// Two registration scopes exist. A generic factory (RegisterSourceFactory) is
+// available to every game; a game-scoped one (RegisterGameSourceFactory, keyed
+// by SourceKey(gameID, id)) is preferred while that game is active and invisible
+// to the others. The id a source reports is the same either way — game scope is
+// a property of the factory, not of the source.
 type ModSource interface {
 	// ID returns the stable identifier used in config and in the CLI ("vortex").
 	ID() string
@@ -39,6 +45,18 @@ type ModSource interface {
 	Authenticate(ctx context.Context, credentials AuthCredentials) error
 	// ValidateCredentials reports whether the currently held credentials work.
 	ValidateCredentials(ctx context.Context) error
+}
+
+// GameScopedSource is implemented by sources that exist for exactly one game —
+// a tool that manages another title's load order, say — so a caller can tell
+// "this source belongs to game X" without knowing the concrete plugin.
+//
+// It is optional, like CredentialForgetter: a shared source (Nexus, GitHub)
+// implements only ModSource, and the registration scope of its factory already
+// decides which games can see it.
+type GameScopedSource interface {
+	// GameID returns the registry id of the game this source serves.
+	GameID() string
 }
 
 // CredentialForgetter is implemented by sources that can drop the credential

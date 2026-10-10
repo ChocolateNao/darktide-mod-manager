@@ -105,6 +105,14 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 
 	defer func() { _ = tx.Rollback() }()
 
+	// Upgrades run before the idempotent DDL: the DDL's CREATE INDEX on
+	// game_id would fail against a mods table written by an older build that
+	// does not have the column yet. Cheap PRAGMA probe, guarded so a fresh
+	// database (no mods table) skips it.
+	if err := addModsGameIDColumn(ctx, tx); err != nil {
+		return err
+	}
+
 	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return appErrors.Wrap(
@@ -131,6 +139,50 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 
 	if err := tx.Commit(); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "commit schema transaction")
+	}
+
+	return nil
+}
+
+// addModsGameIDColumn upgrades a mods table created by a pre-multi-game build.
+//
+// The upgrade is a single guarded ALTER rather than a versioned migration: the
+// column carries DEFAULT ” so the statement cannot fail on populated tables,
+// and the probe (a PRAGMA table-info call) makes it a no-op on every database
+// that already has the column — which is every database this build creates.
+// The schema version is deliberately NOT bumped for this.
+func addModsGameIDColumn(ctx context.Context, tx *sql.Tx) error {
+	var table int
+
+	if err := tx.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mods'",
+	).Scan(&table); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "probe mods table")
+	}
+
+	if table == 0 {
+		return nil
+	}
+
+	var hasColumn int
+
+	if err := tx.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = 'game_id'",
+	).Scan(&hasColumn); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "probe mods.game_id column")
+	}
+
+	if hasColumn > 0 {
+		return nil
+	}
+
+	if _, err := tx.ExecContext(
+		ctx,
+		"ALTER TABLE mods ADD COLUMN game_id TEXT NOT NULL DEFAULT ''",
+	); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "add mods.game_id column")
 	}
 
 	return nil

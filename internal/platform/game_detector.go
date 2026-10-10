@@ -7,13 +7,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/darktide"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Detector finds Darktide installations and validates user-supplied paths.
+// Detector finds installations of a single registered game and validates
+// user-supplied paths. Every candidate and marker is read from the game
+// definition, so adding a game is registering its definition — no detector
+// changes.
 type Detector struct {
 	fs       FS
+	game     domain.GameDefinition
 	getenv   Env
 	now      func() time.Time
 	platform domain.Platform
@@ -21,10 +26,17 @@ type Detector struct {
 	extras   []string
 }
 
-// NewDetector builds a detector. home may be empty, in which case it is taken
-// from the environment. extras are user-configured paths tried before the
-// built-in candidates.
-func NewDetector(p domain.Platform, home string, getenv Env, extras []string) *Detector {
+// NewDetector builds a detector for game. home may be empty, in which case it
+// is taken from the environment. extras are user-configured paths tried before
+// the built-in candidates. A nil game falls back to the built-in Darktide
+// definition, keeping single-game call sites working.
+func NewDetector(
+	game domain.GameDefinition,
+	p domain.Platform,
+	home string,
+	getenv Env,
+	extras []string,
+) *Detector {
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
@@ -35,6 +47,10 @@ func NewDetector(p domain.Platform, home string, getenv Env, extras []string) *D
 		}
 	}
 
+	if game == nil {
+		game = darktide.New()
+	}
+
 	return &Detector{
 		platform: p,
 		home:     domain.CleanPath(home),
@@ -42,19 +58,21 @@ func NewDetector(p domain.Platform, home string, getenv Env, extras []string) *D
 		extras:   extras,
 		fs:       RealFS(),
 		now:      time.Now,
+		game:     game,
 	}
 }
 
 // NewDetectorWithFS builds a detector with an injected filesystem, which lets
 // tests simulate installations on any host.
 func NewDetectorWithFS(
+	game domain.GameDefinition,
 	p domain.Platform,
 	home string,
 	getenv Env,
 	extras []string,
 	fsys FS,
 ) *Detector {
-	d := NewDetector(p, home, getenv, extras)
+	d := NewDetector(game, p, home, getenv, extras)
 	if fsys != nil {
 		d.fs = fsys
 	}
@@ -77,13 +95,17 @@ func (d *Detector) init() {
 	if d.now == nil {
 		d.now = time.Now
 	}
+
+	if d.game == nil {
+		d.game = darktide.New()
+	}
 }
 
 // Platform reports the platform being searched.
 func (d *Detector) Platform() domain.Platform { return d.platform }
 
-// FindInstallations probes every candidate and returns the ones that look like a
-// Darktide installation, de-duplicated by path and ordered with the most likely
+// FindInstallations probes every candidate and returns the ones that look like
+// the configured game, de-duplicated by path and ordered with the most likely
 // source first. A cancelled context stops the search and yields no results.
 //
 // Individual probe failures are not fatal: half the candidates will not exist.
@@ -102,7 +124,8 @@ func (d *Detector) FindInstallations(ctx context.Context) ([]domain.GameInstalla
 
 	seen := map[string]bool{}
 
-	for _, c := range ExpandCandidates(GameCandidates(d.platform, d.home, d.getenv, d.extras)) {
+	candidates := GameCandidates(d.game, d.platform, d.home, d.getenv, d.extras)
+	for _, c := range ExpandCandidates(candidates) {
 		if err := ctx.Err(); err != nil {
 			return nil, errors.Wrap(
 				err,
@@ -165,8 +188,8 @@ func (d *Detector) validate(
 
 	if !d.looksLikeGame(clean) {
 		return nil, errors.New(errors.ErrCodeGameInvalid,
-			"%q does not look like a Darktide installation: expected %s or data/mods inside it",
-			path, domain.BinaryName)
+			"%q does not look like a %s installation: expected %s or data/mods inside it",
+			path, d.game.DisplayName(), d.primaryBinary())
 	}
 
 	install := &domain.GameInstallation{
@@ -177,46 +200,52 @@ func (d *Detector) validate(
 		Valid:      true,
 		DetectedAt: d.now(),
 		Platform:   d.platform,
+		GameID:     d.game.ID(),
 	}
 
 	return install, nil
 }
 
-// gameMarkers are the files that identify a Darktide installation. The executable
-// is authoritative on Windows; a data folder is enough on the Unix platforms,
-// where the game is usually run through a translation layer that renames it.
+// primaryBinary names a file that, present in the game root, proves the folder
+// is the game. It backs the validation error message; a game without binaries
+// falls back to the mods folder name.
+func (d *Detector) primaryBinary() string {
+	if names := d.game.BinaryNames(); len(names) > 0 {
+		return names[0]
+	}
+
+	return d.game.ModsDirName()
+}
+
+// looksLikeGame reports whether the folder is the configured game: any declared
+// binary present, a data folder (the Unix platforms usually run the game
+// through a translation layer that renames it), or the mods folder.
 func (d *Detector) looksLikeGame(dir string) bool {
-	if ExistsNoFollow(d.fs, filepath.Join(dir, domain.UnixBinaryName)) {
-		return true
+	for _, name := range d.game.BinaryNames() {
+		if ExistsNoFollow(d.fs, filepath.Join(dir, name)) {
+			return true
+		}
 	}
 
 	if IsDir(d.fs, filepath.Join(dir, "data")) {
 		return true
 	}
 
-	return IsDir(d.fs, filepath.Join(dir, domain.ModsDirName))
+	return IsDir(d.fs, filepath.Join(dir, d.game.ModsDirName()))
 }
 
-// modsPathCandidates lists the relative locations of the mods folder, most
-// specific first. Darktide ships with a mods folder in the game root; older
-// Proton prefixes sometimes keep it under data.
-var modsPathCandidates = [][]string{
-	{"data", domain.ModsDirName},
-	{domain.ModsDirName},
-	{"b3data", "temp", domain.ModsDirName},
-}
-
-// resolveModsPath returns an existing mods folder inside the installation, or the
-// preferred default when none exists yet.
+// resolveModsPath returns an existing mods folder inside the installation, or
+// the preferred default when none exists yet. Candidates come from the game
+// definition, most specific first.
 func (d *Detector) resolveModsPath(gameDir string) string {
-	for _, rel := range modsPathCandidates {
+	for _, rel := range d.game.ModsPathCandidates() {
 		p := domain.JoinPath(append([]string{gameDir}, rel...)...)
 		if IsDir(d.fs, p) {
 			return p
 		}
 	}
 
-	return domain.JoinPath(gameDir, domain.ModsDirName)
+	return domain.JoinPath(gameDir, d.game.ModsDirName())
 }
 
 // GetModsPath returns the mods folder for an installation, applying an override
@@ -263,14 +292,11 @@ func (d *Detector) GetModsPath(install *domain.GameInstallation, override string
 	return install.ModsPath, nil
 }
 
-// versionMarkers are files that reveal the installed game build.
-var versionMarkers = []string{"Darktide.exe", "Darktide", "version.txt"}
-
 // detectVersion reads a build version out of the installation, returning "" when
 // none is available. It never fails detection: a missing marker just means the
-// version is unknown.
+// version is unknown. The markers come from the game definition.
 func (d *Detector) detectVersion(gameDir string) string {
-	for _, marker := range versionMarkers {
+	for _, marker := range d.game.VersionMarkers() {
 		p := filepath.Join(gameDir, marker)
 
 		data, err := ReadFileLimit(p, 64*1024)

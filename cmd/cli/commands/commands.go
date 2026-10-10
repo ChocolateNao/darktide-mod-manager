@@ -110,7 +110,7 @@ type globalFlags struct {
 	configPath  string
 	cachePath   string
 	storagePath string
-	gamePath    string
+	gameID      string
 	logLevel    string
 	logDir      string
 	asJSON      bool
@@ -207,7 +207,7 @@ func (s *session) close() error {
 func (s *session) diOptions() di.Options {
 	return di.Options{
 		ConfigPath:  s.opts.configPath,
-		GamePath:    s.opts.gamePath,
+		GameID:      s.opts.gameID,
 		CachePath:   s.opts.cachePath,
 		StoragePath: s.opts.storagePath,
 		Logger:      s.logger(),
@@ -326,7 +326,12 @@ func newCommand(env Env) (*cobra.Command, *session) {
 	)
 	flags.StringVar(&s.opts.cachePath, "cache", "", "use this download cache directory")
 	flags.StringVar(&s.opts.storagePath, "storage", "", "use this mod storage directory")
-	flags.StringVar(&s.opts.gamePath, "game", "", "use this Darktide installation and remember it")
+	flags.StringVar(
+		&s.opts.gameID,
+		"game",
+		"",
+		"use this game id for this run (see `dmm game list`)",
+	)
 	flags.BoolVar(&s.opts.asJSON, "json", false, "print machine-readable JSON instead of a table")
 	flags.BoolVar(&s.opts.quiet, "quiet", false, "suppress start-up diagnostics")
 	s.addLoggingFlags(flags)
@@ -338,6 +343,7 @@ func newCommand(env Env) (*cobra.Command, *session) {
 		newCacheCommand(s),
 		newConfigCommand(s),
 		newLogCommand(s),
+		newManifestCommand(s),
 		newVersionCommand(s),
 	)
 

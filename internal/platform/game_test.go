@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/darktide"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,13 @@ func hasCandidate(cands []Candidate, path string) bool {
 
 func TestGameCandidatesLinux(t *testing.T) {
 	home := "/home/tester"
-	cands := GameCandidates(domain.PlatformLinux, home, mapEnv(map[string]string{}), nil)
+	cands := GameCandidates(
+		darktide.New(),
+		domain.PlatformLinux,
+		home,
+		mapEnv(map[string]string{}),
+		nil,
+	)
 
 	want := []string{
 		"/home/tester/.steam/steam/steamapps/common/Darktide",
@@ -75,10 +82,16 @@ func TestGameCandidatesLinux(t *testing.T) {
 }
 
 func TestGameCandidatesLinuxHonoursXDGAndHeroicEnv(t *testing.T) {
-	cands := GameCandidates(domain.PlatformLinux, "/home/tester", mapEnv(map[string]string{
-		"XDG_DATA_HOME":        "/data",
-		"HEROIC_PREFIXES_PATH": "/heroic",
-	}), nil)
+	cands := GameCandidates(
+		darktide.New(),
+		domain.PlatformLinux,
+		"/home/tester",
+		mapEnv(map[string]string{
+			"XDG_DATA_HOME":        "/data",
+			"HEROIC_PREFIXES_PATH": "/heroic",
+		}),
+		nil,
+	)
 
 	assert.True(
 		t,
@@ -103,10 +116,16 @@ func TestGameCandidatesLinuxHonoursXDGAndHeroicEnv(t *testing.T) {
 }
 
 func TestGameCandidatesLinuxIgnoresRelativeXDG(t *testing.T) {
-	cands := GameCandidates(domain.PlatformLinux, "/home/tester", mapEnv(map[string]string{
-		"XDG_DATA_HOME":        "relative/data",
-		"HEROIC_PREFIXES_PATH": "./prefixes",
-	}), nil)
+	cands := GameCandidates(
+		darktide.New(),
+		domain.PlatformLinux,
+		"/home/tester",
+		mapEnv(map[string]string{
+			"XDG_DATA_HOME":        "relative/data",
+			"HEROIC_PREFIXES_PATH": "./prefixes",
+		}),
+		nil,
+	)
 	assert.True(
 		t,
 		hasCandidate(cands, "/home/tester/.local/share/EpicGames/Darktide"),
@@ -125,6 +144,7 @@ func TestGameCandidatesLinuxIgnoresRelativeXDG(t *testing.T) {
 
 func TestGameCandidatesDarwin(t *testing.T) {
 	cands := GameCandidates(
+		darktide.New(),
 		domain.PlatformDarwin,
 		"/Users/tester",
 		mapEnv(map[string]string{}),
@@ -171,11 +191,17 @@ func TestGameCandidatesDarwin(t *testing.T) {
 }
 
 func TestGameCandidatesWindows(t *testing.T) {
-	cands := GameCandidates(domain.PlatformWindows, `C:\Users\tester`, mapEnv(map[string]string{
-		"ProgramFiles(x86)": `C:\Program Files (x86)`,
-		"ProgramFiles":      `C:\Program Files`,
-		"SteamPath":         `D:\Steam`,
-	}), nil)
+	cands := GameCandidates(
+		darktide.New(),
+		domain.PlatformWindows,
+		`C:\Users\tester`,
+		mapEnv(map[string]string{
+			"ProgramFiles(x86)": `C:\Program Files (x86)`,
+			"ProgramFiles":      `C:\Program Files`,
+			"SteamPath":         `D:\Steam`,
+		}),
+		nil,
+	)
 
 	want := []string{
 		"D:/Steam/steamapps/common/Darktide",
@@ -205,15 +231,15 @@ func TestGameCandidatesWindows(t *testing.T) {
 }
 
 func TestGameCandidatesWindowsWithoutEnvironment(t *testing.T) {
-	cands := GameCandidates(domain.PlatformWindows, "", noEnv, nil)
+	cands := GameCandidates(darktide.New(), domain.PlatformWindows, "", noEnv, nil)
 	assert.Len(t, cands, 0, "candidates = %v, want none with no environment and no home", cands)
 
-	got := GameCandidates(domain.PlatformWindows, "", nil, nil)
+	got := GameCandidates(darktide.New(), domain.PlatformWindows, "", nil, nil)
 	assert.Empty(t, got, "candidates with a nil env = %v, want none", got)
 }
 
 func TestGameCandidatesExtrasComeFirst(t *testing.T) {
-	cands := GameCandidates(domain.PlatformLinux, "/home/tester", noEnv, []string{
+	cands := GameCandidates(darktide.New(), domain.PlatformLinux, "/home/tester", noEnv, []string{
 		"  /opt/games/Darktide  ",
 		"",
 		"   ",
@@ -333,7 +359,7 @@ func TestValidateInstallationAccepts(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := gameDir(t, tc.modsSub, tc.files)
-			d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+			d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 			got, err := d.ValidateInstallation(dir)
 			require.NoError(t, err, "ValidateInstallation")
@@ -386,7 +412,7 @@ func TestValidateInstallationModsPathPrecedence(t *testing.T) {
 		"mods/b.txt":           "x",
 		"b3data/temp/mods/c.d": "x",
 	})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 	got, err := d.ValidateInstallation(dir)
 	require.NoError(t, err, "ValidateInstallation")
@@ -414,7 +440,7 @@ func TestValidateInstallationModsPathPrecedence(t *testing.T) {
 func TestValidateInstallationRejects(t *testing.T) {
 	notAGame := gameDir(t, "", map[string]string{"readme.txt": "not a game"})
 	isAGame := gameDir(t, "", map[string]string{"Darktide.exe": "binary"})
-	d := NewDetector(domain.PlatformLinux, notAGame, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, notAGame, noEnv, nil)
 
 	cases := map[string]struct {
 		path    string
@@ -475,7 +501,7 @@ func TestValidateInstallationRejects(t *testing.T) {
 
 func TestValidateInstallationNormalisesPath(t *testing.T) {
 	dir := gameDir(t, "", map[string]string{"Darktide.exe": "binary"})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 	// Trailing separators and duplicate separators are cleaned away.
 	for _, in := range []string{dir + "/", dir + "//", dir + "/./"} {
@@ -496,7 +522,7 @@ func TestValidateInstallationNormalisesPath(t *testing.T) {
 
 func TestValidateInstallationWithSource(t *testing.T) {
 	dir := gameDir(t, "", map[string]string{"Darktide.exe": "binary"})
-	d := NewDetector(domain.PlatformWindows, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformWindows, dir, noEnv, nil)
 
 	got, err := d.ValidateInstallationWithSource(dir, domain.GameSourceSteam)
 	require.NoError(t, err, "ValidateInstallationWithSource")
@@ -550,7 +576,7 @@ func TestValidateInstallationDetectsVersion(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			dir := gameDir(t, "", tc.files)
-			d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+			d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 			got, err := d.ValidateInstallation(dir)
 			require.NoError(t, err, "ValidateInstallation")
@@ -567,7 +593,7 @@ func TestGetModsPath(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	d := NewDetector(domain.PlatformLinux, "", noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, "", noEnv, nil)
 
 	got, err := d.GetModsPath(install, "")
 	require.NoError(t, err, "GetModsPath")
@@ -595,7 +621,7 @@ func TestGetModsPath(t *testing.T) {
 
 func TestGetModsPathRejects(t *testing.T) {
 	dir := gameDir(t, "", map[string]string{"Darktide.exe": "binary", "data/mods/a.txt": "x"})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 	install, err := d.ValidateInstallation(dir)
 	require.NoError(t, err)
@@ -630,7 +656,7 @@ func TestGetModsPathMissingDefaultFolder(t *testing.T) {
 	// An installation whose mods folder was deleted after detection must not
 	// silently hand back a path that does not exist.
 	dir := gameDir(t, "", map[string]string{"Darktide.exe": "binary"})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 	install, err := d.ValidateInstallation(dir)
 	require.NoError(t, err)
@@ -667,7 +693,7 @@ func TestFindInstallations(t *testing.T) {
 	err = os.MkdirAll(filepath.Join(home, ".local", "share", "EpicGames", "Darktide"), 0o755)
 	require.NoError(t, err)
 
-	d := NewDetector(domain.PlatformLinux, home, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, home, noEnv, nil)
 
 	found, err := d.FindInstallations(context.Background())
 	require.NoError(t, err, "FindInstallations")
@@ -693,7 +719,7 @@ func TestFindInstallations(t *testing.T) {
 }
 
 func TestFindInstallationsEmptyAndNilContext(t *testing.T) {
-	d := NewDetector(domain.PlatformLinux, t.TempDir(), noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, t.TempDir(), noEnv, nil)
 	//nolint:staticcheck // passing a nil context is exactly the edge case under test.
 	found, err := d.FindInstallations(nil)
 	require.NoError(t, err, "FindInstallations with a nil context")
@@ -720,7 +746,7 @@ func TestFindInstallationsHonoursCancelledContext(t *testing.T) {
 	err = os.WriteFile(filepath.Join(game, "Darktide.exe"), []byte("x"), 0o644)
 	require.NoError(t, err)
 
-	d := NewDetector(domain.PlatformLinux, home, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, home, noEnv, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -751,7 +777,7 @@ func TestFindInstallationsDeduplicates(t *testing.T) {
 	err = os.WriteFile(filepath.Join(game, "Darktide.exe"), []byte("x"), 0o644)
 	require.NoError(t, err)
 	// The same path, spelled differently, must be reported once.
-	d := NewDetector(domain.PlatformLinux, home, noEnv, []string{game + "/", game})
+	d := NewDetector(darktide.New(), domain.PlatformLinux, home, noEnv, []string{game + "/", game})
 
 	found, err := d.FindInstallations(context.Background())
 	require.NoError(t, err)
@@ -770,6 +796,7 @@ func TestFindInstallationsDeduplicates(t *testing.T) {
 
 func TestNewDetectorResolvesHomeFromEnvironment(t *testing.T) {
 	d := NewDetector(
+		darktide.New(),
 		domain.PlatformLinux,
 		"",
 		mapEnv(map[string]string{"HOME": "/home/tester/"}),
@@ -782,12 +809,12 @@ func TestNewDetectorResolvesHomeFromEnvironment(t *testing.T) {
 	assert.Equal(t, domain.PlatformLinux, d.Platform(), "Platform() = %q", d.Platform())
 
 	// With no HOME the detector still works, it just searches nothing.
-	got := NewDetector(domain.PlatformLinux, "", noEnv, nil)
+	got := NewDetector(darktide.New(), domain.PlatformLinux, "", noEnv, nil)
 	assert.Equal(t, "", got.home, "home = %q, want empty", got.home)
 }
 
 func TestNewDetectorWithFSNilFallsBackToReal(t *testing.T) {
-	d := NewDetectorWithFS(domain.PlatformLinux, "/home/tester", noEnv, nil, nil)
+	d := NewDetectorWithFS(darktide.New(), domain.PlatformLinux, "/home/tester", noEnv, nil, nil)
 	assert.NotNil(t, d.fs, "filesystem is nil")
 }
 
@@ -855,7 +882,7 @@ func TestDetectVersionSkipsOversizedMarkers(t *testing.T) {
 		"Darktide.exe": "binary",
 		"version.txt":  strings.Repeat("x", 128*1024),
 	})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 
 	got, err := d.ValidateInstallation(dir)
 	require.NoError(t, err, "ValidateInstallation")
@@ -873,7 +900,7 @@ func TestDetectorDetectedAtIsInjectable(t *testing.T) {
 	// Sanity check that the detector stamps a timestamp, since services sort by
 	// it. Uses the real clock through the default constructor.
 	dir := gameDir(t, "", map[string]string{"Darktide.exe": "binary"})
-	d := NewDetector(domain.PlatformLinux, dir, noEnv, nil)
+	d := NewDetector(darktide.New(), domain.PlatformLinux, dir, noEnv, nil)
 	before := time.Now().Add(-time.Second)
 
 	got, err := d.ValidateInstallation(dir)

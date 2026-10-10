@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
@@ -47,39 +48,65 @@ type hookView struct {
 	Env        []string `json:"env,omitempty"`
 	Position   int      `json:"position"`
 	Timeout    int      `json:"timeout,omitempty"`
+	// EffectiveTimeout is the timeout the executor would actually apply — the
+	// declared one after the configured default, game, and permission caps —
+	// in seconds. It differs from Timeout whenever the declared value is zero
+	// or clamped.
+	EffectiveTimeout int `json:"effective_timeout"`
 }
 
 func newHooksListCommand(s *session) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list <mod>",
 		Short: "List a mod's hook scripts",
-		Args:  cobra.ExactArgs(1),
+		Long: "List a mod's hook scripts.\n\n" +
+			"TIMEOUT is what the script declares (default = nothing declared);\n" +
+			"EFFECTIVE is what the executor will apply once the configured\n" +
+			"floor, ceiling, and permission caps are taken into account.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := s.client(cmd.Context())
 			if err != nil {
 				return err
 			}
 
-			hooks, err := client.GetModHooks(cmd.Context(), args[0])
+			ctx := cmd.Context()
+
+			hooks, err := client.GetModHooks(ctx, args[0])
 			if err != nil {
 				return err
 			}
 
-			table := NewTable("PHASE", "#", "TYPE", "TIMEOUT", "SCRIPT")
+			// The mod is what permission scopes hang off, so the effective
+			// timeout is only exact with it in hand. The hooks were readable,
+			// so the mod exists; a failure here is still tolerated rather than
+			// failing the listing — the columns would then show the
+			// game-and-default scopes only.
+			mod, err := client.GetMod(ctx, args[0])
+			if err != nil {
+				mod = nil
+			}
+
+			table := NewTable("PHASE", "#", "TYPE", "TIMEOUT", "EFFECTIVE", "SCRIPT")
 
 			views := make([]hookView, 0, hooks.Count())
 			for _, phase := range domain.HookPhases() {
 				for position, script := range hooks.For(phase) {
-					table.Add(string(phase), strconv.Itoa(position+1), string(script.Type),
-						orDash(timeoutText(script.Timeout)), Clip(script.Content))
+					effective := client.HookTimeout(ctx, script, mod)
+
+					table.Add(string(phase), strconv.Itoa(position+1), string(script.Language),
+						orDash(timeoutText(script.Timeout)),
+						effectiveText(effective),
+						Clip(script.Content))
 					views = append(views, hookView{
-						Phase:      string(phase),
-						Position:   position + 1,
-						Type:       string(script.Type),
-						Timeout:    script.Timeout,
-						WorkingDir: script.WorkingDir,
-						Env:        script.Env,
-						Content:    script.Content,
+						Phase:            string(phase),
+						Position:         position + 1,
+						Type:             string(script.Language),
+						Timeout:          script.Timeout,
+						EffectiveTimeout: int(effective.Seconds()),
+						WorkingDir:       script.WorkingDir,
+						Env:              script.Env,
+						Content:          script.Content,
 					})
 				}
 			}
@@ -105,10 +132,9 @@ func newHooksAddCommand(s *session) *cobra.Command {
 		Use:   "add <mod>",
 		Short: "Add a hook script",
 		Long: "Add a hook script to one lifecycle phase of a mod.\n\n" +
-			"--content is the script itself, except for --type file, where it is\n" +
-			"the path to the script relative to the mod's own folder. --file reads\n" +
-			"the content from a file instead, which is how a long shell or\n" +
-			"JavaScript hook is written without fighting the shell's quoting.",
+			"--content is the script itself; --file reads the content from a file\n" +
+			"instead, which is how a long Lua or JavaScript hook is written without\n" +
+			"fighting the shell's quoting.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedPhase, err := parseHookPhase(phase)
@@ -116,7 +142,7 @@ func newHooksAddCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			parsedType, err := parseHookType(hookType)
+			lang, err := parseHookLanguage(hookType)
 			if err != nil {
 				return err
 			}
@@ -145,7 +171,7 @@ func newHooksAddCommand(s *session) *cobra.Command {
 			}
 
 			script := domain.HookScript{
-				Type:       parsedType,
+				Language:   lang,
 				Content:    body,
 				Timeout:    timeout,
 				WorkingDir: strings.TrimSpace(workingTo),
@@ -160,7 +186,7 @@ func newHooksAddCommand(s *session) *cobra.Command {
 			}
 
 			_, err = fmt.Fprintf(s.env.Out, "added %s script to %s of %s\n",
-				parsedType, parsedPhase, modID)
+				lang, parsedPhase, modID)
 
 			return err
 		},
@@ -170,10 +196,10 @@ func newHooksAddCommand(s *session) *cobra.Command {
 	flags.StringVar(
 		&hookType,
 		"type",
-		string(domain.HookTypeInline),
-		"script type: "+hookTypeNames(),
+		string(domain.LangLua),
+		"script language: "+hookLanguageNames(),
 	)
-	flags.StringVar(&content, "content", "", "the script, or its path for --type file")
+	flags.StringVar(&content, "content", "", "the script itself")
 	flags.StringVar(&file, "file", "", "read the script from this file")
 	flags.IntVar(
 		&timeout,
@@ -422,29 +448,29 @@ func parseHookPhase(text string) (domain.HookPhase, error) {
 	return phase, nil
 }
 
-// parseHookType turns a --type argument into a script type.
+// parseHookLanguage turns a --type argument into a script language.
 //
-// The comparison is case-insensitive because a shell user types `INLINE` and
-// means inline, but the stored value is always the canonical lower-case one:
-// the executor's registry is keyed by the exact type, so a capitalised value
-// would find no runner and fail at enable time.
-func parseHookType(text string) (domain.HookType, error) {
-	trimmed := strings.ToLower(strings.TrimSpace(text))
+// The comparison is case-insensitive because a shell user types `LUA` and
+// means lua, but the stored value is always the canonical lower-case one: the
+// executor's registry is keyed by the exact language, so a capitalised value
+// would find no runner and fail at enable time. The flag keeps its --type
+// name because that is what scripts and muscle memory already use.
+func parseHookLanguage(text string) (domain.ScriptLanguage, error) {
+	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
-		return "", fatalf("--type is required; use one of %s", hookTypeNames())
+		return "", fatalf("--type is required; use one of %s", hookLanguageNames())
 	}
 
-	for _, candidate := range domain.HookTypes() {
-		if string(candidate) == trimmed {
-			return candidate, nil
-		}
+	lang, err := domain.ParseScriptLanguage(trimmed)
+	if err != nil {
+		return "", fatalf(
+			"unknown script language %q; use one of %s",
+			trimmed,
+			hookLanguageNames(),
+		)
 	}
 
-	return "", fatalf(
-		"unknown script type %q; use one of %s",
-		strings.TrimSpace(text),
-		hookTypeNames(),
-	)
+	return lang, nil
 }
 
 func phaseNames() string {
@@ -456,13 +482,13 @@ func phaseNames() string {
 	return strings.Join(phases, ", ")
 }
 
-func hookTypeNames() string {
-	types := make([]string, 0, len(domain.HookTypes()))
-	for _, hookType := range domain.HookTypes() {
-		types = append(types, string(hookType))
+func hookLanguageNames() string {
+	langs := make([]string, 0, len(domain.ScriptLanguages()))
+	for _, lang := range domain.ScriptLanguages() {
+		langs = append(langs, string(lang))
 	}
 
-	return strings.Join(types, ", ")
+	return strings.Join(langs, ", ")
 }
 
 // timeoutText renders a script's timeout, where zero means "use the configured
@@ -473,4 +499,20 @@ func timeoutText(seconds int) string {
 	}
 
 	return strconv.Itoa(seconds) + "s"
+}
+
+// effectiveText renders the timeout the executor will apply. Zero here means
+// no executor is wired (or the duration rounded away), and "-" says that
+// better than "default" would: this column is an answer, not a declaration.
+func effectiveText(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "-"
+	case d < time.Second:
+		return "<1s"
+	case d%time.Second == 0:
+		return strconv.Itoa(int(d.Seconds())) + "s"
+	default:
+		return strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + "s"
+	}
 }

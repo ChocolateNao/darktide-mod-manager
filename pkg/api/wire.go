@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/logging"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
@@ -162,7 +164,18 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		configPath = dirs.ConfigFilePath()
 	}
 
-	store := storage.NewConfigStore(configPath)
+	// The registry must know the bundled games before the configuration is
+	// resolved: active_game names a registry id, and an empty one means "the
+	// default", which only the registry can answer.
+	if err := games.EnsureBuiltins(); err != nil {
+		return nil, err
+	}
+
+	// Wrapping the store rather than fixing up the loaded copy: every later
+	// reader (the game locator, the settings API, the source registry) goes
+	// through the same store, so a configuration that only the wiring path
+	// healed would still be broken for all of them.
+	store := services.NewGameStore(storage.NewConfigStore(configPath))
 
 	cfg, err := store.Load()
 	if err != nil {
@@ -172,6 +185,23 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	// keeps its advanced.log_level instead of silently reverting to info.
 	migrateLevel(cfg)
 	cfg.ApplyDefaults()
+
+	// An explicit WithGame wins over whatever the file says, but only for a
+	// game the registry knows: a typo on the command line should be reported,
+	// not silently healed back to the default the user was trying to leave.
+	if id := strings.TrimSpace(set.gameID); id != "" {
+		def, ok := games.Get(id)
+		if !ok {
+			return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"game %q is not registered", id)
+		}
+
+		cfg.ActiveGame = def.ID()
+
+		if _, ok := cfg.GameSettingsFor(def.ID()); !ok {
+			cfg.SetGameSettings(def.ID(), domain.DefaultGameSettings())
+		}
+	}
 
 	if set.gamePath != "" {
 		if err := persistGamePath(cfg, store, set.gamePath); err != nil {
@@ -215,9 +245,9 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		storageRoot = dirs.StorageRoot()
 	}
 	// The database sits next to the storage root rather than inside it. Mod
-	// payloads live in <storage>/<id>/<version>, so a database in there would sit
-	// among the mod folders — and a user who pointed the local source at their
-	// storage tree would find it offering a database file as a mod.
+	// payloads live in <storage>/<game>/<id>/<version>, so a database in there
+	// would sit among the mod folders — and a user who pointed the local source
+	// at their storage tree would find it offering a database file as a mod.
 	databasePath := filepath.Join(filepath.Dir(storageRoot), "mods.db")
 
 	events := NewEventBus()
@@ -254,10 +284,21 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	// token supplied on a command line should not end up in a file — so without
 	// this the registry would report a source the caller switched off as enabled,
 	// having correctly declined to build it.
+	// The store resolved ActiveGame to a registered id while loading, so this
+	// can only fail if the registry lost its builtins in between — refuse rather
+	// than build every source against the wrong game.
+	gameDef, ok := games.Get(cfg.ActiveGame)
+	if !ok {
+		_ = joinAll(cleanups)
+
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
+			"active game %q is not registered", cfg.ActiveGame)
+	}
+
 	registry := services.NewSourceRegistryWithStore(store).
 		WithConfig(func() *domain.Config { return cfg }).
 		WithLogger(logService.Logger())
-	if err := sources.RegisterAll(registry, cfg.Sources); err != nil {
+	if err := sources.RegisterAll(registry, cfg.Sources, gameDef); err != nil {
 		// Logged, not returned. The alternative — refusing to start because one
 		// optional source is misconfigured — makes the manager unusable for a
 		// problem the user can see and fix in the settings screen. The error text
@@ -293,15 +334,42 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	locator := services.NewGameLocator(store).WithLogger(logService.Logger())
 
 	hookExecutor := services.NewHookExecutor(services.HookExecutorDeps{
-		Config:   cfg.Hooks,
+		Config: cfg.Hooks,
+		// Read from the file on every policy question: the active game can
+		// change while the process runs (UseGame), and the permission
+		// scopes are keyed by that id — a snapshot taken here would answer
+		// for the game that was active at start-up. The in-memory cfg is
+		// the fallback for a transient read failure.
+		ConfigProvider: func() domain.HooksConfig {
+			if fresh, err := store.Load(); err == nil && fresh != nil {
+				return fresh.Hooks
+			}
+
+			return cfg.Hooks
+		},
 		Platform: platformName,
 		GamePath: func() string { return configuredGamePath(store) },
-		Context:  hookContextFunc(store, cacheRoot, storageRoot),
-		Events:   events,
-		Clock:    now,
-		Logger:   logService.Logger(),
+		// Read from the live configuration object on every run: WithGame
+		// mutates it before any hook can run, and UseGame mutates it at
+		// switch time, so the permission cap for the active game applies
+		// without a restart.
+		GameID:  func() string { return cfg.ActiveGame },
+		Context: hookContextFunc(store, cacheRoot, storageRoot),
+		Events:  events,
+		Clock:   now,
+		Logger:  logService.Logger(),
 	})
-	if err := hooks.RegisterAll(hookExecutor); err != nil {
+
+	// The one construction of the sandbox's providers: every runner reaches the
+	// manager through exactly these four bridges and nothing else.
+	providers := host.Providers{
+		Config:  hookConfigAccess{store: store},
+		Storage: hookStorageAccess{index: index, storageRoot: storageRoot},
+		TempDir: os.TempDir(),
+		Logger:  hookLogFunc(logService.Logger()),
+	}
+
+	if err := hooks.RegisterAll(hookExecutor, providers); err != nil {
 		// A hook runner that will not register means no lifecycle can run
 		// safely, which is fatal rather than a degraded source.
 		_ = joinAll(cleanups)
@@ -338,8 +406,11 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 			Cache:   cacheManager,
 			Hooks:   hookExecutor,
 			Config:  store,
-			Events:  events,
-			Clock:   now,
+			// The same pointer the closures above capture, so a runtime switch
+			// (UseGame) that mutates it is visible to every policy question.
+			ActiveConfig: cfg,
+			Events:       events,
+			Clock:        now,
 		},
 		Config:       cfg,
 		Store:        store,
@@ -378,7 +449,14 @@ func buildLogging(
 // failure. A caller that discovers it has the wrong path thirty seconds later,
 // after a download has started, has learned nothing useful.
 func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string) error {
-	detector := platform.NewDetector(domain.CurrentPlatform(), homeDir(), platform.OSEnv(),
+	gameID := strings.TrimSpace(cfg.ActiveGame)
+	if gameID == "" {
+		gameID = games.DefaultID()
+	}
+
+	def, _ := games.Get(gameID)
+
+	detector := platform.NewDetector(def, domain.CurrentPlatform(), homeDir(), platform.OSEnv(),
 		[]string{path})
 
 	install, err := detector.ValidateInstallation(path)
@@ -387,7 +465,9 @@ func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string
 	}
 	// Store the cleaned path the detector confirmed rather than the caller's
 	// spelling, so the file and the value the locator will probe agree.
-	cfg.Game.Path = install.Path
+	cfg.UpdateActiveSettings(func(settings *domain.GameSettings) {
+		settings.Path = install.Path
+	})
 	updated := cfg.Clone()
 	updated.ApplyDefaults()
 
@@ -424,7 +504,7 @@ func configuredGamePath(store services.ConfigStore) string {
 		return ""
 	}
 
-	return strings.TrimSpace(cfg.Game.Path)
+	return strings.TrimSpace(cfg.ActiveSettings().Path)
 }
 
 // hookContextFunc builds the per-script hook context.
@@ -447,8 +527,9 @@ func hookContextFunc(
 
 		if store != nil {
 			if cfg, err := store.Load(); err == nil && cfg != nil {
-				paths.GamePath = strings.TrimSpace(cfg.Game.Path)
-				paths.GameVersion = strings.TrimSpace(cfg.Game.Source)
+				settings := cfg.ActiveSettings()
+				paths.GamePath = strings.TrimSpace(settings.Path)
+				paths.GameVersion = strings.TrimSpace(string(settings.Source))
 			}
 		}
 

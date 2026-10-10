@@ -27,6 +27,13 @@ func (o Options) apiOptions() ([]api.Option, error) {
 		opts = append(opts, api.WithGamePath(path))
 	}
 
+	// The game id is trimmed like a path, but a blank means "whatever the
+	// configuration says" rather than an error: unlike a path, there is no
+	// filesystem validation that could tell a user their spaces were wrong.
+	if id := strings.TrimSpace(o.GameID); id != "" {
+		opts = append(opts, api.WithGame(id))
+	}
+
 	if path, ok := normalizePath(o.CachePath); ok {
 		opts = append(opts, api.WithCachePath(path))
 	}

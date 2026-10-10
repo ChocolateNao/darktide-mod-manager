@@ -23,10 +23,13 @@ CREATE TABLE IF NOT EXISTS config (
 );
 
 -- Installed mods. `local_path` points at the manager-owned folder
--- (<storage>/mods/<id>/<version>); the game's mods folder only ever holds
+-- (<storage>/<game_id>/<id>/<version>); the game's mods folder only ever holds
 -- symlinks (or copies) pointing into it.
 CREATE TABLE IF NOT EXISTS mods (
     id             TEXT PRIMARY KEY NOT NULL,
+    -- Game this mod belongs to. Empty for rows written before multi-game
+    -- support; the composition root treats "" as the default game's id.
+    game_id        TEXT NOT NULL DEFAULT '',
     name           TEXT NOT NULL DEFAULT '',
     version        TEXT NOT NULL DEFAULT '',
     author         TEXT NOT NULL DEFAULT '',
@@ -93,5 +96,6 @@ CREATE INDEX IF NOT EXISTS idx_cache_refs        ON cache_entries(refs);
 CREATE INDEX IF NOT EXISTS idx_mods_enabled    ON mods(enabled);
 CREATE INDEX IF NOT EXISTS idx_mods_source     ON mods(source_id);
 CREATE INDEX IF NOT EXISTS idx_mods_priority   ON mods(priority, id);
+CREATE INDEX IF NOT EXISTS idx_mods_game       ON mods(game_id);
 CREATE INDEX IF NOT EXISTS idx_mod_files_mod   ON mod_files(mod_id);
 CREATE INDEX IF NOT EXISTS idx_load_order_pos  ON load_order(position);

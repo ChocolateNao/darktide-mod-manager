@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
@@ -22,7 +24,7 @@ func (c *Client) locator() (*services.GameLocator, error) {
 	return c.deps.Game, nil
 }
 
-// DetectGame probes the machine for Darktide installations and returns them
+// DetectGame probes the machine for selected game installations and returns them
 // sorted by path.
 //
 // A partially successful sweep keeps what it found: one candidate directory that
@@ -104,4 +106,125 @@ func (c *Client) GetModsPath(ctx context.Context, install *GameInstallation) (st
 	}
 
 	return loc.GetModsPath(install)
+}
+
+// GameInfo describes one registered game as the switcher needs it: identity,
+// presentation and which entry is the default and which is live.
+type GameInfo struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description,omitempty"`
+	IsDefault   bool   `json:"is_default"`
+	IsActive    bool   `json:"is_active"`
+}
+
+// SupportedGames lists every game the registry knows, sorted by id, with the
+// default and the active game marked. The list comes from the registry rather
+// than the configuration: a game the config mentions but the registry does not
+// offer is not something the user can switch to.
+func (c *Client) SupportedGames() ([]GameInfo, error) {
+	if err := c.ready(); err != nil {
+		return nil, err
+	}
+
+	defs := games.All()
+	infos := make([]GameInfo, 0, len(defs))
+
+	active := ""
+
+	switch {
+	case c.deps.ActiveConfig != nil:
+		active = strings.TrimSpace(c.deps.ActiveConfig.ActiveGame)
+	case c.deps.Config != nil:
+		if cfg, err := c.deps.Config.Load(); err == nil && cfg != nil {
+			active = strings.TrimSpace(cfg.ActiveGame)
+		}
+	}
+
+	defaultID := games.DefaultID()
+	if active == "" {
+		active = defaultID
+	}
+
+	for _, def := range defs {
+		infos = append(infos, GameInfo{
+			ID:          def.ID(),
+			DisplayName: def.DisplayName(),
+			Description: def.Description(),
+			IsDefault:   def.ID() == defaultID,
+			IsActive:    def.ID() == active,
+		})
+	}
+
+	return infos, nil
+}
+
+// UseGame makes id the active game for this process and for the next start:
+// the id is persisted through the locator, and the source registry is rebuilt
+// in place so the sources this game defines replace the previous game's.
+//
+// Everything else keeps its identity — the mod service, the cache downloader
+// and the hook executor all hold the same pointers and re-resolve the active
+// game per call — so a switch is a configuration change, not a restart.
+func (c *Client) UseGame(ctx context.Context, id string) error {
+	loc, err := c.locator()
+	if err != nil {
+		return err
+	}
+
+	if ctx != nil && ctx.Err() != nil {
+		return appErrors.New(appErrors.ErrCodeOperationCanceled,
+			"operation stopped before switching to %q", strings.TrimSpace(id))
+	}
+
+	trimmed := strings.TrimSpace(id)
+
+	def, ok := games.Get(trimmed)
+	if !ok {
+		return appErrors.New(appErrors.ErrCodeGameNotFound,
+			"game %q is not registered", trimmed)
+	}
+
+	if err := loc.SetActive(def.ID()); err != nil {
+		return err
+	}
+
+	// The wiring closures (hook GameID, registry WithConfig) read the live
+	// configuration object rather than reloading the file; updating it here is
+	// what makes a switch visible to them without a graph rebuild.
+	if c.deps.ActiveConfig != nil {
+		c.deps.ActiveConfig.ActiveGame = def.ID()
+	}
+
+	if c.deps.Sources == nil {
+		return nil
+	}
+
+	// The live configuration object rather than a fresh load: it carries the
+	// per-source overrides a command line supplied, which are deliberately
+	// never written back to the file — reloading would drop them mid-session.
+	cfg := c.deps.ActiveConfig
+	if cfg == nil {
+		if c.deps.Config == nil {
+			return nil
+		}
+
+		loaded, err := c.deps.Config.Load()
+		if err != nil || loaded == nil {
+			return nil
+		}
+
+		cfg = loaded
+	}
+
+	c.deps.Sources.RebuildForGame(def)
+
+	if err := sources.RegisterAll(c.deps.Sources, cfg.Sources, def); err != nil {
+		// Same stance as the initial wiring: a source that cannot be
+		// configured is a problem the user can see and fix, not a reason to
+		// refuse the switch — every other source still works.
+		c.logger.Printf("some sources could not be configured for %q: %v", def.ID(), err)
+	}
+
+	return nil
 }

@@ -1,31 +1,116 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // Config is the complete user configuration. Every field has a usable default so
 // that a zero Config is still valid; ApplyDefaults fills in anything unset.
 type Config struct {
+	Hooks      HooksConfig             `json:"hooks"`
 	Sources    map[string]SourceConfig `json:"sources"`
-	Game       GameConfig              `json:"game"`
+	Games      map[string]GameSettings `json:"games,omitempty"`
+	ActiveGame string                  `json:"active_game"`
 	UI         UIConfig                `json:"ui"`
 	Advanced   AdvancedConfig          `json:"advanced"`
 	Storage    StorageConfig           `json:"storage"`
 	AutoUpdate AutoUpdateConfig        `json:"auto_update"`
 	Cache      CacheConfig             `json:"cache"`
 	Logging    LoggingConfig           `json:"logging"`
-	Hooks      HooksConfig             `json:"hooks"`
 }
 
-// GameConfig points at the game installation the manager should manage.
-type GameConfig struct {
-	// Path is the user-configured installation root. Empty means auto-detect.
-	Path string `json:"path"`
-	// Source restricts auto-detection to a single store ("steam").
-	Source string `json:"source"`
-	// ModsFolderOverride replaces the installation's mods folder when set.
-	ModsFolderOverride string `json:"mods_folder_override"`
-	// AutoDetect enables scanning for installations when Path is empty.
-	AutoDetect bool `json:"auto_detect"`
+// ScriptPermissions is the capability set one hook script runs with. A
+// capability not granted here is absent from the script's host API entirely —
+// there is no "deny at runtime" path, the binding simply does not exist.
+type ScriptPermissions struct {
+	FSRead      bool `json:"fs_read"`
+	FSWrite     bool `json:"fs_write"`
+	ConfigRead  bool `json:"config_read"`
+	ConfigWrite bool `json:"config_write"`
+	StorageRead bool `json:"storage_read"`
+	EnvRead     bool `json:"env_read"`
+	// TimeoutSeconds caps the execution time of a single hook script in this
+	// scope. 0 = no cap at this scope, fall through to the next broader one.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+}
+
+// DefaultScriptPermissions is the built-in capability set: scripts may read
+// the confined file system, read config, and read the storage inventory, but
+// may not write files, write config, or read the environment.
+func DefaultScriptPermissions() ScriptPermissions {
+	return ScriptPermissions{
+		FSRead:      true,
+		ConfigRead:  true,
+		StorageRead: true,
+	}
+}
+
+// Or merges other underneath p, per capability: the first true value wins, and
+// a zero timeout falls through. Resolving mod > game > default is therefore a
+// chain of Or calls, with the most specific scope on the left.
+func (p ScriptPermissions) Or(other ScriptPermissions) ScriptPermissions {
+	out := p
+	if !out.FSRead {
+		out.FSRead = other.FSRead
+	}
+
+	if !out.FSWrite {
+		out.FSWrite = other.FSWrite
+	}
+
+	if !out.ConfigRead {
+		out.ConfigRead = other.ConfigRead
+	}
+
+	if !out.ConfigWrite {
+		out.ConfigWrite = other.ConfigWrite
+	}
+
+	if !out.StorageRead {
+		out.StorageRead = other.StorageRead
+	}
+
+	if !out.EnvRead {
+		out.EnvRead = other.EnvRead
+	}
+
+	if out.TimeoutSeconds <= 0 {
+		out.TimeoutSeconds = other.TimeoutSeconds
+	}
+
+	return out
+}
+
+// HooksPermissionsConfig scopes ScriptPermissions by game id and mod id.
+type HooksPermissionsConfig struct {
+	Games   map[string]ScriptPermissions `json:"games,omitempty"`
+	Mods    map[string]ScriptPermissions `json:"mods,omitempty"`
+	Default ScriptPermissions            `json:"default"`
+}
+
+// For returns the permissions configured for the given game and mod ids,
+// merged mod > game > default. A mod or game with no entry contributes a
+// zero-value block, which every Or call ignores in favour of the broader
+// scope.
+func (c HooksPermissionsConfig) For(gameID, modID string) ScriptPermissions {
+	out := c.Default
+	if perms, ok := c.Games[gameID]; ok {
+		out = perms.Or(out)
+	}
+
+	if perms, ok := c.Mods[modID]; ok {
+		out = perms.Or(out)
+	}
+
+	return out
+}
+
+// HooksConfig controls hook execution policy.
+type HooksConfig struct {
+	Permissions    HooksPermissionsConfig `json:"permissions"`
+	DefaultTimeout Duration               `json:"default_timeout"`
+	MaxTimeout     Duration               `json:"max_timeout"`
 }
 
 // StorageConfig controls where mod files live.
@@ -43,16 +128,6 @@ type CacheConfig struct {
 	MaxSizeGB    int    `json:"max_size_gb"`
 	MaxAgeDays   int    `json:"max_age_days"`
 	VerifyHashes bool   `json:"verify_hashes"`
-}
-
-// HooksConfig controls hook execution policy.
-type HooksConfig struct {
-	DefaultTimeout int  `json:"default_timeout"`
-	AllowNetwork   bool `json:"allow_network"`
-	AllowFileWrite bool `json:"allow_file_write"`
-	// MaxTimeout caps any per-script timeout, so a hostile manifest cannot
-	// request an unbounded run.
-	MaxTimeout int `json:"max_timeout"`
 }
 
 // SourceConfig is the per-source configuration block.
@@ -108,10 +183,6 @@ type LoggingConfig struct {
 // DefaultConfig returns the configuration the manager uses when nothing is set.
 func DefaultConfig() Config {
 	return Config{
-		Game: GameConfig{
-			Source:     "auto",
-			AutoDetect: true,
-		},
 		Storage: StorageConfig{
 			BackupRetentionDays: 7,
 		},
@@ -121,9 +192,11 @@ func DefaultConfig() Config {
 			VerifyHashes: true,
 		},
 		Hooks: HooksConfig{
-			DefaultTimeout: 30,
-			AllowFileWrite: true,
-			MaxTimeout:     600,
+			DefaultTimeout: DurationOf(10 * time.Second),
+			MaxTimeout:     DurationOf(30 * time.Second),
+			Permissions: HooksPermissionsConfig{
+				Default: DefaultScriptPermissions(),
+			},
 		},
 		Sources: map[string]SourceConfig{},
 		AutoUpdate: AutoUpdateConfig{
@@ -165,9 +238,14 @@ func (c *Config) ApplyDefaults() {
 
 	d := DefaultConfig()
 
-	if c.Game.Source == "" {
-		c.Game.Source = d.Game.Source
+	if c.Games == nil {
+		c.Games = map[string]GameSettings{}
 	}
+
+	// Entries in Games are taken exactly as written: JSON cannot tell an
+	// absent entry from one spelled out as {}, so a present-but-zero block is
+	// a deliberate "no path, auto-detect off", not an unset one. Defaults for
+	// an unconfigured game come from ActiveSettings/GameSettingsFor instead.
 
 	if c.Storage.BackupRetentionDays <= 0 {
 		c.Storage.BackupRetentionDays = d.Storage.BackupRetentionDays
@@ -189,10 +267,6 @@ func (c *Config) ApplyDefaults() {
 		c.Hooks.DefaultTimeout = d.Hooks.DefaultTimeout
 	}
 
-	if !c.Hooks.AllowFileWrite {
-		c.Hooks.AllowFileWrite = true
-	}
-
 	if c.Hooks.MaxTimeout <= 0 {
 		c.Hooks.MaxTimeout = d.Hooks.MaxTimeout
 	}
@@ -200,6 +274,8 @@ func (c *Config) ApplyDefaults() {
 	if c.Hooks.MaxTimeout < c.Hooks.DefaultTimeout {
 		c.Hooks.MaxTimeout = c.Hooks.DefaultTimeout
 	}
+
+	c.Hooks.Permissions = defaultedPermissions(c.Hooks.Permissions)
 
 	if c.Sources == nil {
 		c.Sources = map[string]SourceConfig{}
@@ -342,6 +418,32 @@ func (c *Config) Clone() *Config {
 	for id, sc := range c.Sources {
 		out.Sources[id] = sc.clone()
 	}
+
+	out.Games = make(map[string]GameSettings, len(c.Games))
+	for id, settings := range c.Games {
+		out.Games[id] = settings
+	}
+
+	if c.Hooks.Permissions.Games != nil {
+		out.Hooks.Permissions.Games = make(
+			map[string]ScriptPermissions,
+			len(c.Hooks.Permissions.Games),
+		)
+		for id, perms := range c.Hooks.Permissions.Games {
+			out.Hooks.Permissions.Games[id] = perms
+		}
+	}
+
+	if c.Hooks.Permissions.Mods != nil {
+		out.Hooks.Permissions.Mods = make(
+			map[string]ScriptPermissions,
+			len(c.Hooks.Permissions.Mods),
+		)
+		for id, perms := range c.Hooks.Permissions.Mods {
+			out.Hooks.Permissions.Mods[id] = perms
+		}
+	}
+
 	// Redact is a slice, so a shallow copy would let a caller editing the clone
 	// edit the live configuration's list too. Every other block is value-only,
 	// which is why this one line is the whole of the deep copy here.
@@ -350,6 +452,109 @@ func (c *Config) Clone() *Config {
 	}
 
 	return &out
+}
+
+// GameSettingsFor returns the stored settings for a game id and whether an
+// entry exists. A config that has never touched the game reports the defaults
+// with ok=false, so a caller can tell "not configured" from "configured
+// empty".
+func (c *Config) GameSettingsFor(gameID string) (GameSettings, bool) {
+	if c == nil || c.Games == nil {
+		return GameSettings{}, false
+	}
+
+	settings, ok := c.Games[gameID]
+
+	return settings, ok
+}
+
+// SetGameSettings stores the settings for a game id, creating the map when
+// the configuration has none yet.
+func (c *Config) SetGameSettings(gameID string, settings GameSettings) {
+	if c == nil || gameID == "" {
+		return
+	}
+
+	if c.Games == nil {
+		c.Games = map[string]GameSettings{}
+	}
+
+	c.Games[gameID] = settings
+}
+
+// ActiveSettings returns the settings of the active game, or the defaults
+// when no entry exists yet. ActiveGame=="" is resolved by the composition
+// root against the registry; until then it names no game and the defaults
+// apply.
+func (c *Config) ActiveSettings() GameSettings {
+	settings, ok := c.GameSettingsFor(c.activeGameID())
+	if !ok {
+		return DefaultGameSettings()
+	}
+
+	return settings
+}
+
+// UpdateActiveSettings mutates the active game's settings block in place,
+// creating the entry from the defaults when the configuration has none yet.
+// A map element cannot be addressed, so mutation goes through this callback
+// and lands back in the map in one step.
+func (c *Config) UpdateActiveSettings(fn func(*GameSettings)) {
+	if c == nil || fn == nil {
+		return
+	}
+
+	id := c.activeGameID()
+	if c.Games == nil {
+		c.Games = map[string]GameSettings{}
+	}
+
+	settings, ok := c.Games[id]
+	if !ok {
+		settings = DefaultGameSettings()
+	}
+
+	fn(&settings)
+	c.Games[id] = settings
+}
+
+// activeGameID is the key the active game's settings live under. The empty
+// id is kept as a real key so an unresolved configuration still round-trips
+// its values; the composition root replaces it once the registry is known.
+func (c *Config) activeGameID() string {
+	if c == nil {
+		return ""
+	}
+
+	return c.ActiveGame
+}
+
+// defaultedPermissions fills a permissions block that was never configured:
+// an entirely zero block cannot be distinguished from an absent one in JSON,
+// so it is replaced wholesale by the built-in defaults. A block with any field
+// set — even one that only turns a capability off — is kept as written.
+func defaultedPermissions(p HooksPermissionsConfig) HooksPermissionsConfig {
+	if p.Default == (ScriptPermissions{}) {
+		p.Default = DefaultScriptPermissions()
+	}
+
+	if p.Games == nil && p.Mods == nil {
+		return p
+	}
+
+	for id, perms := range p.Games {
+		if perms == (ScriptPermissions{}) {
+			p.Games[id] = DefaultScriptPermissions()
+		}
+	}
+
+	for id, perms := range p.Mods {
+		if perms == (ScriptPermissions{}) {
+			p.Mods[id] = DefaultScriptPermissions()
+		}
+	}
+
+	return p
 }
 
 // clone deep-copies a source entry, including its string maps and slices.

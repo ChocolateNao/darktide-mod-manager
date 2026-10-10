@@ -70,7 +70,13 @@ const (
 
 	// Plugins.
 	ErrCodeRunnerNotFound Code = "RUNNER_NOT_FOUND"
-	ErrCodeDuplicate      Code = "DUPLICATE"
+	// ErrCodeHookDenied is a hook script reaching for a capability its
+	// permissions do not grant. It is distinct from ErrCodeHookInvalid (the
+	// declaration itself is fine) and from ErrCodeHookFailed (the script ran,
+	// but refused): a denied capability is a policy outcome, and a mod author
+	// debugging one needs to see exactly that.
+	ErrCodeHookDenied Code = "HOOK_DENIED"
+	ErrCodeDuplicate  Code = "DUPLICATE"
 )
 
 // AppError is the concrete error type returned by every service. The zero value

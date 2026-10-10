@@ -43,6 +43,13 @@ type ModRepository interface {
 	ListEnabled(ctx context.Context) ([]domain.Mod, error)
 	// ListBySource returns the mods installed from one source.
 	ListBySource(ctx context.Context, sourceID string) ([]domain.Mod, error)
+	// ListByGame returns the mods belonging to one game in the repository's
+	// canonical order. The empty game id is a valid key: it selects the rows
+	// written before multi-game support, which the composition root maps onto
+	// the default game.
+	ListByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
+	// ListEnabledByGame returns the enabled mods of one game.
+	ListEnabledByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
 	// UpdateEnabled flips the enabled flag, or ErrModNotFound.
 	UpdateEnabled(ctx context.Context, id string, enabled bool) error
 	// UpdatePriority sets the load priority, or ErrModNotFound.
@@ -63,11 +70,20 @@ type ModRepository interface {
 	// LoadOrder returns the explicit load order, or an empty slice when none
 	// was ever set.
 	LoadOrder(ctx context.Context) ([]string, error)
+	// SetLoadOrderForGame replaces the explicit load order of ONE game and
+	// leaves every other game's rows untouched. Each id must be installed and
+	// belong to gameID; anything else is ErrModNotFound.
+	SetLoadOrderForGame(ctx context.Context, gameID string, ids []string) error
+	// LoadOrderByGame returns one game's explicit load order in position
+	// order, or an empty slice when that game has none.
+	LoadOrderByGame(ctx context.Context, gameID string) ([]string, error)
 
 	// Delete removes a mod and, by cascade, its files and load-order row.
 	Delete(ctx context.Context, id string) error
 	// Count returns the number of stored mods.
 	Count(ctx context.Context) (int, error)
+	// CountByGame returns the number of mods belonging to one game.
+	CountByGame(ctx context.Context, gameID string) (int, error)
 	// Close releases the database handle.
 	Close() error
 }
@@ -160,7 +176,7 @@ func (r *sqliteModRepository) Close() error {
 
 // modColumns is the canonical column list; every read uses it so the scanner
 // and the SELECT can never drift apart.
-const modColumns = `id, name, version, author, description, source_id, game_version,
+const modColumns = `id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
 	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name`
 
@@ -241,11 +257,12 @@ func (r *sqliteModRepository) Save(ctx context.Context, m *domain.Mod) error {
 	}
 
 	const query = `
-INSERT INTO mods (id, name, version, author, description, source_id, game_version,
+INSERT INTO mods (id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
 	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
+	game_id        = excluded.game_id,
 	name           = excluded.name,
 	version        = excluded.version,
 	author         = excluded.author,
@@ -267,7 +284,7 @@ ON CONFLICT(id) DO UPDATE SET
 	mod_folder_name = excluded.mod_folder_name`
 
 	_, err = r.db.ExecContext(ctx, query,
-		id, m.Name, m.Version, m.Author, m.Description, m.SourceID, m.GameVersion,
+		id, m.GameID, m.Name, m.Version, m.Author, m.Description, m.SourceID, m.GameVersion,
 		deps, conflicts, tags, sourceData, hooks, m.LocalPath, m.Hash,
 		boolToInt(m.Enabled), formatTime(installedAt), formatTime(updatedAt), m.Priority,
 		m.InstallMode, m.ModFolderName)
@@ -379,6 +396,33 @@ func (r *sqliteModRepository) ListBySource(
 		ctx,
 		"SELECT "+modColumns+" FROM mods WHERE source_id = ? ORDER BY id ASC",
 		sourceID,
+	)
+}
+
+// ListByGame returns one game's mods in the same canonical order as List.
+func (r *sqliteModRepository) ListByGame(
+	ctx context.Context,
+	gameID string,
+) ([]domain.Mod, error) {
+	return r.query(
+		ctx,
+		"SELECT "+modColumns+" FROM mods WHERE game_id = ? "+
+			"ORDER BY enabled DESC, priority DESC, id ASC",
+		gameID,
+	)
+}
+
+// ListEnabledByGame returns one game's enabled mods in the same order as
+// ListEnabled.
+func (r *sqliteModRepository) ListEnabledByGame(
+	ctx context.Context,
+	gameID string,
+) ([]domain.Mod, error) {
+	return r.query(
+		ctx,
+		"SELECT "+modColumns+" FROM mods WHERE game_id = ? AND enabled != 0 "+
+			"ORDER BY priority DESC, id ASC",
+		gameID,
 	)
 }
 
@@ -712,21 +756,9 @@ func (r *sqliteModRepository) SetLoadOrder(ctx context.Context, ids []string) er
 		return canceledError(err)
 	}
 
-	cleaned := make([]string, 0, len(ids))
-
-	seen := make(map[string]bool, len(ids))
-	for _, raw := range ids {
-		id := strings.TrimSpace(raw)
-		if id == "" {
-			continue
-		}
-
-		if seen[id] {
-			return appErrors.New(appErrors.ErrCodeDuplicate, "load order lists mod %q twice", id)
-		}
-
-		seen[id] = true
-		cleaned = append(cleaned, id)
+	cleaned, err := cleanLoadIDs(ids)
+	if err != nil {
+		return err
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -835,6 +867,186 @@ func (r *sqliteModRepository) LoadOrder(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
+// cleanLoadIDs trims a requested load order, drops empty entries and rejects
+// duplicates, so both the global and the game-scoped setters agree on what a
+// valid request looks like.
+func cleanLoadIDs(ids []string) ([]string, error) {
+	cleaned := make([]string, 0, len(ids))
+
+	seen := make(map[string]bool, len(ids))
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+
+		if seen[id] {
+			return nil, appErrors.New(
+				appErrors.ErrCodeDuplicate,
+				"load order lists mod %q twice",
+				id,
+			)
+		}
+
+		seen[id] = true
+		cleaned = append(cleaned, id)
+	}
+
+	return cleaned, nil
+}
+
+// SetLoadOrderForGame replaces the explicit load order of ONE game. The
+// delete is scoped through the mods table, so other games' rows — which the
+// unscoped SetLoadOrder would wipe — survive untouched.
+func (r *sqliteModRepository) SetLoadOrderForGame(
+	ctx context.Context,
+	gameID string,
+	ids []string,
+) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if r == nil || r.db == nil {
+		return appErrors.New(appErrors.ErrCodeConfigIO, "repository is not open")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return canceledError(err)
+	}
+
+	cleaned, err := cleanLoadIDs(ids)
+	if err != nil {
+		return err
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "begin load order transaction")
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, id := range cleaned {
+		var exists int
+
+		err := tx.QueryRowContext(
+			ctx,
+			"SELECT 1 FROM mods WHERE id = ? AND game_id = ?",
+			id,
+			gameID,
+		).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return appErrors.New(
+				appErrors.ErrCodeModNotFound,
+				"load order names mod %q, which is not installed for game %q",
+				id,
+				gameID,
+			)
+		}
+
+		if err != nil {
+			return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "check mod %q: %v", id, err)
+		}
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		"DELETE FROM load_order WHERE mod_id IN (SELECT id FROM mods WHERE game_id = ?)",
+		gameID,
+	)
+	if err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
+			"clear load order of game %q: %v", gameID, err)
+	}
+
+	for pos, id := range cleaned {
+		if _, err := tx.ExecContext(
+			ctx,
+			"INSERT INTO load_order (mod_id, position) VALUES (?, ?)",
+			id,
+			pos,
+		); err != nil {
+			if isForeignKeyViolation(err) {
+				return appErrors.New(
+					appErrors.ErrCodeModNotFound,
+					"load order names mod %q, which is not installed",
+					id,
+				)
+			}
+
+			return appErrors.Wrap(
+				err,
+				appErrors.ErrCodeConfigIO,
+				"record load order for %q: %v",
+				id,
+				err,
+			)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "commit load order: %v", err)
+	}
+
+	return nil
+}
+
+// LoadOrderByGame returns one game's explicit load order. The join through
+// mods is what keeps another game's positions out of the result.
+func (r *sqliteModRepository) LoadOrderByGame(
+	ctx context.Context,
+	gameID string,
+) ([]string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if r == nil || r.db == nil {
+		return nil, appErrors.New(appErrors.ErrCodeConfigIO, "repository is not open")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, canceledError(err)
+	}
+
+	rows, err := r.db.QueryContext(
+		ctx,
+		`SELECT lo.mod_id FROM load_order lo
+		 JOIN mods m ON m.id = lo.mod_id
+		 WHERE m.game_id = ?
+		 ORDER BY lo.position ASC, lo.mod_id ASC`,
+		gameID,
+	)
+	if err != nil {
+		return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
+			"query load order of game %q: %v", gameID, err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	out := []string{}
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, appErrors.Wrap(
+				err,
+				appErrors.ErrCodeConfigIO,
+				"scan load order row: %v",
+				err,
+			)
+		}
+
+		out = append(out, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "read load order: %v", err)
+	}
+
+	return out, nil
+}
+
 // Delete removes a mod. Its files and its load-order row go with it, by
 // cascade; the files on disk are the caller's business.
 func (r *sqliteModRepository) Delete(ctx context.Context, id string) error {
@@ -890,6 +1102,35 @@ func (r *sqliteModRepository) Count(ctx context.Context) (int, error) {
 	return n, nil
 }
 
+// CountByGame returns the number of mods belonging to one game.
+func (r *sqliteModRepository) CountByGame(ctx context.Context, gameID string) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if r == nil || r.db == nil {
+		return 0, appErrors.New(appErrors.ErrCodeConfigIO, "repository is not open")
+	}
+
+	if err := ctx.Err(); err != nil {
+		return 0, canceledError(err)
+	}
+
+	var n int
+
+	err := r.db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM mods WHERE game_id = ?",
+		gameID,
+	).Scan(&n)
+	if err != nil {
+		return 0, appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "count mods of game %q: %v",
+			gameID, err)
+	}
+
+	return n, nil
+}
+
 // wrapKeepingCode attaches a message to err without losing a code it already
 // carries. A corrupt JSON column has to surface as CACHE_CORRUPT — that is the
 // code the GUI uses to offer an index rebuild — so a generic I/O code must not
@@ -925,7 +1166,8 @@ func scanMod(row rowScanner) (*domain.Mod, error) {
 	)
 
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Version, &m.Author, &m.Description, &m.SourceID, &m.GameVersion,
+		&m.ID, &m.GameID, &m.Name, &m.Version, &m.Author, &m.Description, &m.SourceID,
+		&m.GameVersion,
 		&deps, &conflicts, &tags, &sourceData, &hooksJSON, &m.LocalPath, &m.Hash,
 		&enabled, &installedAt, &updatedAt, &m.Priority, &m.InstallMode, &m.ModFolderName)
 	if err != nil {

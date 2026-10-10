@@ -5,18 +5,21 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/rs/zerolog"
 )
 
-// GameLocator answers "where is Darktide, and where do its mods live?".
+// GameLocator answers "where is <game>, and where do its mods live?".
 //
 // It owns no detection logic of its own: the platform package probes the
 // filesystem, and this service layers the user's configuration on top of that
 // probe. Keeping the two apart matters because the configuration is mutable at
-// run time while the probe is a pure function of the machine's layout.
+// run time while the probe is a pure function of the machine's layout. Which
+// game is being probed comes from the games registry, so registering a game
+// definition is enough to make the locator aware of it.
 type GameLocator struct {
 	store   ConfigStore
 	factory DetectorFactory
@@ -34,16 +37,22 @@ func NewGameLocator(store ConfigStore) *GameLocator {
 // depend on the machine running them.
 func NewGameLocatorWithFactory(store ConfigStore, factory DetectorFactory) *GameLocator {
 	if factory == nil {
-		factory = func(domain.GameConfig) InstallationDetector { return emptyDetector{} }
+		factory = func(domain.GameDefinition, domain.GameSettings) InstallationDetector {
+			return emptyDetector{}
+		}
 	}
 
 	return &GameLocator{store: store, factory: factory, log: &nopLogger}
 }
 
 // platformDetectorFactory is the production wiring: a fresh platform.Detector
-// per call, seeded with the configured path as an extra candidate.
+// per call for the given game, seeded with the configured path as an extra
+// candidate.
 func platformDetectorFactory() DetectorFactory {
-	return func(cfg domain.GameConfig) InstallationDetector {
+	return func(
+		game domain.GameDefinition,
+		cfg domain.GameSettings,
+	) InstallationDetector {
 		home, err := platform.HomeDir(domain.CurrentPlatform(), platform.OSEnv())
 		if err != nil {
 			// A missing home directory is not fatal for detection: the
@@ -53,6 +62,7 @@ func platformDetectorFactory() DetectorFactory {
 		}
 
 		return platform.NewDetector(
+			game,
 			domain.CurrentPlatform(),
 			home,
 			platform.OSEnv(),
@@ -105,17 +115,125 @@ func (g *GameLocator) Config() (*domain.Config, error) {
 	return cfg.Clone(), nil
 }
 
-// detector builds a detector for the current configuration.
-func (g *GameLocator) detector() (InstallationDetector, domain.GameConfig, error) {
-	cfg, err := g.Config()
-	if err != nil {
-		return nil, domain.GameConfig{}, err
+// activeDef resolves the registered GameDefinition for cfg's active game. An
+// empty ActiveGame resolves to the registry default, so a fresh configuration
+// lands on a real game instead of failing.
+func activeDef(cfg *domain.Config) (domain.GameDefinition, error) {
+	id := strings.TrimSpace(cfg.ActiveGame)
+	if id == "" {
+		id = games.DefaultID()
 	}
 
-	return g.factory(cfg.Game), cfg.Game, nil
+	if id == "" {
+		return nil, appErrors.New(appErrors.ErrCodeGameNotFound, "no games are registered")
+	}
+
+	def, ok := games.Get(id)
+	if !ok {
+		return nil, appErrors.New(appErrors.ErrCodeGameNotFound, "game %q is not registered", id)
+	}
+
+	return def, nil
 }
 
-// FindInstallations returns every Darktide installation the locator knows about.
+// activeSettings is the game settings for a resolved definition. The active
+// game's block may live under the unresolved "" key of a fresh configuration,
+// so it is read the way ActiveSettings reads it; other games read their own
+// entry, falling back to the defaults when the configuration has none yet.
+func activeSettings(cfg *domain.Config, def domain.GameDefinition) domain.GameSettings {
+	active := strings.TrimSpace(cfg.ActiveGame)
+	if active == "" {
+		active = games.DefaultID()
+	}
+
+	if def.ID() == active {
+		return cfg.ActiveSettings()
+	}
+
+	if settings, ok := cfg.GameSettingsFor(def.ID()); ok {
+		return settings
+	}
+
+	return domain.DefaultGameSettings()
+}
+
+// Active resolves the game the manager currently operates on: its definition
+// from the registry plus its stored settings. An empty ActiveGame resolves to
+// the registry default; persisting that resolved id is the composition root's
+// job (it rewrites the configuration on load), so reading never writes.
+func (g *GameLocator) Active() (domain.GameDefinition, domain.GameSettings, error) {
+	cfg, err := g.Config()
+	if err != nil {
+		return nil, domain.GameSettings{}, err
+	}
+
+	def, err := activeDef(cfg)
+	if err != nil {
+		return nil, domain.GameSettings{}, err
+	}
+
+	return def, activeSettings(cfg, def), nil
+}
+
+// SetActive switches the manager to another registered game. The id is
+// validated against the registry first: persisting a game nothing can build a
+// detector for would strand every later lookup.
+func (g *GameLocator) SetActive(id string) error {
+	if g == nil || g.store == nil {
+		return appErrors.New(
+			appErrors.ErrCodeConfigInvalid,
+			"game locator has no configuration store",
+		)
+	}
+
+	def, ok := games.Get(id)
+	if !ok {
+		return appErrors.New(appErrors.ErrCodeGameNotFound, "game %q is not registered", id)
+	}
+
+	cfg, err := g.store.Load()
+	if err != nil {
+		return err
+	}
+
+	if cfg == nil {
+		return appErrors.New(
+			appErrors.ErrCodeConfigInvalid,
+			"configuration store returned no configuration",
+		)
+	}
+
+	updated := cfg.Clone()
+	updated.ActiveGame = def.ID()
+
+	if _, err := g.store.SaveIfChanged(updated); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "save active game %q", id)
+	}
+
+	g.logger().Info().
+		Str("op", "game-active").
+		Str("game", def.ID()).
+		Msg("switched the active game")
+
+	return nil
+}
+
+// detector builds a detector for the active game's configuration.
+func (g *GameLocator) detector() (
+	InstallationDetector,
+	domain.GameDefinition,
+	domain.GameSettings,
+	error,
+) {
+	def, settings, err := g.Active()
+	if err != nil {
+		return nil, nil, domain.GameSettings{}, err
+	}
+
+	return g.factory(def, settings), def, settings, nil
+}
+
+// FindInstallations returns every selected game installation the locator knows about.
 //
 // The configured path is probed first and always wins a collision: if the user
 // pointed the manager at a path, that entry carries the source and mods folder
@@ -139,11 +257,86 @@ func (g *GameLocator) FindInstallations(ctx context.Context) ([]domain.GameInsta
 		)
 	}
 
-	det, game, err := g.detector()
+	det, def, game, err := g.detector()
 	if err != nil {
 		return nil, err
 	}
 
+	return installsFor(ctx, det, def, game)
+}
+
+// Installations returns the installations of every registered game, each
+// stamped with the game it belongs to. Unlike FindInstallations this is not
+// scoped to the active game: the UI needs one scan to show what is installed
+// where, and a mod installed for an inactive game is still worth surfacing.
+//
+// One game's probe failing does not abandon the others: an unconfigured game
+// simply contributes nothing. A cancelled context stops the whole scan.
+func (g *GameLocator) Installations(ctx context.Context) ([]domain.GameInstallation, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, appErrors.Wrap(
+			err,
+			appErrors.ErrCodeOperationCanceled,
+			"game detection canceled",
+		)
+	}
+
+	cfg, err := g.Config()
+	if err != nil {
+		return nil, err
+	}
+
+	var out []domain.GameInstallation
+
+	for _, def := range games.All() {
+		if err := ctx.Err(); err != nil {
+			return nil, appErrors.Wrap(
+				err,
+				appErrors.ErrCodeOperationCanceled,
+				"game detection canceled",
+			)
+		}
+
+		settings := activeSettings(cfg, def)
+
+		installs, err := installsFor(ctx, g.factory(def, settings), def, settings)
+		if err != nil {
+			// installsFor only fails on a cancelled context, which stops the
+			// whole scan rather than skipping the game.
+			return nil, err
+		}
+
+		out = append(out, installs...)
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].GameID != out[j].GameID {
+			return out[i].GameID < out[j].GameID
+		}
+
+		return strings.ToLower(out[i].Path) < strings.ToLower(out[j].Path)
+	})
+
+	if out == nil {
+		out = []domain.GameInstallation{}
+	}
+
+	return out, nil
+}
+
+// installsFor runs the configured-first probe for one game: the configured
+// path is probed first and always wins a collision, the auto-detect sweep
+// follows when enabled, and every result is stamped with the game id.
+func installsFor(
+	ctx context.Context,
+	det InstallationDetector,
+	def domain.GameDefinition,
+	game domain.GameSettings,
+) ([]domain.GameInstallation, error) {
 	// Ordered map: the configured entry is inserted first and later duplicates
 	// are skipped, which is what gives it precedence without a second pass.
 	ordered := make([]domain.GameInstallation, 0, 4)
@@ -157,6 +350,7 @@ func (g *GameLocator) FindInstallations(ctx context.Context) ([]domain.GameInsta
 		}
 
 		seen[key] = true
+		install.GameID = def.ID()
 
 		ordered = append(ordered, install)
 	}
@@ -205,26 +399,26 @@ func (g *GameLocator) FindInstallations(ctx context.Context) ([]domain.GameInsta
 	return ordered, nil
 }
 
-// preferredSource maps a configured launcher name onto a GameSource, falling
-// back to "manual" for anything unrecognised. An empty or unrecognised value
-// must not leak into the installation: source feeds display and update logic
-// that switch on it, and an empty case there is a silent no-op.
-func preferredSource(s string) domain.GameSource {
-	if parsed, ok := domain.ParseGameSource(s); ok {
-		return parsed
-	}
-
-	return domain.GameSourceManual
-}
-
 // withSourceHint fills in the launcher the user told us about, but only when the
 // probe had nothing better to say. A directory found by the Steam sweep keeps
 // its "steam" source; a path the user typed in becomes the launcher they named,
-// because the probe cannot know and the UI switches on this value.
-func withSourceHint(install *domain.GameInstallation, configured string) domain.GameInstallation {
+// because the probe cannot know and the UI switches on this value. An empty or
+// unrecognised hint becomes "manual" rather than leaking into the installation:
+// source feeds display and update logic that switch on it, and an unknown case
+// there is a silent no-op.
+func withSourceHint(
+	install *domain.GameInstallation,
+	configured domain.GameSource,
+) domain.GameInstallation {
 	out := *install
+
+	hint := domain.GameSourceManual
+	if parsed, ok := domain.ParseGameSource(strings.TrimSpace(string(configured))); ok {
+		hint = parsed
+	}
+
 	if out.Source == "" || out.Source == domain.GameSourceManual {
-		out.Source = preferredSource(configured)
+		out.Source = hint
 	}
 
 	return out
@@ -238,7 +432,7 @@ func (g *GameLocator) ValidateInstallation(path string) (*domain.GameInstallatio
 		return nil, appErrors.New(appErrors.ErrCodeGameInvalid, "game path is empty")
 	}
 
-	det, game, err := g.detector()
+	det, def, game, err := g.detector()
 	if err != nil {
 		return nil, err
 	}
@@ -253,12 +447,16 @@ func (g *GameLocator) ValidateInstallation(path string) (*domain.GameInstallatio
 		// nil installation the caller dereferences later.
 		return nil, appErrors.New(
 			appErrors.ErrCodeGameNotFound,
-			"no Darktide installation at %q",
+			"no %s installation at %q",
+			def.DisplayName(),
 			path,
 		)
 	}
 
 	hinted := withSourceHint(install, game.Source)
+	if hinted.GameID == "" {
+		hinted.GameID = def.ID()
+	}
 
 	return &hinted, nil
 }
@@ -284,7 +482,7 @@ func (g *GameLocator) Current(ctx context.Context) (*domain.GameInstallation, er
 		)
 	}
 
-	_, game, err := g.detector()
+	_, def, game, err := g.detector()
 	if err != nil {
 		return nil, err
 	}
@@ -304,20 +502,23 @@ func (g *GameLocator) Current(ctx context.Context) (*domain.GameInstallation, er
 	if len(installs) == 0 {
 		g.logger().Warn().
 			Str("op", "game-detect").
+			Str("game", def.ID()).
 			Str("reason", "no installation found").
-			Msg("no Darktide installation was detected")
+			Msg("no game installation was detected")
 
 		return nil, appErrors.New(appErrors.ErrCodeGameNotFound,
-			"no Darktide installation found; set the game path in the settings")
+			"no %s installation found; set the game path in the settings",
+			def.DisplayName())
 	}
 
 	install := installs[0]
 	g.logger().Debug().
 		Str("op", "game-detect").
+		Str("game", def.ID()).
 		Str("path", install.Path).
 		Str("source", string(install.Source)).
 		Int("candidates", len(installs)).
-		Msg("using detected Darktide installation")
+		Msg("using detected game installation")
 
 	return &install, nil
 }
@@ -330,12 +531,12 @@ func (g *GameLocator) GetModsPath(install *domain.GameInstallation) (string, err
 		return "", appErrors.New(appErrors.ErrCodeGameInvalid, "no game installation given")
 	}
 
-	_, game, err := g.detector()
+	_, def, game, err := g.detector()
 	if err != nil {
 		return "", err
 	}
 
-	det := g.factory(game)
+	det := g.factory(def, game)
 
 	return det.GetModsPath(install, strings.TrimSpace(game.ModsFolderOverride))
 }
@@ -379,7 +580,9 @@ func (g *GameLocator) SetGamePath(ctx context.Context, path string) error {
 	}
 
 	updated := cfg.Clone()
-	updated.Game.Path = install.Path
+	updated.UpdateActiveSettings(func(settings *domain.GameSettings) {
+		settings.Path = install.Path
+	})
 
 	if _, err := g.store.SaveIfChanged(updated); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "save game path %q", path)

@@ -95,6 +95,12 @@ type ClientDeps struct {
 	Cache   *services.CacheManager
 	Hooks   *services.HookExecutor
 	Config  services.ConfigStore
+	// ActiveConfig is the configuration object the wiring loaded and then
+	// mutated (WithGame's override) — the same pointer its closures capture.
+	// UseGame updates it in place so those closures see a switch without a
+	// reload. Clients built by hand can leave it nil; the store is the source
+	// of truth there.
+	ActiveConfig *domain.Config
 	// Events receives everything the services publish. When nil the client
 	// creates its own bus, so a caller wiring services by hand still gets
 	// events.

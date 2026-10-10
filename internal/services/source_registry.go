@@ -12,21 +12,49 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// SourceFactory builds a mod source from its configuration block. Plugins
-// register one of these at init time so the core never has to know a concrete
-// source type: adding Nexus or a private tracker means writing one function
-// and calling RegisterSourceFactory, with no change here.
-type SourceFactory func(cfg domain.SourceConfig) (domain.ModSource, error)
+// SourceBuildContext is handed to every source factory instead of the bare
+// configuration block. Game carries the active game definition so a source can
+// read its per-game defaults — Nexus's game domain, GitHub's search topic —
+// without the plugin knowing which game is active; Config is that source's own
+// configuration block, unchanged.
+type SourceBuildContext struct {
+	Game   domain.GameDefinition
+	Config domain.SourceConfig
+}
+
+// SourceFactory builds a mod source from its build context. Plugins register
+// one of these at init time so the core never has to know a concrete source
+// type: adding Nexus or a private tracker means writing one function and
+// calling RegisterSourceFactory, with no change here.
+type SourceFactory func(SourceBuildContext) (domain.ModSource, error)
 
 var (
 	factoryMu sync.RWMutex
-	factories = map[string]SourceFactory{}
+	// factories is keyed by plain source id (generic sources); gameFactories by
+	// SourceKey(gameID, id) so a source that exists for one game cannot collide
+	// with the same id on another game or with the generic fallback.
+	factories     = map[string]SourceFactory{}
+	gameFactories = map[string]SourceFactory{}
 )
 
-// RegisterSourceFactory records the constructor for a source id. It is called
-// from plugin init functions, so a duplicate id is a programming error rather
-// than something a user can trigger — the last registration silently losing
-// would produce a source that never gets used.
+// SourceKey builds the lookup key for a game-scoped source factory, e.g.
+// "darktide:racemenu-tool". Both halves are normalised the same way every
+// other id lookup in this file normalises them, so a caller that writes
+// "Darktide" and a plugin that registers "darktide" meet.
+func SourceKey(gameID, id string) string {
+	return normalizeGameID(gameID) + ":" + normalizeSourceID(id)
+}
+
+// normalizeGameID folds a game id to its canonical form.
+func normalizeGameID(gameID string) string {
+	return strings.ToLower(strings.TrimSpace(gameID))
+}
+
+// RegisterSourceFactory records the constructor for a generic source id — one
+// that is available to every game. It is called from plugin init functions, so
+// a duplicate id is a programming error rather than something a user can
+// trigger — the last registration silently losing would produce a source that
+// never gets used.
 func RegisterSourceFactory(id string, factory SourceFactory) error {
 	key := strings.TrimSpace(id)
 	if key == "" {
@@ -58,14 +86,94 @@ func RegisterSourceFactory(id string, factory SourceFactory) error {
 	return nil
 }
 
-// RegisteredFactoryIDs lists the ids that have a factory, sorted, so callers
-// and tests have a deterministic view of the plugin set.
+// RegisterGameSourceFactory records a constructor that only exists for one
+// game. The registry prefers it over the generic factory of the same id when
+// that game is active, so a game-unique source (or a game-specific build of a
+// shared one) never has to compete with, or replace, the generic plugin.
+func RegisterGameSourceFactory(gameID, id string, factory SourceFactory) error {
+	game := normalizeGameID(gameID)
+	if game == "" {
+		return appErrors.New(appErrors.ErrCodeInvalidArgument, "game id must not be empty")
+	}
+
+	key := strings.TrimSpace(id)
+	if key == "" {
+		return appErrors.New(appErrors.ErrCodeInvalidArgument, "source id must not be empty")
+	}
+
+	if factory == nil {
+		return appErrors.New(appErrors.ErrCodeInvalidArgument, "source %q has a nil factory", key)
+	}
+
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+
+	key = normalizeSourceID(key)
+
+	full := game + ":" + key
+	if _, exists := gameFactories[full]; exists {
+		return appErrors.New(
+			appErrors.ErrCodeSourceExists,
+			"source %q already registered a factory for game %q",
+			key,
+			game,
+		)
+	}
+
+	gameFactories[full] = factory
+
+	return nil
+}
+
+// RegisteredFactoryIDs lists the generic source ids that have a factory,
+// sorted, so callers and tests have a deterministic view of the plugin set.
+// Game-scoped ids are listed by RegisteredGameFactoryIDs.
 func RegisteredFactoryIDs() []string {
 	factoryMu.RLock()
 	defer factoryMu.RUnlock()
 
 	out := make([]string, 0, len(factories))
 	for id := range factories {
+		out = append(out, id)
+	}
+
+	sort.Strings(out)
+
+	return out
+}
+
+// RegisteredGameFactoryIDs lists the plain source ids that have a factory
+// registered for gameID, sorted. Keys are returned without the game prefix so
+// the caller sees the same ids it would see for a generic source.
+func RegisteredGameFactoryIDs(gameID string) []string {
+	game := normalizeGameID(gameID)
+	if game == "" {
+		return nil
+	}
+
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+
+	prefix := game + ":"
+	seen := make(map[string]struct{})
+
+	out := make([]string, 0)
+
+	for key := range gameFactories {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+
+		id := strings.TrimPrefix(key, prefix)
+		if id == "" {
+			continue
+		}
+
+		if _, dup := seen[id]; dup {
+			continue
+		}
+
+		seen[id] = struct{}{}
 		out = append(out, id)
 	}
 
@@ -97,6 +205,26 @@ func SourceFactoryFor(id string) (SourceFactory, bool) {
 	return factory, ok
 }
 
+// SourceFactoryForGame returns the constructor registered for one game's
+// source id, without building anything. It is the game-scoped counterpart of
+// SourceFactoryFor and the first place the registry looks when a game is
+// active.
+func SourceFactoryForGame(gameID, id string) (SourceFactory, bool) {
+	game := normalizeGameID(gameID)
+
+	key := normalizeSourceID(id)
+	if game == "" || key == "" {
+		return nil, false
+	}
+
+	factoryMu.RLock()
+	defer factoryMu.RUnlock()
+
+	factory, ok := gameFactories[game+":"+key]
+
+	return factory, ok
+}
+
 // UnregisterSourceFactory removes a registered factory and reports whether one
 // was there. No production code needs it — a source stays available for the life
 // of the process — but tests share one process-wide registry, so without a way
@@ -120,6 +248,29 @@ func UnregisterSourceFactory(id string) bool {
 	return true
 }
 
+// UnregisterGameSourceFactory removes a game-scoped registration and reports
+// whether one was there. Like UnregisterSourceFactory it exists for tests.
+func UnregisterGameSourceFactory(gameID, id string) bool {
+	game := normalizeGameID(gameID)
+
+	key := normalizeSourceID(id)
+	if game == "" || key == "" {
+		return false
+	}
+
+	factoryMu.Lock()
+	defer factoryMu.Unlock()
+
+	full := game + ":" + key
+	if _, ok := gameFactories[full]; !ok {
+		return false
+	}
+
+	delete(gameFactories, full)
+
+	return true
+}
+
 // SourceRegistry holds the live mod sources. It is the only place the rest of
 // the program resolves a source id to something it can search or download from.
 //
@@ -135,6 +286,7 @@ type SourceRegistry struct {
 	failures      map[string]error
 	authenticated map[string]bool
 	config        ConfigProvider
+	game          domain.GameDefinition
 	log           *zerolog.Logger
 	mu            sync.RWMutex
 	buildMu       sync.Mutex
@@ -193,6 +345,61 @@ func (r *SourceRegistry) WithLogger(logger *zerolog.Logger) *SourceRegistry {
 	r.log = loggerOf(logger)
 
 	return r
+}
+
+// WithGame sets the game whose factories this registry resolves first and
+// whose definition every factory is handed in its SourceBuildContext.
+//
+// One registry serves one active game: switching games means rebuilding the
+// registry (the composition root drops the old one and wires a new one), so
+// cached instances of the previous game's sources are never handed out under
+// the new game's identity.
+func (r *SourceRegistry) WithGame(def domain.GameDefinition) *SourceRegistry {
+	if r == nil {
+		return r
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.game = def
+
+	return r
+}
+
+// RebuildForGame switches the active game and drops every cached instance and
+// recorded failure so the next Get builds against the new definition. It is
+// the in-place form of "drop the registry and wire a new one": callers that
+// hold the registry pointer (the mod service, the cache downloader, the
+// registry provider) keep working without a graph rebuild.
+//
+// Directly registered sources and remembered credentials survive — neither
+// depends on which game is active. The caller is expected to re-register the
+// game-scoped factories afterwards (sources.RegisterAll with the new def).
+func (r *SourceRegistry) RebuildForGame(def domain.GameDefinition) {
+	if r == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.game = def
+	r.instantiated = map[string]domain.ModSource{}
+	r.failures = map[string]error{}
+}
+
+// activeGame returns the game this registry resolves for, or nil when none was
+// set (tests, and callers that only ever use generic sources).
+func (r *SourceRegistry) activeGame() domain.GameDefinition {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.game
 }
 
 func newSourceRegistry(store ConfigStore) *SourceRegistry {
@@ -266,7 +473,8 @@ func (r *SourceRegistry) Unregister(id string) bool {
 // Get resolves a source id to a usable source.
 //
 // Lookup order is: a directly registered source, then an already-instantiated
-// factory source, then the factory. A factory failure is cached and replayed,
+// factory source, then the factory — the active game's game-scoped factory
+// first, the generic one after it. A factory failure is cached and replayed,
 // because a factory that fails because an API key is missing will fail again
 // on the next call and re-running it would turn one clear error into a stream
 // of confusing ones.
@@ -323,17 +531,15 @@ func (r *SourceRegistry) build(key string) (domain.ModSource, error) {
 
 	r.mu.RUnlock()
 
-	factoryMu.RLock()
-
-	factory, ok := factories[key]
-
-	factoryMu.RUnlock()
-
+	factory, ok := r.factoryFor(key)
 	if !ok {
 		return nil, appErrors.New(appErrors.ErrCodeSourceNotFound, "unknown mod source %q", key)
 	}
 
-	source, err := factory(r.configFor(key))
+	source, err := factory(SourceBuildContext{
+		Game:   r.activeGame(),
+		Config: r.configFor(key),
+	})
 	if err != nil {
 		// Warn, not error: a misconfigured optional source is a state the user
 		// fixes in the settings screen, and the failure is reported to them
@@ -376,6 +582,19 @@ func (r *SourceRegistry) build(key string) (domain.ModSource, error) {
 		Msg("mod source configured")
 
 	return source, nil
+}
+
+// factoryFor resolves a plain source id to a factory: the active game's
+// game-scoped registration first, then the generic one. The second result
+// reports whether any factory exists at all.
+func (r *SourceRegistry) factoryFor(key string) (SourceFactory, bool) {
+	if def := r.activeGame(); def != nil {
+		if factory, ok := SourceFactoryForGame(def.ID(), key); ok {
+			return factory, true
+		}
+	}
+
+	return SourceFactoryFor(key)
 }
 
 // logger returns the attached logger without assuming it was set: a registry
@@ -444,6 +663,15 @@ func (r *SourceRegistry) IDs() []string {
 		seen[id] = struct{}{}
 	}
 
+	// Game-scoped factories are visible under their plain id too: a source that
+	// only exists for the active game still has to appear in the list the UI
+	// renders.
+	if def := r.activeGame(); def != nil {
+		for _, id := range RegisteredGameFactoryIDs(def.ID()) {
+			seen[id] = struct{}{}
+		}
+	}
+
 	out := make([]string, 0, len(seen))
 	for id := range seen {
 		out = append(out, id)
@@ -497,6 +725,11 @@ func (r *SourceRegistry) Has(id string) bool {
 	}
 
 	_, registered := SourceFactoryFor(key)
+	if !registered {
+		if def := r.activeGame(); def != nil {
+			_, registered = SourceFactoryForGame(def.ID(), key)
+		}
+	}
 
 	return registered
 }

@@ -161,6 +161,96 @@ func TestApplySchemaIsIdempotent(t *testing.T) {
 	require.NoError(t, err, "insert after re-applying schema: %v", err)
 }
 
+// A fresh database carries the game_id column and its index: the column is
+// part of the CREATE TABLE, and the index is what game-scoped queries filter
+// on.
+func TestOpenCreatesGameIDColumnAndIndex(t *testing.T) {
+	db := openMemory(t)
+	ctx := context.Background()
+
+	var count int
+
+	err := db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = 'game_id'",
+	).Scan(&count)
+	require.NoError(t, err, "probe game_id column")
+	require.Equal(t, 1, count, "mods.game_id must exist on a fresh database")
+
+	var defs string
+
+	err = db.QueryRowContext(
+		ctx,
+		"SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_mods_game'",
+	).Scan(&defs)
+	require.NoError(t, err, "probe idx_mods_game: %v", err)
+	assert.Contains(t, defs, "mods(game_id)", "index must cover game_id")
+}
+
+// A database written by a pre-multi-game build has a mods table without
+// game_id. ApplySchema upgrades it in place: existing rows survive with the
+// default "", the index appears, and a second apply stays a no-op. The schema
+// version is NOT bumped.
+func TestApplySchemaUpgradesStaleModsTable(t *testing.T) {
+	ctx := context.Background()
+	db := openMemory(t)
+
+	// Roll the database back to the pre-multi-game shape: no game_id column
+	// and no index over it.
+	_, err := db.ExecContext(ctx, "DROP INDEX idx_mods_game")
+	require.NoError(t, err, "drop game index: %v", err)
+
+	_, err = db.ExecContext(ctx, "ALTER TABLE mods DROP COLUMN game_id")
+	require.NoError(t, err, "drop game_id column: %v", err)
+
+	_, err = db.ExecContext(
+		ctx,
+		`INSERT INTO mods (id, name, version, installed_at)
+		 VALUES ('legacy', 'Legacy Mod', '1.0.0', '2024-01-01T00:00:00.000Z')`,
+	)
+	require.NoError(t, err, "insert pre-upgrade row: %v", err)
+
+	require.NoError(t, ApplySchema(ctx, db), "upgrade stale database")
+
+	var count int
+
+	err = db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = 'game_id'",
+	).Scan(&count)
+	require.NoError(t, err, "probe game_id column")
+	require.Equal(t, 1, count, "game_id column must be added by the upgrade")
+
+	var gameID string
+
+	err = db.QueryRowContext(ctx, "SELECT game_id FROM mods WHERE id = 'legacy'").Scan(&gameID)
+	require.NoError(t, err, "read upgraded row: %v", err)
+	assert.Equal(t, "", gameID, "pre-upgrade rows get the empty default")
+
+	var index int
+
+	err = db.QueryRowContext(
+		ctx,
+		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_mods_game'",
+	).Scan(&index)
+	require.NoError(t, err, "probe index")
+	assert.Equal(t, 1, index, "idx_mods_game must be created by the DDL pass")
+
+	// Second apply is a no-op and the version stamp is unchanged.
+	require.NoError(t, ApplySchema(ctx, db), "re-apply after upgrade")
+
+	state, err := InspectSchema(ctx, db)
+	require.NoError(t, err, "inspect schema")
+	assert.Equal(
+		t,
+		CurrentSchemaVersion,
+		state.Version,
+		"version = %d, want %d (upgrade must not bump the schema version)",
+		state.Version,
+		CurrentSchemaVersion,
+	)
+}
+
 func TestApplySchemaAcceptsAnyVersionStamp(t *testing.T) {
 	ctx := context.Background()
 	db := openMemory(t)

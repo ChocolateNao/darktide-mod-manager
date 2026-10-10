@@ -96,29 +96,23 @@ func PathWithin(parent, child string) bool {
 }
 
 // ModStoragePath returns the directory that holds a mod's version folder:
-// <storage>/mods/<modID>/<version>. The version segment is sanitised so that a
-// hostile version string cannot escape the storage root.
-func ModStoragePath(storageRoot, modID, version string) string {
-	return JoinPath(storageRoot, ModsDirName, SanitizeSegment(modID), SanitizeSegment(version))
+// <storage>/<gameID>/<modID>/<version>. Every segment is sanitised so that a
+// hostile id or version string cannot escape the storage root. The game
+// segment keeps two games' mods of the same id apart when one manager
+// installation manages both.
+func ModStoragePath(storageRoot, gameID, modID, version string) string {
+	return JoinPath(
+		storageRoot,
+		SanitizeSegment(gameID),
+		SanitizeSegment(modID),
+		SanitizeSegment(version),
+	)
 }
 
-// ModVersionPath is the folder that holds one mod version's payload, given a
-// root that already *is* the mods folder.
-//
-// It exists because the two roots in play are not interchangeable:
-// ModStoragePath takes the manager's data directory and contributes its own
-// "mods" segment, while AppDirs.StorageRoot (and config storage.path) is already
-// <data>/mods. Running ModStoragePath over the latter would produce
-// <data>/mods/mods/<id>/<version>, so callers holding the mods folder use this
-// instead. Both share SanitizeSegment, so a mod that moves between roots keeps
-// the same leaf names.
-func ModVersionPath(modsRoot, modID, version string) string {
-	return JoinPath(modsRoot, SanitizeSegment(modID), SanitizeSegment(version))
-}
-
-// ModVersionRoot is the per-mod parent of ModVersionPath: the folder that holds
-// every installed version of one mod. Cleaning it up after the last version is
-// removed is what keeps the mods folder from filling up with empty directories.
+// ModVersionRoot is the per-mod parent of a payload folder: the directory
+// that holds every installed version of one mod under a given root. Cleaning
+// it up after the last version is removed is what keeps the mods folder from
+// filling up with empty directories.
 func ModVersionRoot(modsRoot, modID string) string {
 	return JoinPath(modsRoot, SanitizeSegment(modID))
 }

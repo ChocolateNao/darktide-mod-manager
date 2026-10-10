@@ -3,28 +3,9 @@
 //
 // It is the only source that needs no network and no credentials, which makes it
 // both the offline fallback and the easiest way to develop a mod against the
-// manager. It reads `mod.toml` manifests, so a mod laid out by hand behaves
-// exactly like one downloaded from Nexus.
-//
-// # Manifest
-//
-// The manifest mirrors the domain model:
-//
-//	[mod]
-//	id = "better_ui"          # optional; defaults to the folder name
-//	name = "Better UI"
-//	version = "1.2.0"
-//	author = "ModAuthor"
-//	description = "Improves UI scaling"
-//	game_version = ">=1.0.0"
-//	dependencies = ["core_lib"]
-//	conflicts_with = ["other_ui"]
-//	tags = ["ui", "visual"]
-//
-//	[[hooks.pre_enable]]     # repeatable; one table per script
-//	type = "inline"
-//	content = "print('hi')"
-//	timeout = 10
+// manager. It reads the manifests internal/manifest describes, so a mod laid out
+// by hand behaves exactly like one downloaded from Nexus — and so the format has
+// one owner rather than one per consumer.
 package local
 
 import (
@@ -36,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	manifestpkg "github.com/ChocolateNao/darktide-mod-manager/internal/manifest"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -59,19 +41,14 @@ const SourceID = "local"
 func init() {
 	_ = services.RegisterSourceFactory(
 		SourceID,
-		func(cfg domain.SourceConfig) (domain.ModSource, error) {
-			return New(cfg.Paths), nil
+		func(ctx services.SourceBuildContext) (domain.ModSource, error) {
+			return New(ctx.Config.Paths), nil
 		},
 	)
 }
 
 // pluginVersion is reported through ModSource.Version.
 const pluginVersion = "1.0.0"
-
-// manifestNames are the manifest files recognised inside a mod folder, in
-// priority order. They mirror the deployer's list so a mod that keeps its
-// manifest out of the game folder also has it found by this source.
-var manifestNames = []string{"mod.toml", "manifest.toml", "metadata.toml"}
 
 // defaultMaxScanDepth bounds how deep Search walks a configured path. A user
 // pointing at their home directory should not make the manager stat a million
@@ -166,14 +143,16 @@ func (s *Source) ValidateCredentials(context.Context) error {
 // entry is one discovered mod: the folder that holds the payload plus its
 // manifest. Keeping the folder means Download can copy without re-reading it.
 type entry struct {
-	manifest   *manifest
+	manifest   *manifestpkg.Manifest
 	dir        string
 	fallbackID string
 	archived   bool
 }
 
-// mod turns a discovered entry into the domain model.
-func (e entry) mod() *domain.Mod {
+// mod turns a discovered entry into the domain model. Read has
+// already validated the hook languages, so the error path is a safety net for
+// entries built in memory.
+func (e entry) mod() (*domain.Mod, error) {
 	// InstalledAt is left zero on purpose: the payload was already on disk, so
 	// there is no instant at which the manager installed it.
 	m := &domain.Mod{
@@ -188,10 +167,16 @@ func (e entry) mod() *domain.Mod {
 	}
 	if e.manifest == nil {
 		m.Name = e.fallbackID
-		return m
+		return m, nil
 	}
 
-	m.Hooks = e.manifest.DomainHooks()
+	hooks, err := e.manifest.DomainHooks()
+	if err != nil {
+		return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidMod,
+			"mod %s has an invalid hook entry", e.fallbackID)
+	}
+
+	m.Hooks = hooks
 	if id := strings.TrimSpace(e.manifest.Mod.ID); id != "" {
 		m.ID = id
 	}
@@ -201,11 +186,11 @@ func (e entry) mod() *domain.Mod {
 	m.Author = strings.TrimSpace(e.manifest.Mod.Author)
 	m.Description = strings.TrimSpace(e.manifest.Mod.Description)
 	m.GameVersion = strings.TrimSpace(e.manifest.Mod.GameVersion)
-	m.Dependencies = trimmedList(e.manifest.Mod.Dependencies)
-	m.ConflictsWith = trimmedList(e.manifest.Mod.ConflictsWith)
-	m.Tags = trimmedList(e.manifest.Mod.Tags)
+	m.Dependencies = manifestpkg.TrimmedList(e.manifest.Mod.Dependencies)
+	m.ConflictsWith = manifestpkg.TrimmedList(e.manifest.Mod.ConflictsWith)
+	m.Tags = manifestpkg.TrimmedList(e.manifest.Mod.Tags)
 
-	return m
+	return m, nil
 }
 
 // Search implements domain.ModSource.
@@ -241,11 +226,19 @@ func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain
 			)
 		}
 
-		if !matchesQuery(e.mod(), normalized) {
+		m, err := e.mod()
+		if err != nil {
+			// A mod whose manifest failed validation was already skipped by
+			// Read; anything left here is per-entry and must not hide
+			// the rest of the results.
 			continue
 		}
 
-		matches = append(matches, *e.mod())
+		if !matchesQuery(m, normalized) {
+			continue
+		}
+
+		matches = append(matches, *m)
 	}
 
 	domain.SortMods(matches, normalized.SortBy)
@@ -277,7 +270,11 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	)
 
 	for _, e := range entries {
-		m := e.mod()
+		m, err := e.mod()
+		if err != nil {
+			return nil, err
+		}
+
 		if !strings.EqualFold(m.ID, id) {
 			continue
 		}
@@ -502,8 +499,8 @@ func scanDir(ctx context.Context, root string, depth int) ([]entry, error) {
 
 		if d.IsDir() {
 			// The root itself is a mod folder if it holds a manifest.
-			if path != root && hasManifestDir(path) {
-				m, err := readManifest(path)
+			if path != root && manifestpkg.Has(path) {
+				m, err := manifestpkg.Read(path)
 				if err != nil {
 					// A malformed manifest is skipped rather than failing the scan:
 					// one broken mod should not make the others invisible.
@@ -616,7 +613,7 @@ func archiveEntry(path string) (entry, bool) {
 		dir:        path,
 		archived:   true,
 		fallbackID: SanitizeID(base),
-		manifest:   &manifest{},
+		manifest:   &manifestpkg.Manifest{},
 	}, true
 }
 

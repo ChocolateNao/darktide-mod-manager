@@ -4,7 +4,9 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -175,28 +177,57 @@ type configField struct {
 // searched in, so a prefix rule for sources.* cannot shadow a real key.
 var configFields = []configField{
 	{
+		key:  "active_game",
+		help: "registry id of the game currently managed; empty means the default",
+		get:  func(c *Config) string { return c.ActiveGame },
+		set:  func(c *Config, v string) error { c.ActiveGame = strings.TrimSpace(v); return nil },
+	},
+	{
 		key:  "game.path",
-		help: "Darktide installation directory",
-		get:  func(c *Config) string { return c.Game.Path },
-		set:  func(c *Config, v string) error { c.Game.Path = v; return nil },
+		help: "installation directory of the active game",
+		get:  func(c *Config) string { return c.ActiveSettings().Path },
+		set: func(c *Config, v string) error {
+			c.UpdateActiveSettings(func(s *domain.GameSettings) { s.Path = v })
+
+			return nil
+		},
 	},
 	{
 		key:  "game.source",
-		help: "launcher to prefer when auto-detecting",
-		get:  func(c *Config) string { return c.Game.Source },
-		set:  func(c *Config, v string) error { c.Game.Source = v; return nil },
+		help: "launcher to prefer when auto-detecting the active game",
+		get:  func(c *Config) string { return string(c.ActiveSettings().Source) },
+		set: func(c *Config, v string) error {
+			c.UpdateActiveSettings(func(s *domain.GameSettings) {
+				s.Source = domain.GameSource(strings.TrimSpace(v))
+			})
+
+			return nil
+		},
 	},
 	{
 		key:  "game.mods_folder_override",
 		help: "deploy into this folder instead of the detected one",
-		get:  func(c *Config) string { return c.Game.ModsFolderOverride },
-		set:  func(c *Config, v string) error { c.Game.ModsFolderOverride = v; return nil },
+		get:  func(c *Config) string { return c.ActiveSettings().ModsFolderOverride },
+		set: func(c *Config, v string) error {
+			c.UpdateActiveSettings(func(s *domain.GameSettings) { s.ModsFolderOverride = v })
+
+			return nil
+		},
 	},
 	{
 		key:  "game.auto_detect",
 		help: "probe known launcher locations on start-up",
-		get:  func(c *Config) string { return strconv.FormatBool(c.Game.AutoDetect) },
-		set:  boolSetter(func(c *Config) *bool { return &c.Game.AutoDetect }),
+		get:  func(c *Config) string { return strconv.FormatBool(c.ActiveSettings().AutoDetect) },
+		set: func(c *Config, v string) error {
+			parsed, err := parseConfigBool(v)
+			if err != nil {
+				return err
+			}
+
+			c.UpdateActiveSettings(func(s *domain.GameSettings) { s.AutoDetect = parsed })
+
+			return nil
+		},
 	},
 
 	{
@@ -237,31 +268,29 @@ var configFields = []configField{
 		set:  boolSetter(func(c *Config) *bool { return &c.Cache.VerifyHashes }),
 	},
 
-	// The hook timeouts are plain seconds in the domain type, not durations, so
-	// they read and write as integers like every other numeric setting.
 	{
 		key:  "hooks.default_timeout",
-		help: "seconds a hook may run when it declares no timeout",
-		get:  func(c *Config) string { return strconv.Itoa(c.Hooks.DefaultTimeout) },
-		set:  intSetter(func(c *Config) *int { return &c.Hooks.DefaultTimeout }, 1, 3600),
+		help: "duration a hook may run when it declares none, e.g. 10s",
+		get: func(c *Config) string {
+			return c.Hooks.DefaultTimeout.Duration().String()
+		},
+		set: durationSetter(
+			func(c *Config) *domain.Duration { return &c.Hooks.DefaultTimeout },
+			1,
+			3600,
+		),
 	},
 	{
 		key:  "hooks.max_timeout",
-		help: "longest timeout a hook may declare, in seconds",
-		get:  func(c *Config) string { return strconv.Itoa(c.Hooks.MaxTimeout) },
-		set:  intSetter(func(c *Config) *int { return &c.Hooks.MaxTimeout }, 1, 86400),
-	},
-	{
-		key:  "hooks.allow_network",
-		help: "allow hooks to reach the network",
-		get:  func(c *Config) string { return strconv.FormatBool(c.Hooks.AllowNetwork) },
-		set:  boolSetter(func(c *Config) *bool { return &c.Hooks.AllowNetwork }),
-	},
-	{
-		key:  "hooks.allow_file_write",
-		help: "allow hooks to write files",
-		get:  func(c *Config) string { return strconv.FormatBool(c.Hooks.AllowFileWrite) },
-		set:  boolSetter(func(c *Config) *bool { return &c.Hooks.AllowFileWrite }),
+		help: "absolute ceiling on one hook run, e.g. 30s",
+		get: func(c *Config) string {
+			return c.Hooks.MaxTimeout.Duration().String()
+		},
+		set: durationSetter(
+			func(c *Config) *domain.Duration { return &c.Hooks.MaxTimeout },
+			1,
+			86400,
+		),
 	},
 
 	{
@@ -398,6 +427,19 @@ func ConfigKeys() []string {
 
 	out = append(out, "sources.<id>.enabled", "sources.<id>.api_key", "sources.<id>.paths")
 
+	// <capability> is one of fs_read, fs_write, config_read, config_write,
+	// storage_read, env_read or timeout_seconds.
+	out = append(out,
+		"games.<id>.path",
+		"games.<id>.source",
+		"games.<id>.mods_folder_override",
+		"games.<id>.auto_detect",
+		"games.<id>.install_method",
+		"hooks.permissions.default.<capability>",
+		"hooks.permissions.games.<id>.<capability>",
+		"hooks.permissions.mods.<id>.<capability>",
+	)
+
 	return out
 }
 
@@ -435,6 +477,45 @@ func intSetter(target func(*Config) *int, min, max int) func(*Config, string) er
 		}
 
 		*target(cfg) = parsed
+
+		return nil
+	}
+}
+
+// durationSetter builds a setter for hook timeouts. The value is either a Go
+// duration string ("10s", "1m30s") or a bare number of seconds — the second
+// spelling because "30" is what every previous release accepted, and breaking
+// it would punish the only users this app has (its developers) for no gain.
+// The parsed duration is clamped to [minSeconds, maxSeconds].
+func durationSetter(
+	target func(*Config) *domain.Duration,
+	minSeconds, maxSeconds int,
+) func(*Config, string) error {
+	return func(cfg *Config, value string) error {
+		trimmed := strings.TrimSpace(value)
+
+		var (
+			parsed time.Duration
+			err    error
+		)
+
+		if secs, numErr := strconv.Atoi(trimmed); numErr == nil {
+			parsed = time.Duration(secs) * time.Second
+		} else {
+			parsed, err = time.ParseDuration(trimmed)
+			if err != nil {
+				return appErrors.New(appErrors.ErrCodeInvalidArgument,
+					"%q is not a duration", value)
+			}
+		}
+
+		seconds := int(parsed / time.Second)
+		if seconds < minSeconds || seconds > maxSeconds {
+			return appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"%q is out of range: expected %ds to %ds", value, minSeconds, maxSeconds)
+		}
+
+		*target(cfg) = domain.DurationOf(parsed)
 
 		return nil
 	}
@@ -492,6 +573,14 @@ func ConfigValue(cfg *Config, key string) (string, error) {
 		return sourceValue(cfg, sourceID, sub)
 	}
 
+	if gameID, sub, ok := splitGameKey(normalized); ok {
+		return gameValue(cfg, gameID, sub)
+	}
+
+	if scope, ok := splitPermissionKey(normalized); ok {
+		return scope.read(cfg)
+	}
+
 	return "", appErrors.New(appErrors.ErrCodeNotFound,
 		"no such configuration key: %q", strings.TrimSpace(key))
 }
@@ -520,6 +609,22 @@ func SetConfigValue(cfg *Config, key, value string) error {
 	if sourceID, sub, ok := splitSourceKey(normalized); ok {
 		if err := setSourceValue(cfg, sourceID, sub, strings.TrimSpace(value)); err != nil {
 			return nameKeyError(err, "sources."+sourceID+"."+sub)
+		}
+
+		return nil
+	}
+
+	if gameID, sub, ok := splitGameKey(normalized); ok {
+		if err := setGameValue(cfg, gameID, sub, strings.TrimSpace(value)); err != nil {
+			return nameKeyError(err, "games."+gameID+"."+sub)
+		}
+
+		return nil
+	}
+
+	if scope, ok := splitPermissionKey(normalized); ok {
+		if err := scope.write(cfg, strings.TrimSpace(value)); err != nil {
+			return nameKeyError(err, scope.key())
 		}
 
 		return nil
@@ -710,4 +815,290 @@ func setSourceValue(cfg *Config, sourceID, field, value string) error {
 	cfg.Sources[key] = block
 
 	return nil
+}
+
+// splitGameKey breaks "games.<id>.<field>" apart. It reports false for
+// anything that is not three segments starting with "games", which leaves the
+// caller to report an unknown key.
+//
+// The id is already folded by normalizeConfigKey, matching the registry's own
+// normalisation: game ids are lowercase everywhere they are addressed.
+func splitGameKey(key string) (gameID, field string, ok bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 3 || parts[0] != "games" {
+		return "", "", false
+	}
+
+	id := strings.TrimSpace(parts[1])
+	if id == "" {
+		return "", "", false
+	}
+
+	return id, parts[2], true
+}
+
+// registeredGame looks up a game's definition by config id, answering nil when
+// the id names a game this build does not have. Callers treat nil as "no
+// preference to report" rather than as an error: reading settings must work
+// for a game that was removed from the registry but is still described in the
+// configuration.
+func registeredGame(gameID string) domain.GameDefinition {
+	def, ok := games.Get(strings.TrimSpace(gameID))
+	if !ok {
+		return nil
+	}
+
+	return def
+}
+
+// gameValue reads one field of one game's settings. A game with no entry yet
+// answers with the defaults rather than an error: asking for a setting of a
+// game that has simply never been pointed at a path is a normal question, and
+// the defaults are the truthful answer.
+func gameValue(cfg *Config, gameID, field string) (string, error) {
+	settings, ok := cfg.GameSettingsFor(gameID)
+	if !ok {
+		settings = domain.DefaultGameSettings()
+	}
+
+	switch field {
+	case "path":
+		return settings.Path, nil
+	case "source":
+		return string(settings.Source), nil
+	case "mods_folder_override":
+		return settings.ModsFolderOverride, nil
+	case "auto_detect":
+		return strconv.FormatBool(settings.AutoDetect), nil
+	case "install_method":
+		// An unset override reads as the game's own preference rather than as
+		// an empty string: "what happens if I never touch this?" is the question
+		// a settings screen asks first, and blank would answer nothing.
+		if method := settings.InstallMethodOrDefault(registeredGame(gameID)); method != "" {
+			return method, nil
+		}
+
+		return "", nil
+	}
+
+	return "", appErrors.New(appErrors.ErrCodeNotFound,
+		"game %q has no setting %q", gameID, field)
+}
+
+// setGameValue writes one field of one game's settings, creating the entry if
+// it does not exist yet — writing a setting for a game with no block is how a
+// block appears in the first place.
+//
+// The game id is not checked against the registry: a configuration is allowed
+// to describe a game before the process has one to switch to, and a typo is
+// caught by UseGame, which is where switching — the operation that would be
+// harmed by a wrong id — actually happens.
+func setGameValue(cfg *Config, gameID, field, value string) error {
+	settings, ok := cfg.GameSettingsFor(gameID)
+	if !ok {
+		settings = domain.DefaultGameSettings()
+	}
+
+	switch field {
+	case "path":
+		settings.Path = value
+	case "source":
+		settings.Source = domain.GameSource(strings.TrimSpace(value))
+	case "mods_folder_override":
+		settings.ModsFolderOverride = value
+	case "auto_detect":
+		parsed, err := parseConfigBool(value)
+		if err != nil {
+			return err
+		}
+
+		settings.AutoDetect = parsed
+	case "install_method":
+		// Blank clears the override and hands the decision back to the game
+		// definition, so a user who tried an override has a way out.
+		if value != "" && !domain.ValidInstallMethod(value) {
+			return appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"install method must be %q or %q",
+				domain.InstallMethodSymlink, domain.InstallMethodDirect)
+		}
+
+		settings.InstallMethod = value
+	default:
+		return appErrors.New(appErrors.ErrCodeNotFound,
+			"game %q has no setting %q", gameID, field)
+	}
+
+	cfg.SetGameSettings(gameID, settings)
+
+	return nil
+}
+
+// permissionScope names one hooks.permissions block — the default, one game or
+// one mod — plus the capability inside it.
+type permissionScope struct {
+	kind string // "default", "games" or "mods"
+	id   string // blank for the default scope
+	cap  string
+}
+
+// key rebuilds the dotted key, for naming a failure at its origin.
+func (s permissionScope) key() string {
+	if s.kind == "default" {
+		return "hooks.permissions.default." + s.cap
+	}
+
+	return "hooks.permissions." + s.kind + "." + s.id + "." + s.cap
+}
+
+// splitPermissionKey breaks a hooks.permissions key apart. Four segments name
+// a capability on the default scope; five name one on a game or a mod.
+func splitPermissionKey(key string) (permissionScope, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) < 2 || parts[0] != "hooks" || parts[1] != "permissions" {
+		return permissionScope{}, false
+	}
+
+	switch {
+	case len(parts) == 4 && parts[2] == "default":
+		if strings.TrimSpace(parts[3]) == "" {
+			return permissionScope{}, false
+		}
+
+		return permissionScope{kind: "default", cap: parts[3]}, true
+	case len(parts) == 5 && (parts[2] == "games" || parts[2] == "mods"):
+		id := strings.TrimSpace(parts[3])
+		if id == "" || strings.TrimSpace(parts[4]) == "" {
+			return permissionScope{}, false
+		}
+
+		return permissionScope{kind: parts[2], id: id, cap: parts[4]}, true
+	}
+
+	return permissionScope{}, false
+}
+
+// permissionCaps maps each boolean capability name to its field. The
+// timeout_seconds cap is handled separately: it is an integer ceiling, not a
+// switch.
+var permissionCaps = map[string]func(*domain.ScriptPermissions) *bool{
+	"config_read":  func(p *domain.ScriptPermissions) *bool { return &p.ConfigRead },
+	"config_write": func(p *domain.ScriptPermissions) *bool { return &p.ConfigWrite },
+	"env_read":     func(p *domain.ScriptPermissions) *bool { return &p.EnvRead },
+	"fs_read":      func(p *domain.ScriptPermissions) *bool { return &p.FSRead },
+	"fs_write":     func(p *domain.ScriptPermissions) *bool { return &p.FSWrite },
+	"storage_read": func(p *domain.ScriptPermissions) *bool { return &p.StorageRead },
+}
+
+// resolve returns the scope's current block and the key it lives under in its
+// map (empty for the default scope). A scope with no block of its own answers
+// with the zero permissions — no grant — which is the truth about a mod that
+// has never been given one.
+func (s permissionScope) resolve(cfg *Config) (domain.ScriptPermissions, string) {
+	switch s.kind {
+	case "games":
+		return lookupPermission(cfg.Hooks.Permissions.Games, s.id)
+	case "mods":
+		return lookupPermission(cfg.Hooks.Permissions.Mods, s.id)
+	}
+
+	return cfg.Hooks.Permissions.Default, ""
+}
+
+// lookupPermission finds a scope's block however it was capitalised, returning
+// the block along with the key it is stored under so a write lands in the
+// existing entry instead of creating a second one beside it.
+func lookupPermission(
+	blocks map[string]domain.ScriptPermissions,
+	id string,
+) (domain.ScriptPermissions, string) {
+	if block, ok := blocks[id]; ok {
+		return block, id
+	}
+
+	for key, block := range blocks {
+		if strings.EqualFold(key, id) {
+			return block, key
+		}
+	}
+
+	return domain.ScriptPermissions{}, id
+}
+
+// read returns one capability in its string form: "true"/"false" for the
+// switches, the count of seconds for the timeout cap.
+func (s permissionScope) read(cfg *Config) (string, error) {
+	block, _ := s.resolve(cfg)
+
+	if s.cap == "timeout_seconds" {
+		return strconv.Itoa(block.TimeoutSeconds), nil
+	}
+
+	field, ok := permissionCaps[s.cap]
+	if !ok {
+		return "", appErrors.New(appErrors.ErrCodeNotFound,
+			"unknown hook permission %q", s.cap)
+	}
+
+	return strconv.FormatBool(*field(&block)), nil
+}
+
+// write applies one capability to its scope, creating the scope's block if it
+// does not exist yet. A capability of 0 (timeout_seconds) is stored as written:
+// zero means "no cap below the configured ceiling", which is a real setting,
+// not an unset one.
+func (s permissionScope) write(cfg *Config, value string) error {
+	block, key := s.resolve(cfg)
+
+	if s.cap != "timeout_seconds" {
+		field, ok := permissionCaps[s.cap]
+		if !ok {
+			return appErrors.New(appErrors.ErrCodeNotFound,
+				"unknown hook permission %q", s.cap)
+		}
+
+		parsed, err := parseConfigBool(value)
+		if err != nil {
+			return err
+		}
+
+		*field(&block) = parsed
+	} else {
+		parsed, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"%q is not a whole number", value)
+		}
+
+		if parsed < 0 || parsed > 86400 {
+			return appErrors.New(appErrors.ErrCodeInvalidArgument,
+				"%d is out of range: expected 0 to 86400", parsed)
+		}
+
+		block.TimeoutSeconds = parsed
+	}
+
+	s.store(cfg, key, block)
+
+	return nil
+}
+
+// store writes the block back into its scope, creating the map when the
+// configuration has none yet.
+func (s permissionScope) store(cfg *Config, key string, block domain.ScriptPermissions) {
+	switch s.kind {
+	case "games":
+		if cfg.Hooks.Permissions.Games == nil {
+			cfg.Hooks.Permissions.Games = make(map[string]domain.ScriptPermissions)
+		}
+
+		cfg.Hooks.Permissions.Games[key] = block
+	case "mods":
+		if cfg.Hooks.Permissions.Mods == nil {
+			cfg.Hooks.Permissions.Mods = make(map[string]domain.ScriptPermissions)
+		}
+
+		cfg.Hooks.Permissions.Mods[key] = block
+	default:
+		cfg.Hooks.Permissions.Default = block
+	}
 }

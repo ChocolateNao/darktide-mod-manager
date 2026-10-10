@@ -1,37 +1,56 @@
 package domain
 
-// HookType selects which runner executes a hook script.
-type HookType string
+import (
+	"strings"
 
-const (
-	// HookTypeInline runs the Content as a script inside a sandboxed VM.
-	HookTypeInline HookType = "inline"
-	// HookTypeFile runs Content as a path to a script file on disk.
-	HookTypeFile HookType = "file"
-	// HookTypeCommand runs Content as a shell command line.
-	HookTypeCommand HookType = "command"
-	// HookTypeGo runs Content as the name of a hook function compiled into the
-	// manager binary (see internal/plugins/hooks/golang). Nothing can run one
-	// unless the build registered the name, so a manifest asking for one always
-	// fails loudly instead of silently doing nothing.
-	HookTypeGo HookType = "go"
+	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// HookTypes returns every script type the manager knows, in a stable order.
-// Registration of new runners is expected to extend this list, which is why it
-// is a function rather than a package-level slice: callers must not be able to
-// mutate it.
-func HookTypes() []HookType {
-	return []HookType{HookTypeInline, HookTypeFile, HookTypeCommand, HookTypeGo}
+// ScriptLanguage selects which sandboxed runtime executes a hook script.
+type ScriptLanguage string
+
+const (
+	// LangLua runs the Content as Lua inside a gopher-lua state opened with no
+	// standard libraries beyond base, string, table and math.
+	LangLua ScriptLanguage = "lua"
+	// LangJS runs the Content as JavaScript inside a fresh goja VM per
+	// execution.
+	LangJS ScriptLanguage = "javascript"
+)
+
+// ScriptLanguages returns every script language the manager knows, in a stable
+// order: lua first because it is the lighter sandbox, javascript second because
+// it is the one that existed first.
+func ScriptLanguages() []ScriptLanguage {
+	return []ScriptLanguage{LangLua, LangJS}
 }
 
-// Valid reports whether the type is one of the known runner kinds.
-func (t HookType) Valid() bool {
-	switch t {
-	case HookTypeInline, HookTypeFile, HookTypeCommand, HookTypeGo:
+// Valid reports whether the language is one of the known runtimes.
+func (l ScriptLanguage) Valid() bool {
+	switch l {
+	case LangLua, LangJS:
 		return true
 	default:
 		return false
+	}
+}
+
+// ParseScriptLanguage converts a manifest or user supplied string to a
+// ScriptLanguage. It is deliberately strict: a blank or unknown language is an
+// error rather than a fallback, because a hook that silently runs in the wrong
+// runtime is worse than a mod that refuses to load. Matching is
+// case-insensitive, and "js" is accepted as the common short spelling of
+// "javascript".
+func ParseScriptLanguage(s string) (ScriptLanguage, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "lua":
+		return LangLua, nil
+	case "javascript", "js":
+		return LangJS, nil
+	default:
+		return "", appErrors.New(appErrors.ErrCodeHookInvalid,
+			"unknown script language %q; use one of lua, javascript",
+			strings.TrimSpace(s))
 	}
 }
 
@@ -111,11 +130,17 @@ func equalUnderscored(a, b string) bool {
 
 // HookScript is a single script bound to a lifecycle phase.
 type HookScript struct {
-	Type       HookType `json:"type"`
-	Content    string   `json:"content"`
-	WorkingDir string   `json:"working_dir,omitempty"`
-	Env        []string `json:"env,omitempty"`
-	Timeout    int      `json:"timeout,omitempty"`
+	// Language names the sandboxed runtime that executes Content. Local
+	// manifests spell this as `type = "lua"`; the JSON form says `language`
+	// because that is what the field is.
+	Language   ScriptLanguage `json:"language"`
+	Content    string         `json:"content"`
+	WorkingDir string         `json:"working_dir,omitempty"`
+	Env        []string       `json:"env,omitempty"`
+	// Timeout is the script's own request, in seconds. Zero defers to the
+	// configured default; whatever is asked for is still clamped by the
+	// effective-timeout rule in the executor.
+	Timeout int `json:"timeout,omitempty"`
 }
 
 // ModHooks groups every hook phase for one mod. Slices are ordered: scripts

@@ -122,7 +122,7 @@ func TestConfigStoreLoadAppliesDefaults(t *testing.T) {
 	writeConfigFile(
 		t,
 		path,
-		`{"game":{"path":"/games/Darktide"},"storage":{"backup_retention_days":-3}}`,
+		`{"active_game":"darktide","games":{"darktide":{"path":"/games/Darktide"}},"storage":{"backup_retention_days":-3}}`,
 	)
 
 	cfg, err := NewConfigStore(path).Load()
@@ -131,9 +131,9 @@ func TestConfigStoreLoadAppliesDefaults(t *testing.T) {
 	assert.Equal(
 		t,
 		"/games/Darktide",
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 		"expected the user game path to survive, got %q",
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 	)
 
 	assert.False(
@@ -304,7 +304,7 @@ func TestConfigStoreSaveDoesNotMutateCaller(t *testing.T) {
 
 	assert.Equal(
 		t,
-		0,
+		domain.Duration(0),
 		cfg.Hooks.DefaultTimeout,
 		"expected the caller's config to keep a zero hook timeout, got %d",
 		cfg.Hooks.DefaultTimeout,
@@ -341,13 +341,13 @@ func TestConfigStoreSaveOverwrites(t *testing.T) {
 
 	first := domain.DefaultConfig()
 
-	first.Game.Path = "/first"
+	first.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/first" })
 	err := store.Save(&first)
 	require.NoError(t, err, "save first config: %v", err)
 
 	second := domain.DefaultConfig()
 
-	second.Game.Path = "/second"
+	second.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "/second" })
 	err = store.Save(&second)
 	require.NoError(t, err, "save second config: %v", err)
 
@@ -357,9 +357,9 @@ func TestConfigStoreSaveOverwrites(t *testing.T) {
 	assert.Equal(
 		t,
 		"/second",
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 		"expected the newer config to win, got %q",
-		cfg.Game.Path,
+		cfg.ActiveSettings().Path,
 	)
 
 	assertNoTempFiles(t, filepath.Dir(path))
@@ -405,12 +405,12 @@ func TestConfigStoreSaveIfChangedComparesEffectiveConfigs(t *testing.T) {
 	store := NewConfigStore(path)
 	cfg := domain.DefaultConfig()
 
-	cfg.Game.Source = "steam"
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
 	err := store.Save(&cfg)
 	require.NoError(t, err, "save config: %v", err)
 
 	same := domain.DefaultConfig()
-	same.Game.Source = "steam"
+	same.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Source = "steam" })
 
 	changed, err := store.SaveIfChanged(&same)
 	require.NoError(t, err, "save-if-changed with the same config")
@@ -422,7 +422,11 @@ func TestConfigStoreSaveIfChangedComparesEffectiveConfigs(t *testing.T) {
 	// applied — except for booleans, which JSON cannot tell apart from an
 	// absent key. Those are compared as written, which is why this candidate
 	// does count as a change.
-	candidate := domain.Config{Game: domain.GameConfig{Source: "steam"}}
+	candidate := domain.Config{
+		Games: map[string]domain.GameSettings{
+			"": {Source: "steam"},
+		},
+	}
 
 	changed, err = store.SaveIfChanged(&candidate)
 	require.NoError(t, err, "save-if-changed")
@@ -518,7 +522,7 @@ func TestOneShotConfigHelpers(t *testing.T) {
 	cfg, err := LoadConfig(path)
 	require.NoError(t, err, "load config")
 
-	cfg.Game.AutoDetect = false
+	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = false })
 
 	cfg.Advanced.LogLevel = "debug"
 	err = SaveConfig(path, cfg)
@@ -527,7 +531,7 @@ func TestOneShotConfigHelpers(t *testing.T) {
 	reloaded, err := LoadConfig(path)
 	require.NoError(t, err, "reload config")
 
-	assert.False(t, reloaded.Game.AutoDetect, "expected auto detect to stay off")
+	assert.False(t, reloaded.ActiveSettings().AutoDetect, "expected auto detect to stay off")
 
 	assert.Equal(
 		t,
@@ -639,4 +643,43 @@ func TestConfigStoreIsSafeForConcurrentUse(t *testing.T) {
 	require.NoError(t, err, "final load: %v", err)
 
 	assertNoTempFiles(t, filepath.Dir(path))
+}
+
+func TestConfigStoreRoundTripsGameShape(t *testing.T) {
+	path := configPath(t)
+	store := NewConfigStore(path)
+
+	cfg := domain.DefaultConfig()
+	cfg.ActiveGame = "sietch"
+	cfg.Games = map[string]domain.GameSettings{
+		"darktide": {Path: "/g/darktide", Source: "steam", AutoDetect: false},
+		"sietch":   {Path: "/g/sietch", ModsFolderOverride: "extra-mods"},
+	}
+	cfg.Hooks.Permissions.Games = map[string]domain.ScriptPermissions{
+		"sietch": {EnvRead: true},
+	}
+	cfg.Hooks.Permissions.Mods = map[string]domain.ScriptPermissions{
+		"m1": {FSWrite: true, TimeoutSeconds: 7},
+	}
+
+	err := store.Save(&cfg)
+	require.NoError(t, err, "save config")
+
+	loaded, err := store.Load()
+	require.NoError(t, err, "load config")
+
+	assert.Equal(t, "sietch", loaded.ActiveGame, "active game lost")
+	assert.Equal(t, cfg.Games, loaded.Games, "games map lost")
+	assert.Equal(
+		t,
+		cfg.Hooks.Permissions.Games,
+		loaded.Hooks.Permissions.Games,
+		"per-game permissions lost",
+	)
+	assert.Equal(
+		t,
+		cfg.Hooks.Permissions.Mods,
+		loaded.Hooks.Permissions.Mods,
+		"per-mod permissions lost",
+	)
 }

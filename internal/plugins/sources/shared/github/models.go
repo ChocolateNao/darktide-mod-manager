@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/sourceutil"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/sourceutil"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )

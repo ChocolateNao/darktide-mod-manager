@@ -8,28 +8,12 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// Candidate is a place a Darktide installation might live.
+// Candidate is a place a game installation might live.
 type Candidate struct {
 	Path   string
 	Source domain.GameSource
 	Notes  string
 	Glob   bool
-}
-
-// steamRelativeInstall is the location of the game inside a Steam library.
-var steamRelativeInstall = []string{"steamapps", "common", "Darktide"}
-
-// protonRelativeInstall is the location of the game inside the Proton prefix
-// Steam maintains for the Darktide app id.
-var protonRelativeInstall = []string{
-	"steamapps", "compatdata", domain.SteamAppID, "pfx", "drive_c",
-	"Program Files (x86)", "Steam", "steamapps", "common", "Darktide",
-}
-
-// bottleRelativeInstall is the location of the game inside a Windows bottle
-// created by CrossOver, Whisky, Heroic or Bottles.
-var bottleRelativeInstall = []string{
-	"drive_c", "Program Files (x86)", "Steam", "steamapps", "common", "Darktide",
 }
 
 // windowsProgramFiles returns the installed-program base directories, honouring
@@ -81,13 +65,19 @@ func steamRoots(p domain.Platform, home string, getenv Env) []string {
 	}
 }
 
-// GameCandidates enumerates every location worth probing for a Darktide
-// installation on a platform, ordered from most likely to least. extras are
+// GameCandidates enumerates every location worth probing for an installation
+// of game on a platform, ordered from most likely to least. extras are
 // user-supplied paths, which are probed first; each must be a single path.
 //
 // This is pure path derivation with no filesystem access, so the candidate list
 // for any platform can be asserted from a test on any host.
-func GameCandidates(p domain.Platform, home string, getenv Env, extras []string) []Candidate {
+func GameCandidates(
+	game domain.GameDefinition,
+	p domain.Platform,
+	home string,
+	getenv Env,
+	extras []string,
+) []Candidate {
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
@@ -104,6 +94,38 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 		}
 	}
 
+	if game == nil {
+		return out
+	}
+
+	// The folder name launchers install under, from the game definition. A
+	// game that declares no install directory name only gets the manual paths.
+	var gameDir string
+	if names := game.InstallDirNames(); len(names) > 0 {
+		gameDir = names[0]
+	}
+
+	if gameDir == "" {
+		return out
+	}
+
+	// steamRelativeInstall is the location of the game inside a Steam library.
+	steamRelativeInstall := []string{"steamapps", "common", gameDir}
+
+	// bottleRelativeInstall is the location of the game inside a Windows
+	// bottle created by CrossOver, Whisky, Heroic or Bottles.
+	bottleRelativeInstall := []string{
+		"drive_c", "Program Files (x86)", "Steam", "steamapps", "common", gameDir,
+	}
+
+	// protonRelativeInstall is the location of the game inside the Proton
+	// prefix Steam maintains for the game's app id.
+	protonRelativeInstall := []string{
+		"steamapps", "compatdata", game.SteamAppID(), "pfx", "drive_c",
+		"Program Files (x86)", "Steam", "steamapps", "common", gameDir,
+	}
+	hasSteam := game.SteamAppID() != ""
+
 	// Steam: the native library layout, then the Proton prefix Steam maintains
 	// for the app id, which is where the game actually lands on Linux.
 	for _, root := range steamRoots(p, home, getenv) {
@@ -116,7 +138,7 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 			Source: domain.GameSourceSteam,
 			Notes:  "Steam library",
 		})
-		if !p.IsWindows() {
+		if !p.IsWindows() && hasSteam {
 			out = append(out, Candidate{
 				Path:   domain.JoinPath(append([]string{root}, protonRelativeInstall...)...),
 				Source: domain.GameSourceProton,
@@ -130,12 +152,12 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 		for _, base := range windowsProgramFiles(getenv) {
 			out = append(out,
 				Candidate{
-					Path:   domain.JoinPath(base, "Epic Games", "Darktide"),
+					Path:   domain.JoinPath(base, "Epic Games", gameDir),
 					Source: domain.GameSourceEpic,
 					Notes:  "Epic Games",
 				},
 				Candidate{
-					Path:   domain.JoinPath(base, "ModsEasy", "Darktide"),
+					Path:   domain.JoinPath(base, "ModsEasy", gameDir),
 					Source: domain.GameSourceManual,
 					Notes:  "ModsEasy",
 				},
@@ -177,12 +199,12 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 			},
 			Candidate{
 				Path: domain.JoinPath(
-					append([]string{home, "Parallels", "Darktide"}, bottleRelativeInstall...)...),
+					append([]string{home, "Parallels", gameDir}, bottleRelativeInstall...)...),
 				Source: domain.GameSourceParallels,
 				Notes:  "Parallels virtual machine",
 			},
 			Candidate{
-				Path:   domain.JoinPath(home, "Library", "Application Support", "Epic", "Darktide"),
+				Path:   domain.JoinPath(home, "Library", "Application Support", "Epic", gameDir),
 				Source: domain.GameSourceEpic,
 				Notes:  "Epic Games",
 			},
@@ -200,12 +222,12 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 
 		out = append(out,
 			Candidate{
-				Path:   domain.JoinPath(dataHome, "EpicGames", "Darktide"),
+				Path:   domain.JoinPath(dataHome, "EpicGames", gameDir),
 				Source: domain.GameSourceEpic,
 				Notes:  "Epic Games",
 			},
 			Candidate{
-				Path:   domain.JoinPath(home, ".EpicGames", "Darktide"),
+				Path:   domain.JoinPath(home, ".EpicGames", gameDir),
 				Source: domain.GameSourceEpic,
 				Notes:  "Epic Games (legacy layout)",
 			},
@@ -217,7 +239,7 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 					"com.heroicgameslauncher.hgl",
 					"data",
 					"EpicGames",
-					"Darktide",
+					gameDir,
 				),
 				Source: domain.GameSourceHeroic,
 				Notes:  "Heroic Games Launcher (Flatpak)",
@@ -232,7 +254,7 @@ func GameCandidates(p domain.Platform, home string, getenv Env, extras []string)
 			Candidate{
 				Path: domain.JoinPath(
 					append(
-						[]string{home, ".lutris", "games", "darktide"},
+						[]string{home, ".lutris", "games", strings.ToLower(gameDir)},
 						bottleRelativeInstall...)...),
 				Source: domain.GameSourceLutris,
 				Notes:  "Lutris game directory",

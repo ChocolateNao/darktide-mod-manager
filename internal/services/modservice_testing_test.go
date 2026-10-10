@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/gamestest"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
@@ -116,6 +117,44 @@ func (f *fakeIndex) ListEnabled(ctx context.Context) ([]domain.Mod, error) {
 	}
 
 	all, err := f.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := []domain.Mod{}
+
+	for _, m := range all {
+		if m.Enabled {
+			out = append(out, m)
+		}
+	}
+
+	return out, nil
+}
+
+func (f *fakeIndex) ListByGame(ctx context.Context, gameID string) ([]domain.Mod, error) {
+	all, err := f.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := []domain.Mod{}
+
+	for _, m := range all {
+		if m.GameID == gameID {
+			out = append(out, m)
+		}
+	}
+
+	return out, nil
+}
+
+func (f *fakeIndex) ListEnabledByGame(ctx context.Context, gameID string) ([]domain.Mod, error) {
+	if f.listEnabledErr != nil {
+		return nil, f.listEnabledErr
+	}
+
+	all, err := f.ListByGame(ctx, gameID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +294,64 @@ func (f *fakeIndex) LoadOrder(_ context.Context) ([]string, error) {
 	defer f.mu.Unlock()
 
 	return append([]string{}, f.order...), nil
+}
+
+// SetLoadOrderForGame replaces the order of ONE game: ids of other games stay
+// in the shared slice, mirroring how the sqlite repository leaves the other
+// games' rows untouched.
+func (f *fakeIndex) SetLoadOrderForGame(_ context.Context, gameID string, ids []string) error {
+	if f.setOrderErr != nil {
+		return f.setOrderErr
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for _, id := range ids {
+		m, ok := f.mods[id]
+		if !ok || m.GameID != gameID {
+			return appErrors.New(
+				appErrors.ErrCodeModNotFound,
+				"load order names mod %q, which is not installed for game %q",
+				id,
+				gameID,
+			)
+		}
+	}
+
+	kept := make([]string, 0, len(f.order)+len(ids))
+	for _, id := range f.order {
+		if m, ok := f.mods[id]; ok && m.GameID == gameID {
+			continue
+		}
+
+		kept = append(kept, id)
+	}
+
+	f.order = append(kept, ids...)
+
+	return nil
+}
+
+// LoadOrderByGame filters the shared order down to one game's mods, in the
+// order they were recorded.
+func (f *fakeIndex) LoadOrderByGame(_ context.Context, gameID string) ([]string, error) {
+	if f.loadOrderErr != nil {
+		return nil, f.loadOrderErr
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	out := []string{}
+
+	for _, id := range f.order {
+		if m, ok := f.mods[id]; ok && m.GameID == gameID {
+			out = append(out, id)
+		}
+	}
+
+	return out, nil
 }
 
 func (f *fakeIndex) Count(_ context.Context) (int, error) {
@@ -632,11 +729,35 @@ func (h *fakeHooks) countOf(phase domain.HookPhase) int {
 // configured but has no mods folder yet", which the service must treat as "no
 // game" rather than as an error.
 type fakeLocator struct {
-	err      error
-	install  *domain.GameInstallation
-	modsPath string
-	calls    int
-	mu       sync.Mutex
+	err               error
+	install           *domain.GameInstallation
+	modsPath          string
+	gameID            string
+	installMethod     string
+	gameInstallMethod string
+	calls             int
+	mu                sync.Mutex
+}
+
+// fakeGameDef is a GameDefinition whose id can be the empty string, which
+// gamestest.Def refuses to represent: the harness keeps the legacy,
+// not-yet-assigned game id by default.
+type fakeGameDef struct {
+	gamestest.Def
+	id            string
+	installMethod string
+}
+
+func (d fakeGameDef) ID() string { return d.id }
+
+// ModInstallMethod reports the preference the test asked for, falling back to
+// the gamestest default when it asked for nothing.
+func (d fakeGameDef) ModInstallMethod() string {
+	if d.installMethod == "" {
+		return gamestest.Def{}.ModInstallMethod()
+	}
+
+	return d.installMethod
 }
 
 // newFakeLocator reports a game whose folder lives under root, so the tests
@@ -655,6 +776,54 @@ func newFakeLocator(root string) *fakeLocator {
 
 // withoutGame returns a locator that reports no installation at all.
 func withoutGame() *fakeLocator { return &fakeLocator{} }
+
+// withGameID makes Active report the given game id, so a test can exercise
+// cross-game scoping without a registry.
+func (l *fakeLocator) withGameID(id string) *fakeLocator {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.gameID = id
+
+	return l
+}
+
+// withInstallMethod makes Active report a per-game configuration override, the
+// setting that decides whether mods are linked or copied.
+func (l *fakeLocator) withInstallMethod(method string) *fakeLocator {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.installMethod = method
+
+	return l
+}
+
+// withGameInstallMethod makes the game definition itself prefer a method, as
+// it would when the user has expressed no opinion in the configuration.
+func (l *fakeLocator) withGameInstallMethod(method string) *fakeLocator {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.gameInstallMethod = method
+
+	return l
+}
+
+// Active implements ModLocator. It reports the configured game id (the empty
+// string by default) and is independent of installation errors: a missing
+// installation is not a missing registry entry.
+func (l *fakeLocator) Active() (domain.GameDefinition, domain.GameSettings, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	settings := domain.DefaultGameSettings()
+	settings.InstallMethod = l.installMethod
+
+	def := fakeGameDef{id: l.gameID, installMethod: l.gameInstallMethod}
+
+	return def, settings, nil
+}
 
 func (l *fakeLocator) Current(context.Context) (*domain.GameInstallation, error) {
 	l.mu.Lock()
@@ -708,6 +877,7 @@ type recordingDeployer struct {
 	repaired    []string
 	undeployed  [][]string
 	deployCalls []string
+	deployModes []platform.DeployMode
 	verifyCalls []string
 	mu          sync.Mutex
 }
@@ -718,11 +888,23 @@ func newRecordingDeployer() *recordingDeployer {
 
 func (d *recordingDeployer) Mode() platform.DeployMode { return platform.DeploySymlink }
 
-func (d *recordingDeployer) DeployAs(src, _ string, _ platform.DeployMode) error {
+// ModeFor mirrors the real rule for a host that can always create symlinks: a
+// request for direct copies copies, everything else links.
+func (d *recordingDeployer) ModeFor(preferred string) platform.DeployMode {
+	if strings.TrimSpace(preferred) == domain.InstallMethodDirect {
+		return platform.DeployCopy
+	}
+
+	return platform.DeploySymlink
+}
+
+func (d *recordingDeployer) DeployAs(src, _ string, mode platform.DeployMode) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	d.deployCalls = append(d.deployCalls, src)
+
+	d.deployModes = append(d.deployModes, mode)
 	if d.deployErr != nil {
 		return d.deployErr
 	}
@@ -1021,7 +1203,7 @@ func modFixture(id, version string) *domain.Mod {
 	for _, phase := range domain.HookPhases() {
 		m.Hooks.Set(
 			phase,
-			[]domain.HookScript{{Type: domain.HookTypeInline, Content: "// " + string(phase)}},
+			[]domain.HookScript{{Language: domain.LangJS, Content: "// " + string(phase)}},
 		)
 	}
 
@@ -1158,7 +1340,7 @@ func (h *harness) installed(t *testing.T, id string) *domain.Mod {
 }
 
 func (h *harness) payloadPath(id, version string) string {
-	return domain.ModVersionPath(h.storage, id, version)
+	return domain.ModStoragePath(h.storage, "", id, version)
 }
 
 // payloadFiles lists the files that ended up in the mod's payload folder.

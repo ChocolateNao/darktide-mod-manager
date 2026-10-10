@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -47,21 +48,21 @@ func mod() *domain.Mod {
 	return &domain.Mod{ID: "better_ui", Name: "Better UI", Version: "1.2.0", SourceID: "vortex"}
 }
 
-func TestRunnerHookType(t *testing.T) {
-	got := NewRunner().HookType()
+func TestRunnerLanguage(t *testing.T) {
+	got := NewRunner(host.Providers{}).Language()
 	assert.Equal(
 		t,
-		domain.HookTypeInline,
+		domain.LangJS,
 		got,
-		"HookType() = %q, want %q",
+		"Language() = %q, want %q",
 		got,
-		domain.HookTypeInline,
+		domain.LangJS,
 	)
 }
 
 func TestRunnerRejectsBlankScript(t *testing.T) {
 	for _, content := range []string{"", "   ", "\n\t "} {
-		err := NewRunner().Run(
+		err := NewRunner(host.Providers{}).Run(
 			context.Background(),
 			prepared(domain.HookScript{Content: content}),
 			mod(),
@@ -80,21 +81,21 @@ func TestRunnerRejectsBlankScript(t *testing.T) {
 
 // The script must be able to read the context the manager promises it.
 func TestRunnerExposesHookContextToScript(t *testing.T) {
-	r := NewRunnerWithSink(func(lines []string, dropped int) {})
+	r := NewRunnerWithSink(func(lines []string, dropped int) {}, host.Providers{})
 
 	script := `
-		if (hook.mod.id !== "better_ui") { throw new Error("mod.id=" + hook.mod.id); }
-		if (hook.mod.version !== "1.2.0") { throw new Error("mod.version=" + hook.mod.version); }
-		if (hook.mod.enabled !== true) { throw new Error("enabled=" + hook.mod.enabled); }
-		if (hook.game.path !== "/games/darktide") { throw new Error("game.path=" + hook.game.path); }
-		if (hook.game.mods_path !== "/games/darktide/mods") { throw new Error("mods_path=" + hook.game.mods_path); }
-		if (hook.game.version !== "1.0.3") { throw new Error("game.version=" + hook.game.version); }
-		if (hook.config.cache_path !== "/cache") { throw new Error("cache_path=" + hook.config.cache_path); }
-		if (hook.config.temp_path !== "/tmp") { throw new Error("temp_path=" + hook.config.temp_path); }
-		if (hook.config.storage_path !== "/storage") { throw new Error("storage_path=" + hook.config.storage_path); }
-		if (context.phase !== "pre_install") { throw new Error("phase=" + context.phase); }
-		if (context.index !== 0) { throw new Error("index=" + context.index); }
-		if (mod.id !== "better_ui") { throw new Error("mod.id=" + mod.id); }
+		if (dmm.context.mod.id !== "better_ui") { throw new Error("mod.id=" + dmm.context.mod.id); }
+		if (dmm.context.mod.version !== "1.2.0") { throw new Error("mod.version=" + dmm.context.mod.version); }
+		if (dmm.context.mod.enabled !== true) { throw new Error("enabled=" + dmm.context.mod.enabled); }
+		if (dmm.context.game.path !== "/games/darktide") { throw new Error("game.path=" + dmm.context.game.path); }
+		if (dmm.context.game.mods_path !== "/games/darktide/mods") { throw new Error("mods_path=" + dmm.context.game.mods_path); }
+		if (dmm.context.game.version !== "1.0.3") { throw new Error("game.version=" + dmm.context.game.version); }
+		if (dmm.context.config.cache_path !== "/cache") { throw new Error("cache_path=" + dmm.context.config.cache_path); }
+		if (dmm.context.config.temp_path !== "/tmp") { throw new Error("temp_path=" + dmm.context.config.temp_path); }
+		if (dmm.context.config.storage_path !== "/storage") { throw new Error("storage_path=" + dmm.context.config.storage_path); }
+		if (dmm.context.phase !== "pre_install") { throw new Error("phase=" + dmm.context.phase); }
+		if (dmm.context.index !== 0) { throw new Error("index=" + dmm.context.index); }
+		if (dmm.context.mod.id !== "better_ui") { throw new Error("mod.id=" + mod.id); }
 	`
 	if err := r.Run(
 		context.Background(),
@@ -107,13 +108,13 @@ func TestRunnerExposesHookContextToScript(t *testing.T) {
 
 func TestRunnerPhaseAndIndexAreTakenFromContext(t *testing.T) {
 	hook := prepared(domain.HookScript{Content: `
-		if (context.phase !== "post_enable") { throw new Error("phase=" + context.phase); }
-		if (context.index !== 4) { throw new Error("index=" + context.index); }
+		if (dmm.context.phase !== "post_enable") { throw new Error("phase=" + dmm.context.phase); }
+		if (dmm.context.index !== 4) { throw new Error("index=" + dmm.context.index); }
 	`})
 	hook.Context.Phase = domain.PhasePostEnable
 
 	hook.Context.Index = 4
-	err := NewRunner().Run(context.Background(), hook, mod())
+	err := NewRunner(host.Providers{}).Run(context.Background(), hook, mod())
 	require.NoError(t, err, "Run: %v", err)
 }
 
@@ -122,22 +123,22 @@ func TestRunnerPhaseAndIndexAreTakenFromContext(t *testing.T) {
 func TestRunnerUsesPreparedContextNotModArgument(t *testing.T) {
 	hook := prepared(
 		domain.HookScript{
-			Content: `if (hook.mod.name !== "Better UI") { throw new Error(hook.mod.name); }`,
+			Content: `if (dmm.context.mod.name !== "Better UI") { throw new Error(dmm.context.mod.name); }`,
 		},
 	)
 
 	stale := &domain.Mod{ID: "other", Name: "Wrong Name"}
-	err := NewRunner().Run(context.Background(), hook, stale)
+	err := NewRunner(host.Providers{}).Run(context.Background(), hook, stale)
 	require.NoError(t, err, "Run: %v", err)
 }
 
 func TestRunnerAcceptsNilMod(t *testing.T) {
 	hook := prepared(
 		domain.HookScript{
-			Content: `if (context.phase === "") { throw new Error("phase missing"); }`,
+			Content: `if (dmm.context.phase === "") { throw new Error("phase missing"); }`,
 		},
 	)
-	err := NewRunner().Run(context.Background(), hook, nil)
+	err := NewRunner(host.Providers{}).Run(context.Background(), hook, nil)
 	require.NoError(t, err, "Run: %v", err)
 }
 
@@ -146,14 +147,14 @@ func TestRunnerToleratesNilContext(t *testing.T) {
 	hook.Context = domain.HookContext{}
 	// A zero context is what an executor produces when no context func is wired;
 	// the script must still run rather than dereference nil.
-	err := NewRunner().Run(context.Background(), hook, mod())
+	err := NewRunner(host.Providers{}).Run(context.Background(), hook, mod())
 	require.NoError(t, err, "Run: %v", err)
 }
 
 // A thrown Error is a hook failure, not a crash, and the message must survive so
 // the UI can show the script author's own text.
 func TestRunnerReportsThrownErrors(t *testing.T) {
-	err := NewRunner().Run(
+	err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `throw new Error("boom-42");`}),
 		mod(),
@@ -172,7 +173,7 @@ func TestRunnerReportsThrownErrors(t *testing.T) {
 
 func TestRunnerReportsThrownNonErrorValues(t *testing.T) {
 	for _, content := range []string{`throw "plain string";`, `throw 123;`, `throw {code: 7};`} {
-		err := NewRunner().Run(
+		err := NewRunner(host.Providers{}).Run(
 			context.Background(),
 			prepared(domain.HookScript{Content: content}),
 			mod(),
@@ -193,7 +194,7 @@ func TestRunnerReportsThrownNonErrorValues(t *testing.T) {
 }
 
 func TestRunnerReportsSyntaxErrors(t *testing.T) {
-	err := NewRunner().Run(
+	err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `function (`}),
 		mod(),
@@ -210,7 +211,7 @@ func TestRunnerReportsSyntaxErrors(t *testing.T) {
 }
 
 func TestRunnerReportsRuntimeTypeErrors(t *testing.T) {
-	err := NewRunner().Run(
+	err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `null.x;`}),
 		mod(),
@@ -236,7 +237,7 @@ func TestRunnerHasNoNetworkAccess(t *testing.T) {
 		`process.binding("fs");`,
 		`Deno.readFile("/etc/passwd");`,
 	} {
-		err := NewRunner().Run(
+		err := NewRunner(host.Providers{}).Run(
 			context.Background(),
 			prepared(domain.HookScript{Content: content}),
 			mod(),
@@ -266,7 +267,7 @@ func TestRunnerHasNoFilesystemAccess(t *testing.T) {
 		`fs.readdirSync(".");`,
 		`Deno.readFile("/etc/passwd");`,
 	} {
-		err := NewRunner().Run(
+		err := NewRunner(host.Providers{}).Run(
 			context.Background(),
 			prepared(domain.HookScript{Content: content}),
 			mod(),
@@ -292,7 +293,7 @@ func TestRunnerHostGlobalsAreAbsent(t *testing.T) {
 		}
 		if (leaked.length > 0) { throw new Error("present: " + leaked.join(",")); }
 	`
-	if err := NewRunner().Run(
+	if err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: script}),
 		mod(),
@@ -312,7 +313,7 @@ func TestRunnerCapturesConsoleOutput(t *testing.T) {
 	r := NewRunnerWithSink(func(lines []string, d int) {
 		got = append(got, lines...)
 		dropped += d
-	})
+	}, host.Providers{})
 
 	script := `
 		console.log("one");
@@ -348,9 +349,9 @@ func TestRunnerBoundsCapturedLogLines(t *testing.T) {
 	r := NewRunnerWithSink(func(lines []string, d int) {
 		got = append(got, lines...)
 		dropped += d
-	})
+	}, host.Providers{})
 	// More lines than the cap, so the excess must be counted rather than kept.
-	script := `for (var i = 0; i < maxLogLines + 25; i++) { console.log("line " + i); }`
+	script := `for (var i = 0; i < dmm.limits.maxLogLines + 25; i++) { console.log("line " + i); }`
 	if err := r.Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: script}),
@@ -359,7 +360,14 @@ func TestRunnerBoundsCapturedLogLines(t *testing.T) {
 		require.FailNow(t, "Run: %v", err)
 	}
 
-	assert.Len(t, got, maxLogLines, "captured %d lines, want the cap %d", len(got), maxLogLines)
+	assert.Len(
+		t,
+		got,
+		host.MaxLogLines,
+		"captured %d lines, want the cap %d",
+		len(got),
+		host.MaxLogLines,
+	)
 
 	assert.Equal(t, 25, dropped, "dropped = %d, want 25", dropped)
 }
@@ -367,9 +375,12 @@ func TestRunnerBoundsCapturedLogLines(t *testing.T) {
 func TestRunnerBoundsCapturedLineLength(t *testing.T) {
 	var got []string
 
-	r := NewRunnerWithSink(func(lines []string, _ int) { got = append(got, lines...) })
+	r := NewRunnerWithSink(
+		func(lines []string, _ int) { got = append(got, lines...) },
+		host.Providers{},
+	)
 
-	script := `console.log("x".repeat(maxLogLineLength * 3));`
+	script := `console.log("x".repeat(dmm.limits.maxLogLineLength * 3));`
 	if err := r.Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: script}),
@@ -382,10 +393,10 @@ func TestRunnerBoundsCapturedLineLength(t *testing.T) {
 
 	assert.False(
 		t,
-		len(got[0]) > maxLogLineLength+3,
+		len(got[0]) > host.MaxLogLineLength+3,
 		"captured line is %d bytes, want at most %d plus the ellipsis",
 		len(got[0]),
-		maxLogLineLength,
+		host.MaxLogLineLength,
 	)
 }
 
@@ -400,7 +411,7 @@ func TestRunnerReportsLogsFromAFailedHook(t *testing.T) {
 	r := NewRunnerWithSink(func(lines []string, d int) {
 		got = append(got, lines...)
 		dropped += d
-	})
+	}, host.Providers{})
 
 	err := r.Run(context.Background(), prepared(domain.HookScript{Content: `
 		console.log("before");
@@ -425,10 +436,10 @@ func TestRunnerReportsLogsFromAFailedHook(t *testing.T) {
 func TestRunnerReportsDroppedLinesFromAFailedHook(t *testing.T) {
 	var dropped int
 
-	r := NewRunnerWithSink(func(_ []string, d int) { dropped += d })
+	r := NewRunnerWithSink(func(_ []string, d int) { dropped += d }, host.Providers{})
 
 	err := r.Run(context.Background(), prepared(domain.HookScript{Content: `
-		for (var i = 0; i < maxLogLines + 3; i++) { console.log(i); }
+		for (var i = 0; i < dmm.limits.maxLogLines + 3; i++) { console.log(i); }
 		throw new Error("late");
 	`}), mod())
 	require.Equal(
@@ -447,7 +458,10 @@ func TestRunnerReportsDroppedLinesFromAFailedHook(t *testing.T) {
 func TestRunnerReportsLogsFromATimedOutHook(t *testing.T) {
 	var got []string
 
-	r := NewRunnerWithSink(func(lines []string, _ int) { got = append(got, lines...) })
+	r := NewRunnerWithSink(
+		func(lines []string, _ int) { got = append(got, lines...) },
+		host.Providers{},
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 	defer cancel()
@@ -469,15 +483,15 @@ func TestRunnerReportsLogsFromATimedOutHook(t *testing.T) {
 
 	assert.False(
 		t,
-		len(got) > maxLogLines,
+		len(got) > host.MaxLogLines,
 		"captured %d lines, want at most %d",
 		len(got),
-		maxLogLines,
+		host.MaxLogLines,
 	)
 }
 
 func TestRunnerNewRunnerDiscardsOutput(t *testing.T) {
-	if err := NewRunner().Run(
+	if err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `console.log("noise")`}),
 		mod(),
@@ -489,9 +503,7 @@ func TestRunnerNewRunnerDiscardsOutput(t *testing.T) {
 func TestRunnerNilSinkIsSafe(t *testing.T) {
 	// NewRunnerWithSink(nil) is what DI does when nobody subscribed; logging must
 	// not panic in that configuration.
-	if err := NewRunnerWithSink(
-		nil,
-	).Run(
+	if err := NewRunnerWithSink(nil, host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `console.log("x")`}),
 		mod(),
@@ -507,7 +519,13 @@ func TestRunnerStopsInfiniteLoops(t *testing.T) {
 
 	start := time.Now()
 
-	err := NewRunner().Run(ctx, prepared(domain.HookScript{Content: `while (true) {}`}), mod())
+	err := NewRunner(
+		host.Providers{},
+	).Run(
+		ctx,
+		prepared(domain.HookScript{Content: `while (true) {}`}),
+		mod(),
+	)
 	require.Equal(
 		t,
 		appErrors.ErrCodeHookTimeout,
@@ -525,7 +543,7 @@ func TestRunnerReportsTimeoutForBusyLoop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	err := NewRunner().Run(
+	err := NewRunner(host.Providers{}).Run(
 		ctx,
 		prepared(domain.HookScript{Content: `for (;;) { Math.random(); }`}),
 		mod(),
@@ -545,7 +563,7 @@ func TestRunnerReportsPreCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := NewRunner().Run(ctx, prepared(domain.HookScript{Content: `1;`}), mod())
+	err := NewRunner(host.Providers{}).Run(ctx, prepared(domain.HookScript{Content: `1;`}), mod())
 	require.Equal(
 		t,
 		appErrors.ErrCodeHookTimeout,
@@ -562,7 +580,7 @@ func TestRunnerHandlesExpiredAndNilContexts(t *testing.T) {
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
 	defer cancel()
 
-	if err := NewRunner().Run(
+	if err := NewRunner(host.Providers{}).Run(
 		expired,
 		prepared(domain.HookScript{Content: `1;`}),
 		mod(),
@@ -572,7 +590,7 @@ func TestRunnerHandlesExpiredAndNilContexts(t *testing.T) {
 		assert.Fail(t, "expired deadline: code = %v, want HookTimeout", appErrors.CodeOf(err))
 	}
 	//nolint:staticcheck // passing a nil context is exactly the edge case under test.
-	if err := NewRunner().Run(
+	if err := NewRunner(host.Providers{}).Run(
 		nil,
 		prepared(domain.HookScript{Content: `1 + 1`}),
 		mod(),
@@ -585,7 +603,7 @@ func TestRunnerHandlesExpiredAndNilContexts(t *testing.T) {
 // the next, or mods could collide over a shared variable name.
 func TestRunnerUsesAFreshVMPerExecution(t *testing.T) {
 	first := prepared(domain.HookScript{Content: `globalThis.leaked = "yes";`})
-	err := NewRunner().Run(context.Background(), first, mod())
+	err := NewRunner(host.Providers{}).Run(context.Background(), first, mod())
 	require.NoError(t, err, "first Run: %v", err)
 
 	second := prepared(
@@ -593,14 +611,14 @@ func TestRunnerUsesAFreshVMPerExecution(t *testing.T) {
 			Content: `if (typeof leaked !== "undefined") { throw new Error("leaked: " + leaked); }`,
 		},
 	)
-	err = NewRunner().Run(context.Background(), second, mod())
+	err = NewRunner(host.Providers{}).Run(context.Background(), second, mod())
 	require.NoError(t, err, "globals leaked between runs: %v", err)
 }
 
 // Hooks are authored by third parties; a runaway loop in one must not stop the
 // next hook from running.
 func TestRunnerSurvivesAFailedHook(t *testing.T) {
-	r := NewRunner()
+	r := NewRunner(host.Providers{})
 	if err := r.Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `throw new Error("first");`}),
@@ -643,7 +661,7 @@ func TestRunnerSupportsOrdinaryJavaScript(t *testing.T) {
 		try { null.x; } catch (e) { e instanceof Error; }
 		switch (1) { case 1: break; default: throw new Error("switch"); }
 	`
-	if err := NewRunner().Run(
+	if err := NewRunner(host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: script}),
 		mod(),
@@ -657,7 +675,7 @@ func TestRunnerSupportsOrdinaryJavaScript(t *testing.T) {
 func TestRunnerExposesWorkingDirThroughContextOnly(t *testing.T) {
 	// The script cannot chdir or list the directory; that is the point.
 	for _, content := range []string{`process.chdir("/")`, `fs.readdirSync(".")`} {
-		err := NewRunner().Run(
+		err := NewRunner(host.Providers{}).Run(
 			context.Background(),
 			prepared(domain.HookScript{Content: content}),
 			mod(),

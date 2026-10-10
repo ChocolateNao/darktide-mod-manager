@@ -16,10 +16,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/github"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/httpx"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/local"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/nexus"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/github"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/httpx"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/local"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/nexus"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -40,7 +40,9 @@ var (
 func IDs() []string { return services.RegisteredFactoryIDs() }
 
 // RegisterAll builds every registered source whose configuration block enables
-// it and adds it to registry.
+// it and adds it to registry. The game is the active one: it is attached to
+// the registry (so later lazy builds resolve its game-scoped factories first)
+// and handed to every factory as the build context.
 //
 // The returned error names every source that failed to build, but the sources
 // that did build are registered either way. A source with a missing API key, an
@@ -51,17 +53,23 @@ func IDs() []string { return services.RegisteredFactoryIDs() }
 // no blocks at all, and a manager that started with no sources in it would look
 // broken; this matches SourceRegistry.EnabledSources, which treats a missing
 // block the same way.
-func RegisterAll(registry *services.SourceRegistry, cfg map[string]domain.SourceConfig) error {
+func RegisterAll(
+	registry *services.SourceRegistry,
+	cfg map[string]domain.SourceConfig,
+	game domain.GameDefinition,
+) error {
 	if registry == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "nil source registry")
 	}
 
+	registry.WithGame(game)
+
 	blocks := normalizeBlocks(cfg)
 
 	var failures []error
-	// RegisteredFactoryIDs is sorted, so registration order does not depend on
-	// map iteration or on link order.
-	for _, id := range services.RegisteredFactoryIDs() {
+	// The id lists are sorted, so registration order does not depend on map
+	// iteration or on link order.
+	for _, id := range factoryIDs(game) {
 		// The block is hoisted out of the Enabled check because the factory needs
 		// it even when the block is absent.
 		block, present := blocks[id]
@@ -70,6 +78,15 @@ func RegisterAll(registry *services.SourceRegistry, cfg map[string]domain.Source
 		}
 
 		factory, ok := services.SourceFactoryFor(id)
+		if game != nil {
+			// Game-scoped registrations win: a source that exists for one game
+			// describes that game's build of the id, even when a generic
+			// factory for the same id is installed.
+			if gameFactory, gameOK := services.SourceFactoryForGame(game.ID(), id); gameOK {
+				factory, ok = gameFactory, true
+			}
+		}
+
 		if !ok {
 			// The id came from the registry a moment ago, so this cannot happen
 			// unless another goroutine unregistered in between. Skipping is the
@@ -77,7 +94,7 @@ func RegisterAll(registry *services.SourceRegistry, cfg map[string]domain.Source
 			continue
 		}
 
-		source, err := factory(block)
+		source, err := factory(services.SourceBuildContext{Game: game, Config: block})
 		if err != nil {
 			failures = append(failures, appErrors.Wrap(err, appErrors.ErrCodeSourceUnavailable,
 				"mod source %q could not be configured: %v", id, err))
@@ -108,10 +125,34 @@ func RegisterAll(registry *services.SourceRegistry, cfg map[string]domain.Source
 }
 
 // RegisterEnabled is RegisterAll without the configuration blocks: every
-// registered source is built. It exists for callers that have no per-source
-// configuration to honour, such as a container built in a test.
-func RegisterEnabled(registry *services.SourceRegistry) error {
-	return RegisterAll(registry, nil)
+// registered source for the game is built. It exists for callers that have no
+// per-source configuration to honour, such as a container built in a test.
+func RegisterEnabled(registry *services.SourceRegistry, game domain.GameDefinition) error {
+	return RegisterAll(registry, nil, game)
+}
+
+// factoryIDs lists every source id registerable for the game — generic
+// factories plus the game's own — sorted and deduplicated.
+func factoryIDs(game domain.GameDefinition) []string {
+	ids := services.RegisteredFactoryIDs()
+
+	if game != nil {
+		ids = append(ids, services.RegisteredGameFactoryIDs(game.ID())...)
+	}
+
+	sort.Strings(ids)
+
+	out := ids[:0]
+
+	for i, id := range ids {
+		if i > 0 && id == ids[i-1] {
+			continue
+		}
+
+		out = append(out, id)
+	}
+
+	return out
 }
 
 // Enabled reports whether the configuration map enables a source. A missing

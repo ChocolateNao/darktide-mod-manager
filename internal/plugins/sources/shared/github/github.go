@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/httpx"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources/shared/httpx"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -58,8 +58,9 @@ const (
 	// maxPageSize is the largest releases-per-page GitHub honours.
 	maxPageSize = 100
 
-	// SearchTopic narrows repository discovery to mods rather than to the many
-	// repositories that merely mention Darktide.
+	// SearchTopic is this source's own fallback for repository discovery. It
+	// only applies when the active game supplies no "topic" default and the
+	// configuration block does not set one either.
 	SearchTopic = "darktide-mod"
 )
 
@@ -158,8 +159,17 @@ func init() {
 	// registered this source, which is not a failure worth crashing over.
 	_ = services.RegisterSourceFactory(
 		SourceID,
-		func(cfg domain.SourceConfig) (domain.ModSource, error) {
-			return New(cfg)
+		func(ctx services.SourceBuildContext) (domain.ModSource, error) {
+			// The game definition's default sits between the source's own
+			// fallback (New's struct literal) and the user's configuration
+			// block, which New applies last: config > game > native default.
+			var opts []Option
+
+			if topic := domain.SourceDefault(ctx.Game, SourceID, "topic"); topic != "" {
+				opts = append(opts, WithTopic(topic))
+			}
+
+			return New(ctx.Config, opts...)
 		},
 	)
 }

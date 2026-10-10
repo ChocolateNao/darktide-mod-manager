@@ -20,11 +20,12 @@ import (
 // defaultHookTimeout mirrors domain.DefaultConfig().Hooks.DefaultTimeout. It is
 // duplicated rather than imported from the config so the executor stays usable
 // with a zero-valued domain.HooksConfig.
-const defaultHookTimeout = 30 * time.Second
+const defaultHookTimeout = 10 * time.Second
 
-// maxHookTimeout is the hard ceiling applied even when a hook asks for more.
-// domain.DefaultConfig uses 600s; the constant exists so the executor's
-// behaviour is defined for a config that never went through ApplyDefaults.
+// maxHookTimeout is the compile-time safety ceiling: no configured MaxTimeout
+// or permission cap may exceed it. It sits well above the default MaxTimeout so
+// a deliberate config raise still works (§3.7: MaxTimeout wins within the
+// absolute bound).
 const maxHookTimeout = 600 * time.Second
 
 // hookEnvAllowlist is the set of variable names inherited from the manager's own
@@ -85,18 +86,10 @@ type HookRunner interface {
 	Run(ctx context.Context, hook PreparedHook, mod *domain.Mod) error
 }
 
-// HookTyper is the optional self-description interface a runner implements when
-// it wants Register to place it in the map without the caller naming the type.
-type HookTyper interface {
-	HookType() domain.HookType
-}
-
-// MultiHookTyper is implemented by a runner that serves more than one script
-// type. The process-spawning runner handles both `file` and `command`, because
-// the two differ only in how the interpreter is chosen; declaring them here is
-// what stops `file` hooks from silently having no runner at all.
-type MultiHookTyper interface {
-	HookTypes() []domain.HookType
+// LanguageTyper is the optional self-description interface a runner implements
+// so Register can place it in the map without the caller naming the language.
+type LanguageTyper interface {
+	Language() domain.ScriptLanguage
 }
 
 // HookContextFunc builds the data handed to a hook script for one phase.
@@ -149,47 +142,42 @@ func (p HookContextPaths) Context(
 
 // HookExecutorDeps carries everything the executor cannot invent for itself.
 type HookExecutorDeps struct {
-	Events   EventSink
-	LookPath platform.LookPath
-	GamePath func() string
-	Context  HookContextFunc
-	Clock    Clock
-	Logger   *zerolog.Logger
-	Platform domain.Platform
-	Config   domain.HooksConfig
+	Events         EventSink
+	Clock          Clock
+	LookPath       platform.LookPath
+	GamePath       func() string
+	GameID         func() string
+	Context        HookContextFunc
+	Logger         *zerolog.Logger
+	ConfigProvider func() domain.HooksConfig
+	Platform       domain.Platform
+	Config         domain.HooksConfig
 }
 
 // HookExecutor runs mod lifecycle hooks through a pluggable runner per script
-// type. It owns the security policy — timeouts, allowed working directories and
-// the environment allowlist — so that a runner cannot be talked into exceeding
-// it.
+// language. It owns the security policy — effective timeouts, permissions,
+// allowed working directories and the environment allowlist — so that a runner
+// cannot be talked into exceeding it.
 type HookExecutor struct {
-	events   EventSink
-	runners  map[domain.HookType]HookRunner
-	lookPath platform.LookPath
-	gamePath func() string
-	context  HookContextFunc
-	log      *zerolog.Logger
-	now      Clock
-	platform domain.Platform
-	config   domain.HooksConfig
-	mu       sync.RWMutex
+	events         EventSink
+	runners        map[domain.ScriptLanguage]HookRunner
+	lookPath       platform.LookPath
+	gamePath       func() string
+	gameID         func() string
+	context        HookContextFunc
+	log            *zerolog.Logger
+	now            Clock
+	configProvider func() domain.HooksConfig
+	platform       domain.Platform
+	config         domain.HooksConfig
+	mu             sync.RWMutex
 }
 
 // NewHookExecutor returns an executor with no runners registered. A hooks
 // plugin package registers the concrete runners; see
 // internal/plugins/hooks.RegisterAll.
 func NewHookExecutor(deps HookExecutorDeps) *HookExecutor {
-	cfg := deps.Config
-	if cfg.DefaultTimeout <= 0 {
-		cfg.DefaultTimeout = int(defaultHookTimeout / time.Second)
-	}
-
-	if cfg.MaxTimeout < cfg.DefaultTimeout {
-		// A ceiling below the default would make every hook time out at the
-		// ceiling the moment a per-hook value was clamped to it.
-		cfg.MaxTimeout = cfg.DefaultTimeout
-	}
+	cfg := normalizeHooksConfig(deps.Config)
 
 	p := deps.Platform
 	if p == "" {
@@ -207,119 +195,129 @@ func NewHookExecutor(deps HookExecutorDeps) *HookExecutor {
 	}
 
 	return &HookExecutor{
-		runners:  make(map[domain.HookType]HookRunner),
-		config:   cfg,
-		platform: p,
-		lookPath: look,
-		gamePath: deps.GamePath,
-		context:  deps.Context,
-		events:   deps.Events,
-		log:      loggerOf(deps.Logger),
-		now:      now,
+		runners:        make(map[domain.ScriptLanguage]HookRunner),
+		config:         cfg,
+		configProvider: deps.ConfigProvider,
+		platform:       p,
+		lookPath:       look,
+		gamePath:       deps.GamePath,
+		gameID:         deps.GameID,
+		context:        deps.Context,
+		events:         deps.Events,
+		log:            loggerOf(deps.Logger),
+		now:            now,
 	}
 }
 
-// Register installs a runner, inferring the script type from HookTyper when the
-// runner implements it. A runner that does not implement HookTyper must be
-// registered with RegisterRunner.
+// normalizeHooksConfig applies the invariants Timeout relies on: a usable
+// default floor, and a ceiling that is never below the floor.
+func normalizeHooksConfig(cfg domain.HooksConfig) domain.HooksConfig {
+	if cfg.DefaultTimeout <= 0 {
+		cfg.DefaultTimeout = domain.DurationOf(defaultHookTimeout)
+	}
+
+	if cfg.MaxTimeout > 0 && cfg.MaxTimeout < cfg.DefaultTimeout {
+		// A ceiling below the default would make every hook time out at the
+		// ceiling the moment a per-hook value was clamped to it. An unset
+		// (zero) MaxTimeout is left alone so Timeout can fall back to the
+		// compile-time ceiling.
+		cfg.MaxTimeout = cfg.DefaultTimeout
+	}
+
+	return cfg
+}
+
+// hooksConfig is the policy every permission and timeout question reads:
+// the provider's answer when one is wired, the construction-time value
+// otherwise.
+func (h *HookExecutor) hooksConfig() domain.HooksConfig {
+	if h.configProvider != nil {
+		return normalizeHooksConfig(h.configProvider())
+	}
+
+	return h.config
+}
+
+// Register installs a runner, inferring its language from LanguageTyper when
+// the runner implements it. A runner that does not implement LanguageTyper must
+// be registered with RegisterRunner.
 //
-// A runner that also implements MultiHookTyper is installed for every type it
-// lists, HookType() included. The map is filled first and only then written to,
-// so a runner declaring one bad type leaves nothing half-installed.
+// Every runner serves exactly one language: Lua and JavaScript each own their
+// own binding file, and a runner claiming an unknown language is refused before
+// anything is written.
 func (h *HookExecutor) Register(r HookRunner) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "cannot register a nil hook runner")
 	}
 
-	typed, ok := r.(HookTyper)
+	typed, ok := r.(LanguageTyper)
 	if !ok {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
-			"hook runner %T does not implement HookType(); use RegisterRunner", r)
+			"hook runner %T does not implement Language(); use RegisterRunner", r)
 	}
 
-	types := []domain.HookType{typed.HookType()}
-	if multi, ok := r.(MultiHookTyper); ok {
-		types = multi.HookTypes()
-		if len(types) == 0 {
-			return appErrors.New(appErrors.ErrCodeInvalidArgument,
-				"hook runner %T declared no script types", r)
-		}
-	}
-
-	for _, t := range types {
-		if !t.Valid() {
-			return appErrors.New(appErrors.ErrCodeInvalidArgument,
-				"hook runner %T claims unknown script type %q", r, t)
-		}
-	}
-
-	for _, t := range types {
-		if err := h.RegisterRunner(t, r); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return h.RegisterRunner(typed.Language(), r)
 }
 
-// RegisterRunner installs a runner for one script type, replacing any previous
-// one. Replacement is allowed on purpose: a test can swap in a fake, and a
-// future runner that supersedes the bundled one must not need a second entry
-// point.
-func (h *HookExecutor) RegisterRunner(t domain.HookType, r HookRunner) error {
-	if !t.Valid() {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "unknown hook script type %q", t)
+// RegisterRunner installs a runner for one script language, replacing any
+// previous one. Replacement is allowed on purpose: a test can swap in a fake,
+// and a future runner that supersedes the bundled one must not need a second
+// entry point.
+func (h *HookExecutor) RegisterRunner(lang domain.ScriptLanguage, r HookRunner) error {
+	if !lang.Valid() {
+		return appErrors.New(appErrors.ErrCodeInvalidArgument,
+			"unknown hook script language %q", lang)
 	}
 
 	if r == nil {
 		return appErrors.New(
 			appErrors.ErrCodeInvalidArgument,
 			"cannot register a nil hook runner for %q",
-			t,
+			lang,
 		)
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.runners[t] = r
+	h.runners[lang] = r
 
 	return nil
 }
 
-// Unregister removes the runner for t, reporting whether one was present.
-func (h *HookExecutor) Unregister(t domain.HookType) bool {
+// Unregister removes the runner for lang, reporting whether one was present.
+func (h *HookExecutor) Unregister(lang domain.ScriptLanguage) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, ok := h.runners[t]; !ok {
+	if _, ok := h.runners[lang]; !ok {
 		return false
 	}
 
-	delete(h.runners, t)
+	delete(h.runners, lang)
 
 	return true
 }
 
-// HasRunner reports whether a runner is registered for t.
-func (h *HookExecutor) HasRunner(t domain.HookType) bool {
+// HasRunner reports whether a runner is registered for lang.
+func (h *HookExecutor) HasRunner(lang domain.ScriptLanguage) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	_, ok := h.runners[t]
+	_, ok := h.runners[lang]
 
 	return ok
 }
 
-// RunnerTypes returns the registered script types, sorted, so a UI can list
-// them without depending on map order.
-func (h *HookExecutor) RunnerTypes() []domain.HookType {
+// RunnerLanguages returns the registered script languages, sorted, so a UI can
+// list them without depending on map order.
+func (h *HookExecutor) RunnerLanguages() []domain.ScriptLanguage {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	out := make([]domain.HookType, 0, len(h.runners))
-	for t := range h.runners {
-		out = append(out, t)
+	out := make([]domain.ScriptLanguage, 0, len(h.runners))
+	for lang := range h.runners {
+		out = append(out, lang)
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
@@ -327,16 +325,16 @@ func (h *HookExecutor) RunnerTypes() []domain.HookType {
 	return out
 }
 
-func (h *HookExecutor) runner(t domain.HookType) (HookRunner, error) {
+func (h *HookExecutor) runner(lang domain.ScriptLanguage) (HookRunner, error) {
 	h.mu.RLock()
-	r, ok := h.runners[t]
+	r, ok := h.runners[lang]
 	h.mu.RUnlock()
 
 	if !ok {
 		return nil, appErrors.New(
 			appErrors.ErrCodeRunnerNotFound,
-			"no hook runner registered for type %q",
-			t,
+			"no hook runner registered for language %q",
+			lang,
 		)
 	}
 
@@ -347,57 +345,84 @@ func (h *HookExecutor) runner(t domain.HookType) (HookRunner, error) {
 func (h *HookExecutor) Platform() domain.Platform { return h.platform }
 
 // Config returns a copy of the timeout policy.
-func (h *HookExecutor) Config() domain.HooksConfig { return h.config }
+func (h *HookExecutor) Config() domain.HooksConfig { return h.hooksConfig() }
 
-// Timeout returns the deadline applied to one script: the hook's own value
-// clamped into [default, max], or the default when it does not set one. A
-// negative value is treated as unset here; Validate is what rejects it.
-func (h *HookExecutor) Timeout(script domain.HookScript) time.Duration {
-	d := time.Duration(h.config.DefaultTimeout) * time.Second
-	if d <= 0 {
-		d = defaultHookTimeout
+// Permissions resolves the effective capability set for one run: the mod's
+// scope over the game's over the default, first true win.
+func (h *HookExecutor) Permissions(mod *domain.Mod) domain.ScriptPermissions {
+	return h.hooksConfig().Permissions.For(h.currentGameID(), modIDOf(mod))
+}
+
+// Timeout returns the deadline applied to one script (§3.7 of the multi-game
+// plan): the script's declared value (or the default when unset) clamped into
+// [floor, ceiling] where floor is the default timeout and ceiling is the
+// smallest of MaxTimeout and the effective timeout_seconds cap
+// (mod > game > default). A cap below the default still wins over a larger
+// declared value, and MaxTimeout always wins. A negative declared value is
+// treated as unset here; Validate is what rejects it.
+func (h *HookExecutor) Timeout(script domain.HookScript, mod *domain.Mod) time.Duration {
+	cfg := h.hooksConfig()
+
+	floor := cfg.DefaultTimeout.Duration()
+	if floor <= 0 {
+		floor = defaultHookTimeout
 	}
 
-	max := time.Duration(h.config.MaxTimeout) * time.Second
-	if max < d {
-		max = d
+	ceiling := cfg.MaxTimeout.Duration()
+	if ceiling <= 0 {
+		ceiling = maxHookTimeout
 	}
 
-	if max > maxHookTimeout {
-		max = maxHookTimeout
+	if ceiling < floor {
+		ceiling = floor
 	}
 
-	if script.Timeout > 0 {
-		if want := time.Duration(script.Timeout) * time.Second; want < d {
-			d = want
-		} else if want > max {
-			d = max
-		} else {
-			d = want
+	if ceiling > maxHookTimeout {
+		ceiling = maxHookTimeout
+	}
+
+	if cap := h.Permissions(mod).TimeoutSeconds; cap > 0 {
+		if capped := time.Duration(cap) * time.Second; capped < ceiling {
+			ceiling = capped
 		}
 	}
 
-	return d
+	declared := floor
+	if script.Timeout > 0 {
+		declared = time.Duration(script.Timeout) * time.Second
+	}
+
+	if declared < floor {
+		declared = floor
+	}
+
+	// Applied last so a cap below the floor still wins over a larger declared
+	// value: the ceiling is the effective upper bound in every case.
+	if declared > ceiling {
+		declared = ceiling
+	}
+
+	return declared
 }
 
 // Validate checks everything the executor is responsible for before a script is
-// handed to a runner: the type is known, the content is present, the timeout is
-// not nonsensical, and the working directory and script file stay inside the
-// mod's own folder or the game's folder.
+// handed to a runner: the language is known, the content is present, the
+// timeout is not nonsensical, and the working directory stays inside the mod's
+// own folder or the game's folder.
 func (h *HookExecutor) Validate(script domain.HookScript, mod *domain.Mod) error {
-	if !script.Type.Valid() {
+	if !script.Language.Valid() {
 		return appErrors.New(
 			appErrors.ErrCodeHookInvalid,
-			"unknown hook script type %q",
-			script.Type,
+			"unknown script language %q",
+			script.Language,
 		)
 	}
 
 	if strings.TrimSpace(script.Content) == "" {
 		return appErrors.New(
 			appErrors.ErrCodeHookInvalid,
-			"hook script of type %q has no content",
-			script.Type,
+			"hook script in %q has no content",
+			script.Language,
 		)
 	}
 
@@ -414,12 +439,6 @@ func (h *HookExecutor) Validate(script domain.HookScript, mod *domain.Mod) error
 
 	if _, err := h.WorkingDir(script, mod); err != nil {
 		return err
-	}
-
-	if script.Type == domain.HookTypeFile {
-		if _, err := h.ScriptPath(script, mod); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -490,72 +509,6 @@ func (h *HookExecutor) WorkingDir(script domain.HookScript, mod *domain.Mod) (st
 	if !st.IsDir() {
 		return "", appErrors.New(appErrors.ErrCodeHookInvalid,
 			"hook working directory %q is not a directory", explicit)
-	}
-
-	return resolved, nil
-}
-
-// ScriptPath resolves the file a `file` hook points at and applies the same
-// containment rule as WorkingDir. Hook content is a path, not a command, so the
-// restriction is about not letting a mod's manifest name an arbitrary script
-// elsewhere on the disk.
-func (h *HookExecutor) ScriptPath(script domain.HookScript, mod *domain.Mod) (string, error) {
-	raw := strings.TrimSpace(script.Content)
-	if raw == "" {
-		return "", appErrors.New(appErrors.ErrCodeHookInvalid, "file hook has no script path")
-	}
-
-	modPath, gamePath := allowedRoots(mod, h.currentGamePath())
-
-	base := modPath
-	if base == "" {
-		base = gamePath
-	}
-
-	resolved := raw
-	if !filepath.IsAbs(resolved) {
-		if base == "" {
-			return "", appErrors.New(
-				appErrors.ErrCodeHookInvalid,
-				"hook script path %q cannot be resolved: the mod has no folder and no game path is configured",
-				raw,
-			)
-		}
-
-		resolved = filepath.Join(base, filepath.FromSlash(raw))
-	}
-
-	resolved = filepath.Clean(resolved)
-	ok := false
-
-	for _, root := range []string{modPath, gamePath} {
-		if root != "" && domain.PathWithin(root, resolved) {
-			ok = true
-			break
-		}
-	}
-
-	if !ok {
-		return "", appErrors.New(appErrors.ErrCodeHookInvalid,
-			"hook script path %q is outside the mod and game folders", raw)
-	}
-
-	st, err := os.Stat(resolved)
-	if err != nil {
-		return "", appErrors.Wrap(
-			err,
-			appErrors.ErrCodeHookInvalid,
-			"hook script %q is not readable",
-			raw,
-		)
-	}
-
-	if st.IsDir() {
-		return "", appErrors.New(
-			appErrors.ErrCodeHookInvalid,
-			"hook script path %q is a directory",
-			raw,
-		)
 	}
 
 	return resolved, nil
@@ -693,11 +646,11 @@ func (h *HookExecutor) execute(
 // Runners receive one of these instead of the raw script so they never have to
 // re-implement the executor's security policy.
 type PreparedHook struct {
-	WorkingDir string
-	ScriptPath string
-	Env        []string
-	Context    domain.HookContext
-	Script     domain.HookScript
+	WorkingDir  string
+	Env         []string
+	Context     domain.HookContext
+	Script      domain.HookScript
+	Permissions domain.ScriptPermissions
 }
 
 // currentGamePath resolves the game folder, tolerating a nil provider.
@@ -707,6 +660,15 @@ func (h *HookExecutor) currentGamePath() string {
 	}
 
 	return strings.TrimSpace(h.gamePath())
+}
+
+// currentGameID resolves the active game id, tolerating a nil provider.
+func (h *HookExecutor) currentGameID() string {
+	if h.gameID == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(h.gameID())
 }
 
 // Prepare validates a script and resolves its working directory and
@@ -724,15 +686,6 @@ func (h *HookExecutor) Prepare(
 		return p, err
 	}
 
-	if script.Type == domain.HookTypeFile {
-		resolved, err := h.ScriptPath(script, mod)
-		if err != nil {
-			return p, err
-		}
-
-		p.ScriptPath = resolved
-	}
-
 	dir, err := h.WorkingDir(script, mod)
 	if err != nil {
 		return p, err
@@ -744,8 +697,9 @@ func (h *HookExecutor) Prepare(
 	}
 
 	p.WorkingDir = dir
-
 	p.Env = env
+	p.Permissions = h.Permissions(mod)
+
 	if h.context != nil {
 		p.Context = h.context(mod, phase, index)
 	}
@@ -766,7 +720,7 @@ func (h *HookExecutor) runOne(
 	// doing, not a hook that ran too long.
 	parent := ctx
 
-	runner, err := h.runner(script.Type)
+	runner, err := h.runner(script.Language)
 	if err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeHookInvalid, "hook %d for mod %s", index, label)
 	}
@@ -776,7 +730,7 @@ func (h *HookExecutor) runOne(
 		return err
 	}
 
-	timeout := h.Timeout(script)
+	timeout := h.Timeout(script, mod)
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -787,7 +741,7 @@ func (h *HookExecutor) runOne(
 	h.log.Debug().
 		Str("op", "hook").
 		Str("phase", string(phase)).
-		Str("type", string(script.Type)).
+		Str("type", string(script.Language)).
 		Int("index", index).
 		Str("mod", modIDOf(mod)).
 		Dur("timeout", timeout).
@@ -800,7 +754,7 @@ func (h *HookExecutor) runOne(
 		Data: hookEventData{
 			Phase:   string(phase),
 			Index:   index,
-			Type:    string(script.Type),
+			Type:    string(script.Language),
 			Timeout: timeout,
 		},
 	})
@@ -813,7 +767,7 @@ func (h *HookExecutor) runOne(
 			Err(err).
 			Str("op", "hook").
 			Str("phase", string(phase)).
-			Str("type", string(script.Type)).
+			Str("type", string(script.Language)).
 			Int("index", index).
 			Str("mod", modIDOf(mod)).
 			Msg("hook failed")
@@ -828,7 +782,7 @@ func (h *HookExecutor) runOne(
 			Data: hookEventData{
 				Phase: string(phase),
 				Index: index,
-				Type:  string(script.Type),
+				Type:  string(script.Language),
 			},
 		})
 
@@ -841,13 +795,13 @@ func (h *HookExecutor) runOne(
 			Data: hookEventData{
 				Phase: string(phase),
 				Index: index,
-				Type:  string(script.Type),
+				Type:  string(script.Language),
 				Error: parent.Err().Error(),
 			},
 		})
 
 		return appErrors.Wrap(err, appErrors.ErrCodeOperationCanceled,
-			"hook %d (%s) for mod %s was canceled", index, script.Type, label)
+			"hook %d (%s) for mod %s was canceled", index, script.Language, label)
 	case runCtx.Err() != nil:
 		h.publish(Event{
 			Type:     EventHookFailed,
@@ -856,14 +810,14 @@ func (h *HookExecutor) runOne(
 			Data: hookEventData{
 				Phase:   string(phase),
 				Index:   index,
-				Type:    string(script.Type),
+				Type:    string(script.Language),
 				Timeout: timeout,
 				Error:   "timed out",
 			},
 		})
 
 		return appErrors.Wrap(err, appErrors.ErrCodeHookTimeout,
-			"hook %d (%s) for mod %s timed out after %s", index, script.Type, label, timeout)
+			"hook %d (%s) for mod %s timed out after %s", index, script.Language, label, timeout)
 	default:
 		h.publish(Event{
 			Type:     EventHookFailed,
@@ -872,13 +826,13 @@ func (h *HookExecutor) runOne(
 			Data: hookEventData{
 				Phase: string(phase),
 				Index: index,
-				Type:  string(script.Type),
+				Type:  string(script.Language),
 				Error: err.Error(),
 			},
 		})
 
 		return appErrors.Wrap(err, appErrors.ErrCodeHookFailed,
-			"hook %d (%s) for mod %s failed", index, script.Type, label)
+			"hook %d (%s) for mod %s failed", index, script.Language, label)
 	}
 }
 

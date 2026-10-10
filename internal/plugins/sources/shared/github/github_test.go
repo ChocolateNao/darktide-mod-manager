@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/games/gamestest"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -949,4 +951,60 @@ func TestForgetCredentialsStopsSendingTheBearer(t *testing.T) {
 		"signing out made %d requests, want the validation call to be the only one",
 		len(st.requests),
 	)
+}
+
+// ------------------------------------------ game defaults through the factory
+
+// theFactory returns the factory the package registered from init, which is
+// what the registry actually calls: asserting on New alone would leave the
+// game-default wiring untested.
+func theFactory(t *testing.T) services.SourceFactory {
+	t.Helper()
+
+	factory, ok := services.SourceFactoryFor(SourceID)
+	require.True(t, ok, "the %s factory must register itself from init", SourceID)
+
+	return factory
+}
+
+func TestFactoryAppliesTheGamesTopicDefault(t *testing.T) {
+	got, err := theFactory(t)(services.SourceBuildContext{
+		Game: gamestest.Def{
+			IDValue: "test-game",
+			Defaults: map[string]map[string]string{
+				SourceID: {"topic": "other-game-mod"},
+			},
+		},
+	})
+	require.NoError(t, err, "factory with a game default: %v", err)
+
+	src, ok := got.(*Source)
+	require.True(t, ok, "factory returned %T, want *Source", got)
+	assert.Equal(t, "other-game-mod", src.topic,
+		"the game's default must win over the source's own")
+}
+
+func TestFactoryLetsTheConfigBlockOverrideTheGamesTopic(t *testing.T) {
+	got, err := theFactory(t)(services.SourceBuildContext{
+		Game: gamestest.Def{
+			Defaults: map[string]map[string]string{SourceID: {"topic": "from-game"}},
+		},
+		Config: domain.SourceConfig{Options: map[string]string{"topic": "from-config"}},
+	})
+	require.NoError(t, err, "factory with both a game default and a config value: %v", err)
+
+	src, ok := got.(*Source)
+	require.True(t, ok, "factory returned %T, want *Source", got)
+	assert.Equal(t, "from-config", src.topic,
+		"the user's configuration must win over the game's default")
+}
+
+func TestFallsBackToTheNativeTopicWithoutAGame(t *testing.T) {
+	got, err := theFactory(t)(services.SourceBuildContext{})
+	require.NoError(t, err, "factory with no game: %v", err)
+
+	src, ok := got.(*Source)
+	require.True(t, ok, "factory returned %T, want *Source", got)
+	assert.Equal(t, SearchTopic, src.topic,
+		"without a game the source's own default must apply")
 }
