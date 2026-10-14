@@ -203,6 +203,15 @@ func TestApplySchemaUpgradesStaleModsTable(t *testing.T) {
 	_, err = db.ExecContext(ctx, "ALTER TABLE mods DROP COLUMN game_id")
 	require.NoError(t, err, "drop game_id column: %v", err)
 
+	_, err = db.ExecContext(ctx, "ALTER TABLE mods DROP COLUMN source_url")
+	require.NoError(t, err, "drop source_url column: %v", err)
+
+	_, err = db.ExecContext(ctx, "ALTER TABLE mods DROP COLUMN download_url")
+	require.NoError(t, err, "drop download_url column: %v", err)
+
+	_, err = db.ExecContext(ctx, "ALTER TABLE mods DROP COLUMN update_url")
+	require.NoError(t, err, "drop update_url column: %v", err)
+
 	_, err = db.ExecContext(
 		ctx,
 		`INSERT INTO mods (id, name, version, installed_at)
@@ -226,6 +235,25 @@ func TestApplySchemaUpgradesStaleModsTable(t *testing.T) {
 	err = db.QueryRowContext(ctx, "SELECT game_id FROM mods WHERE id = 'legacy'").Scan(&gameID)
 	require.NoError(t, err, "read upgraded row: %v", err)
 	assert.Equal(t, "", gameID, "pre-upgrade rows get the empty default")
+
+	// The source-link columns upgrade the same way, and the row that existed
+	// before the upgrade has to survive it: a migration that loses data is
+	// worse than one that cannot run.
+	for _, column := range []string{"source_url", "download_url", "update_url"} {
+		err = db.QueryRowContext(
+			ctx,
+			"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = ?",
+			column,
+		).Scan(&count)
+		require.NoError(t, err, "probe %s column", column)
+		require.Equal(t, 1, count, "%s column must be added by the upgrade", column)
+	}
+
+	var url string
+
+	err = db.QueryRowContext(ctx, "SELECT source_url FROM mods WHERE id = 'legacy'").Scan(&url)
+	require.NoError(t, err, "read upgraded source_url: %v", err)
+	assert.Empty(t, url, "pre-upgrade rows get the empty default")
 
 	var index int
 

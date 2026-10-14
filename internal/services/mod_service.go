@@ -511,6 +511,30 @@ func (s *ModService) Install(
 		return nil, err
 	}
 
+	if err := s.place(ctx, installed, sourceID, target, hash, files, existing, opts); err != nil {
+		return nil, err
+	}
+
+	return installed, nil
+}
+
+// place records an unpacked payload: it stamps where the mod lives, writes the
+// inventory, enables the mod when it can, and runs the post-install hooks.
+//
+// Both Install, which fetched an archive from a source, and
+// InstallArchiveFromShare, which was handed one by a recipient, end here. What
+// differs between them is everything upstream of the archive; once the payload
+// is on disk a mod is a mod, and splitting the tail would let the two paths
+// drift apart on the parts that matter most — index order, enable semantics and
+// hook timing.
+func (s *ModService) place(
+	ctx context.Context,
+	installed *domain.Mod,
+	sourceID, target, hash string,
+	files []domain.ModFile,
+	existing *domain.Mod,
+	opts InstallOptions,
+) error {
 	// Determine the mod's folder name in the mods folder based on its
 	// install mode and the archive structure. Only mods deployed to the
 	// mods folder get a folder name; game root mods do not appear in
@@ -550,7 +574,7 @@ func (s *ModService) Install(
 	// is the recoverable state (a reinstall rewrites both); a file list pointing
 	// at a mod that does not exist is not representable at all.
 	if err := s.deps.Index.Save(ctx, installed); err != nil {
-		return nil, appErrors.Wrap(
+		return appErrors.Wrap(
 			err,
 			appErrors.ErrCodeInstallFailed,
 			"record mod %q",
@@ -559,7 +583,7 @@ func (s *ModService) Install(
 	}
 
 	if err := s.deps.Index.SaveFiles(ctx, installed.ID, files); err != nil {
-		return nil, appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
+		return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
 			"record the file inventory of mod %q", installed.ID)
 	}
 
@@ -573,7 +597,7 @@ func (s *ModService) Install(
 
 	if wantEnabled {
 		if err := s.enableLocked(ctx, installed); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -597,6 +621,113 @@ func (s *ModService) Install(
 		Bool("enabled", installed.Enabled).
 		Msg("mod installed")
 	s.runHooksAdvisory(ctx, domain.PhasePostInstall, installed)
+
+	return nil
+}
+
+// InstallArchiveFromShare places a mod from a local archive that a share
+// delivered.
+//
+// A normal install is driven by a source: the manager asks the source for the
+// mod, decides its id, and downloads the bytes itself. A shared mod arrives
+// the other way round — the payload has already named it and the archive is
+// already on disk — so this skips the source lookup and the download cache and
+// hands the archive straight to the same unpack-and-place path.
+//
+// The archive's hash is recorded as the mod's hash rather than a cache key,
+// because that is the only provenance the install has.
+func (s *ModService) InstallArchiveFromShare(
+	ctx context.Context,
+	mod *domain.Mod,
+	archivePath string,
+	opts InstallOptions,
+) (*domain.Mod, error) {
+	if s == nil || s.deps.Index == nil {
+		return nil, appErrors.New(
+			appErrors.ErrCodeInvalidArgument,
+			"mod service is not initialised",
+		)
+	}
+
+	if mod == nil {
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no mod to install")
+	}
+
+	if err := s.precheck(ctx); err != nil {
+		return nil, err
+	}
+
+	installed := mod.Clone()
+
+	installed.ID = strings.TrimSpace(installed.ID)
+	if installed.ID == "" {
+		return nil, appErrors.New(
+			appErrors.ErrCodeInvalidMod,
+			"a shared mod needs an id",
+		)
+	}
+
+	// A share carries the game it was made for; a caller that left it blank
+	// means the game that is active right now.
+	if strings.TrimSpace(installed.GameID) == "" {
+		gameID, err := s.activeGameID()
+		if err != nil {
+			return nil, err
+		}
+
+		installed.GameID = gameID
+	}
+
+	release, err := s.ops.acquire(ctx, installed.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer release()
+
+	existing, err := s.deps.Index.GetByID(ctx, installed.ID)
+	switch {
+	case err == nil && !opts.Force:
+		return nil, appErrors.New(appErrors.ErrCodeModAlreadyExists,
+			"mod %q is already installed as version %s", existing.ID, existing.Version)
+	case err != nil && appErrors.CodeOf(err) != appErrors.ErrCodeModNotFound:
+		return nil, err
+	}
+
+	root, err := s.storageRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	target := domain.ModStoragePath(root, installed.GameID, installed.ID, installed.Version)
+
+	s.publish(Event{
+		Type: EventModInstallStarted, ModID: installed.ID, SourceID: installed.SourceID,
+		Data: installEventData{Version: installed.Version, Path: target},
+	})
+
+	if err := s.runHooks(ctx, domain.PhasePreInstall, installed); err != nil {
+		return nil, err
+	}
+
+	// The archive is local already, so there is no download left to hash: the
+	// digest is taken over the file that was just verified against the payload.
+	hash, err := fileHash(archivePath)
+	if err != nil {
+		return nil, appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
+			"hash the shared archive %q", archivePath)
+	}
+
+	files, err := s.unpack(ctx, archivePath, target)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.place(
+		ctx, installed, installed.SourceID, target, hash, files, existing, opts,
+	); err != nil {
+		return nil, err
+	}
 
 	return installed, nil
 }

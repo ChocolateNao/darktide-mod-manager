@@ -113,6 +113,10 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	if err := addModsSourceLinkColumns(ctx, tx); err != nil {
+		return err
+	}
+
 	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return appErrors.Wrap(
@@ -147,11 +151,21 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 // addModsGameIDColumn upgrades a mods table created by a pre-multi-game build.
 //
 // The upgrade is a single guarded ALTER rather than a versioned migration: the
-// column carries DEFAULT ” so the statement cannot fail on populated tables,
-// and the probe (a PRAGMA table-info call) makes it a no-op on every database
+// column carries DEFAULT \'\' so the statement cannot fail on populated tables,
+// and the probe (a PRAGMA table_info call) makes it a no-op on every database
 // that already has the column — which is every database this build creates.
 // The schema version is deliberately NOT bumped for this.
 func addModsGameIDColumn(ctx context.Context, tx *sql.Tx) error {
+	return addModsColumn(ctx, tx, "game_id",
+		"ALTER TABLE mods ADD COLUMN game_id TEXT NOT NULL DEFAULT ''")
+}
+
+// addModsColumn adds one column to the mods table if it is not there already.
+//
+// It is shared by every mods-table upgrade so that each one has exactly one
+// copy of the probing logic; a second copy of that is how a migration ends up
+// guarded in one place and not in another.
+func addModsColumn(ctx context.Context, tx *sql.Tx, name, ddl string) error {
 	var table int
 
 	if err := tx.QueryRowContext(
@@ -169,20 +183,61 @@ func addModsGameIDColumn(ctx context.Context, tx *sql.Tx) error {
 
 	if err := tx.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = 'game_id'",
+		"SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name = ?",
+		name,
 	).Scan(&hasColumn); err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "probe mods.game_id column")
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "probe mods.%s column", name)
 	}
 
 	if hasColumn > 0 {
 		return nil
 	}
 
-	if _, err := tx.ExecContext(
-		ctx,
-		"ALTER TABLE mods ADD COLUMN game_id TEXT NOT NULL DEFAULT ''",
-	); err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "add mods.game_id column")
+	if _, err := tx.ExecContext(ctx, ddl); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "add mods.%s column", name)
+	}
+
+	return nil
+}
+
+// addModsSourceLinkColumns upgrades a mods table written before the manager
+// remembered where a mod came from.
+//
+// The three columns hold the web addresses a mod was found at: the page it was
+// installed from, a direct download when the source offers one, and the page that
+// shows its newest version. Without them a mod installed from a source that
+// cannot be re-queried — Nexus without credentials, say — becomes an unreachable
+// island once the database is moved to another machine, because the manifest
+// written into the mod folder is the only other copy and a share recipient never
+// sees it.
+//
+// The upgrade is three guarded ALTERs rather than a versioned migration, for the
+// same reasons as addModsGameIDColumn: each carries a DEFAULT, so it cannot fail
+// on a populated table, and the probe makes it a no-op on every database this
+// build creates.
+func addModsSourceLinkColumns(ctx context.Context, tx *sql.Tx) error {
+	columns := []struct {
+		name string
+		ddl  string
+	}{
+		{
+			name: "source_url",
+			ddl:  "ALTER TABLE mods ADD COLUMN source_url TEXT NOT NULL DEFAULT ''",
+		},
+		{
+			name: "download_url",
+			ddl:  "ALTER TABLE mods ADD COLUMN download_url TEXT NOT NULL DEFAULT ''",
+		},
+		{
+			name: "update_url",
+			ddl:  "ALTER TABLE mods ADD COLUMN update_url TEXT NOT NULL DEFAULT ''",
+		},
+	}
+
+	for _, column := range columns {
+		if err := addModsColumn(ctx, tx, column.name, column.ddl); err != nil {
+			return err
+		}
 	}
 
 	return nil

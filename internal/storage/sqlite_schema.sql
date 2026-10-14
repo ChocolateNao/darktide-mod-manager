@@ -50,7 +50,15 @@ CREATE TABLE IF NOT EXISTS mods (
     -- Install mode: "mods_folder" (default) or "game_root".
     install_mode   TEXT NOT NULL DEFAULT 'mods_folder',
     -- Mod folder name in the game's mods folder. Used for load order file.
-    mod_folder_name TEXT NOT NULL DEFAULT ''
+    mod_folder_name TEXT NOT NULL DEFAULT '',
+    -- Where the mod lives on the web. source_url is the page it was installed
+    -- from, download_url a direct download when the source offers one (empty
+    -- for Nexus, whose downloads need the account's credentials), and
+    -- update_url the page that shows its newest version. They are stored rather
+    -- than derived so a source that cannot be re-queried stays reachable.
+    source_url      TEXT NOT NULL DEFAULT '',
+    download_url    TEXT NOT NULL DEFAULT '',
+    update_url      TEXT NOT NULL DEFAULT ''
 );
 
 -- One row per file belonging to a mod. CASCADE means deleting the mod row is
@@ -89,6 +97,22 @@ CREATE TABLE IF NOT EXISTS cache_entries (
     refs        INTEGER NOT NULL DEFAULT 0,
     last_access TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Cloud share records. `game_id` is the registry game id the share targets;
+-- it is NOT NULL from the first version, so there is no legacy row to migrate.
+-- `mods` and `links` are JSON blobs: the mod list and the share links that
+-- point at the uploaded files.
+CREATE TABLE IF NOT EXISTS shares (
+    id         TEXT PRIMARY KEY NOT NULL,
+    game_id    TEXT NOT NULL,
+    mods       TEXT NOT NULL DEFAULT '[]',  -- JSON array of domain.Mod
+    links      TEXT NOT NULL DEFAULT '[]',  -- JSON array of domain.ShareLink
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_shares_game      ON shares(game_id);
+CREATE INDEX IF NOT EXISTS idx_shares_created   ON shares(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_cache_last_access ON cache_entries(last_access);
 CREATE INDEX IF NOT EXISTS idx_cache_refs        ON cache_entries(refs);

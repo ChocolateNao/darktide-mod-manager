@@ -178,7 +178,8 @@ func (r *sqliteModRepository) Close() error {
 // and the SELECT can never drift apart.
 const modColumns = `id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
-	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name`
+	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name,
+	source_url, download_url, update_url`
 
 // Save upserts a mod.
 //
@@ -259,8 +260,9 @@ func (r *sqliteModRepository) Save(ctx context.Context, m *domain.Mod) error {
 	const query = `
 INSERT INTO mods (id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
-	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name,
+	source_url, download_url, update_url)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	game_id        = excluded.game_id,
 	name           = excluded.name,
@@ -281,13 +283,16 @@ ON CONFLICT(id) DO UPDATE SET
 	updated_at     = excluded.updated_at,
 	priority       = excluded.priority,
 	install_mode   = excluded.install_mode,
-	mod_folder_name = excluded.mod_folder_name`
+	mod_folder_name = excluded.mod_folder_name,
+	source_url     = excluded.source_url,
+	download_url   = excluded.download_url,
+	update_url     = excluded.update_url`
 
 	_, err = r.db.ExecContext(ctx, query,
 		id, m.GameID, m.Name, m.Version, m.Author, m.Description, m.SourceID, m.GameVersion,
 		deps, conflicts, tags, sourceData, hooks, m.LocalPath, m.Hash,
 		boolToInt(m.Enabled), formatTime(installedAt), formatTime(updatedAt), m.Priority,
-		m.InstallMode, m.ModFolderName)
+		m.InstallMode, m.ModFolderName, m.SourceURL, m.DownloadURL, m.UpdateURL)
 	if err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "save mod %q: %v", id, err)
 	}
@@ -1169,7 +1174,8 @@ func scanMod(row rowScanner) (*domain.Mod, error) {
 		&m.ID, &m.GameID, &m.Name, &m.Version, &m.Author, &m.Description, &m.SourceID,
 		&m.GameVersion,
 		&deps, &conflicts, &tags, &sourceData, &hooksJSON, &m.LocalPath, &m.Hash,
-		&enabled, &installedAt, &updatedAt, &m.Priority, &m.InstallMode, &m.ModFolderName)
+		&enabled, &installedAt, &updatedAt, &m.Priority, &m.InstallMode, &m.ModFolderName,
+		&m.SourceURL, &m.DownloadURL, &m.UpdateURL)
 	if err != nil {
 		return nil, err
 	}

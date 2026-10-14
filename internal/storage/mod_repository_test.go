@@ -305,6 +305,46 @@ func TestModRepositorySaveTrimsID(t *testing.T) {
 	assert.NoError(t, err, "expected a padded lookup to find the trimmed row: %v", err)
 }
 
+// The web addresses are the only thing that keeps a mod installed from a source
+// that cannot be re-queried reachable, so they have to survive a save/load cycle
+// exactly — including the empty case, which means "this source has no such page"
+// and is not the same as "we forgot to store it".
+func TestModRepositoryRoundTripsSourceLinks(t *testing.T) {
+	repo, _ := newRepo(t)
+	ctx := context.Background()
+
+	mod := &domain.Mod{
+		ID:          "linked",
+		SourceURL:   "https://www.nexusmods.com/darktide/mods/42",
+		DownloadURL: "https://github.com/example/mod/releases/download/v1.2.0/mod.zip",
+		UpdateURL:   "https://github.com/example/mod/releases/latest",
+	}
+
+	if err := repo.Save(ctx, mod); err != nil {
+		require.FailNow(t, "save: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, "linked")
+	require.NoError(t, err, "load")
+
+	assert.Equal(t, mod.SourceURL, got.SourceURL)
+	assert.Equal(t, mod.DownloadURL, got.DownloadURL)
+	assert.Equal(t, mod.UpdateURL, got.UpdateURL)
+
+	// A second save with the URLs cleared has to clear them: leaving the old
+	// ones behind would send a user to a page for a version they no longer have.
+	if err := repo.Save(ctx, &domain.Mod{ID: "linked"}); err != nil {
+		require.FailNow(t, "re-save: %v", err)
+	}
+
+	got, err = repo.GetByID(ctx, "linked")
+	require.NoError(t, err, "reload")
+
+	assert.Empty(t, got.SourceURL)
+	assert.Empty(t, got.DownloadURL)
+	assert.Empty(t, got.UpdateURL)
+}
+
 func TestModRepositorySaveStampsTimestamps(t *testing.T) {
 	ctx := context.Background()
 

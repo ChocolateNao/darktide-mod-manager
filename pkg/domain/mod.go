@@ -19,7 +19,8 @@ const (
 	InstallModeModsFolder ModInstallMode = "mods_folder"
 	// InstallModeGameRoot deploys the mod by merging its contents into the
 	// game root folder. Used for mods that patch the game and already contain
-	// the /mods folder and other game directories in their archive structure.
+	// the "mods_folder" defined by the game folder and other game directories in their archive
+	// structure.
 	InstallModeGameRoot ModInstallMode = "game_root"
 )
 
@@ -36,28 +37,28 @@ func (m ModInstallMode) String() string { return string(m) }
 // where it lives on disk (LocalPath) so that the same struct can represent a
 // remote listing and an installed mod.
 type Mod struct {
-	UpdatedAt   time.Time      `json:"updated_at"`
-	InstalledAt time.Time      `json:"installed_at"`
-	SourceData  map[string]any `json:"source_data,omitempty"`
-	Hash        string         `json:"hash,omitempty"`
-	LocalPath   string         `json:"local_path"`
-	SourceID    string         `json:"source_id"`
-	// GameID is the registry id of the game this mod belongs to. Storage
-	// paths, load order and the working set are all keyed by it, so state
-	// persists when the user switches the active game.
+	UpdatedAt     time.Time      `json:"updated_at"`
+	InstalledAt   time.Time      `json:"installed_at"`
+	SourceData    map[string]any `json:"source_data,omitempty"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	SourceID      string         `json:"source_id"`
 	GameID        string         `json:"game_id,omitempty"`
 	Author        string         `json:"author"`
 	GameVersion   string         `json:"game_version,omitempty"`
 	ModFolderName string         `json:"mod_folder_name,omitempty"`
 	InstallMode   ModInstallMode `json:"install_mode,omitempty"`
 	Description   string         `json:"description"`
-	ID            string         `json:"id"`
+	Hash          string         `json:"hash,omitempty"`
 	Version       string         `json:"version"`
-	Name          string         `json:"name"`
+	LocalPath     string         `json:"local_path"`
+	UpdateURL     string         `json:"update_url,omitempty"`
+	DownloadURL   string         `json:"download_url,omitempty"`
+	SourceURL     string         `json:"source_url,omitempty"`
 	Hooks         ModHooks       `json:"hooks"`
-	Tags          []string       `json:"tags,omitempty"`
-	ConflictsWith []string       `json:"conflicts_with,omitempty"`
 	Dependencies  []string       `json:"dependencies,omitempty"`
+	ConflictsWith []string       `json:"conflicts_with,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
 	Priority      int            `json:"priority"`
 	Enabled       bool           `json:"enabled"`
 }
