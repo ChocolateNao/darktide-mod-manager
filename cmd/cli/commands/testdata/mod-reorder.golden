@@ -1,8 +1,8 @@
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
-o installed betterui v0.0.0 (enabled)
+o installed betterui 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers
-o installed damagenumbers v0.0.0 (enabled)
+o installed damagenumbers 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod reorder betterui
 o load order set to 1 mod

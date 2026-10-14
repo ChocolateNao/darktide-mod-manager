@@ -19,7 +19,9 @@ func newManifestCommand(s *session) *cobra.Command {
 		Long: "A mod folder can carry a manifest — " + manifestpkg.Names[0] +
 			" or one of its accepted aliases — that names the mod and carries its\n" +
 			"hook scripts. The manager reads the first one it finds in the folder,\n" +
-			"and a folder with no manifest is still discovered under its own name.",
+			"and a folder with no manifest is still discovered under its own name.\n\n" +
+			"`init` scaffolds one by hand. `write` regenerates one for a mod that is\n" +
+			"already installed, from everything the database knows about it.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
@@ -27,7 +29,7 @@ func newManifestCommand(s *session) *cobra.Command {
 		Args: cobra.NoArgs,
 	}
 
-	cmd.AddCommand(newManifestInitCommand(s))
+	cmd.AddCommand(newManifestInitCommand(s), newManifestWriteCommand(s))
 
 	return cmd
 }

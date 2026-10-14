@@ -67,6 +67,16 @@ o   "max_size_gb": 5,
 o   "max_age_days": 30,
 o   "verify_hashes": true
 o   },
+o   "cloud_sharing": {
+o   "default_provider": "",
+o   "share_expiry_days": 30,
+o   "auto_install": false
+o   },
+o   "sharing": {
+o   "p2p": {
+o   "expiry_days": 0
+o   }
+o   },
 o   "logging": {
 o   "level": "info",
 o   "max_size_mb": 10,

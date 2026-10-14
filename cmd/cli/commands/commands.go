@@ -344,6 +344,8 @@ func newCommand(env Env) (*cobra.Command, *session) {
 		newConfigCommand(s),
 		newLogCommand(s),
 		newManifestCommand(s),
+		newShareCommand(s),
+		newActionsCommand(s),
 		newVersionCommand(s),
 	)
 

@@ -2,7 +2,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> game detect
 o No installation was found. Set the game path with: dmm config set game.path <path>
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
-o installed betterui v0.0.0 (disabled)
+o installed betterui 0.0.0 (disabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod list
 o ID  VERSION  SOURCE  STATE  NAME

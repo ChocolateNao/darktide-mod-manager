@@ -39,6 +39,7 @@ func newModCommand(s *session) *cobra.Command {
 		newModUpdateCommand(s),
 		newModReorderCommand(s),
 		newModHooksCommand(s),
+		newSourceLinkCommand(s),
 		newModPathCommand(s),
 		newModRelinkCommand(s),
 		newModSymlinkStatusCommand(s),
@@ -230,7 +231,7 @@ func newModInstallCommand(s *session) *cobra.Command {
 				return writeJSON(s.env.Out, newModView(*mod))
 			}
 
-			fmt.Fprintf(s.env.Out, "installed %s v%s (%s)\n",
+			fmt.Fprintf(s.env.Out, "installed %s %s (%s)\n",
 				mod.ID, orDash(mod.Version), modState(*mod))
 
 			return nil

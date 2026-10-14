@@ -14,7 +14,7 @@ o   "total_bytes": 0
 o }
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
-o installed betterui v0.0.0 (disabled)
+o installed betterui 0.0.0 (disabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> cache info
 o path:  <cache>

@@ -1,11 +1,11 @@
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --no-enable
-o installed betterui v0.0.0 (disabled)
+o installed betterui 0.0.0 (disabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
 e error: MOD_ALREADY_EXISTS: mod "betterui" is already installed as version 0.0.0
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --force
-o installed betterui v0.0.0 (enabled)
+o installed betterui 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers --version 3.0.0
 e error: INVALID_ARGUMENT: source "local" offers damagenumbers 0.0.0, not 3.0.0
@@ -14,7 +14,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod install local da
 e error: INVALID_ARGUMENT: source "local" offers damagenumbers 0.0.0, not 2.0.0
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local damagenumbers --version 0.0.0
-o installed damagenumbers v0.0.0 (enabled)
+o installed damagenumbers 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> cache info
 o path:  <cache>
@@ -24,7 +24,7 @@ o oldest: <time>
 o newest: <time>
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local soundoverhaul --purge-cache
-o installed soundoverhaul v0.0.0 (enabled)
+o installed soundoverhaul 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> cache info
 o path:  <cache>

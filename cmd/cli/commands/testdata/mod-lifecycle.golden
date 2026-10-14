@@ -2,7 +2,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod list
 o No mods are installed.
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
-o installed betterui v0.0.0 (enabled)
+o installed betterui 0.0.0 (enabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod list
 o ID  VERSION  SOURCE  STATE  NAME
