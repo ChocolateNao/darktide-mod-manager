@@ -228,3 +228,12 @@ func (c *Client) UseGame(ctx context.Context, id string) error {
 
 	return nil
 }
+
+// ActiveGameID returns active game ID from config.
+func (c *Client) ActiveGameID() string {
+	if c.deps.ActiveConfig != nil {
+		return strings.TrimSpace(c.deps.ActiveConfig.ActiveGame)
+	}
+
+	return ""
+}

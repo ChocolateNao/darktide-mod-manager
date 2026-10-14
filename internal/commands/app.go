@@ -27,6 +27,18 @@ type App struct {
 	Cache   *CacheCommands
 	Config  *ConfigCommands
 	Logs    *LogCommands
+	Shares  *ShareCommands
+	// P2PShares is separate from Shares because it is a different protocol with
+	// different states: a peer-to-peer share is in flight between two people
+	// rather than a record in a table, and a frontend that mixed the two would
+	// have to guess which lifecycle applies.
+	P2PShares *P2PShareCommands
+	Actions   *ActionCommands
+	// SourceLinks is its own set because it answers a question about a mod rather
+	// than changing one. Grouping it under Mods would bury "where do I get this"
+	// in the lifecycle commands, which is exactly the call a user makes when an
+	// update cannot be fetched for them.
+	SourceLinks *SourceLinkCommands
 }
 
 // New builds the command surface over a client.
@@ -38,13 +50,17 @@ func New(deps Deps) *App {
 	shared := newBase(deps)
 
 	return &App{
-		base:    shared,
-		Mods:    newModCommands(shared),
-		Sources: newSourceCommands(shared),
-		Game:    newGameCommands(shared),
-		Cache:   newCacheCommands(shared),
-		Config:  newConfigCommands(shared),
-		Logs:    newLogCommands(shared),
+		base:        shared,
+		Mods:        newModCommands(shared),
+		Sources:     newSourceCommands(shared),
+		Game:        newGameCommands(shared),
+		Cache:       newCacheCommands(shared),
+		Config:      newConfigCommands(shared),
+		Logs:        newLogCommands(shared),
+		Shares:      newShareCommands(shared),
+		P2PShares:   newP2PShareCommands(shared),
+		Actions:     newActionCommands(shared),
+		SourceLinks: newSourceLinkCommands(shared),
 	}
 }
 

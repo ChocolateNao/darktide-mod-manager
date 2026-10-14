@@ -55,6 +55,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/actions"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -80,6 +81,11 @@ type ModSourceInfo = domain.ModSourceInfo
 // GameInstallation describes one detected Darktide install.
 type GameInstallation = domain.GameInstallation
 
+// InstallShareOptions controls how a share is installed.
+type InstallShareOptions struct {
+	AutoInstall bool
+}
+
 // ClientDeps is the set of services a client drives.
 //
 // The fields are the concrete service types rather than the narrow interfaces
@@ -94,7 +100,32 @@ type ClientDeps struct {
 	Game    *services.GameLocator
 	Cache   *services.CacheManager
 	Hooks   *services.HookExecutor
-	Config  services.ConfigStore
+	// Shares is the deprecated cloud sharing service. It is declared here
+	// rather than behind an interface so the wiring type cannot drift away from
+	// the composition root that fills it; the suppression below is the price of
+	// that, and the deprecation is the reason it is worth paying.
+	//
+	//nolint:staticcheck // deprecation is the point: the field stays reachable until cloud shares can no longer be revoked.
+	Shares *services.ShareService
+	// P2PShares is the peer-to-peer sharing service. It is separate from
+	// Shares because the two answer different questions: Shares moves archives
+	// through a storage provider, P2PShares moves them between two machines.
+	// Either may be nil in a client built by hand.
+	P2PShares *services.P2PShareService
+	// Actions is the table of code-defined per-game actions. Listing actions
+	// needs only this.
+	Actions *actions.Registry
+	// ActionRunner executes those actions. Running one additionally needs a
+	// game locator, a desktop opener and a command runner, so the two are
+	// separate dependencies and a client that only lists actions can leave the
+	// runner nil.
+	ActionRunner *actions.Runner
+	// URLs opens a web address in the user's browser. It is what backs opening a
+	// mod's source page, so a client running without a desktop — a test, a
+	// container — can leave it nil and report that it cannot open links rather
+	// than pretending it did.
+	URLs   URLOpener
+	Config services.ConfigStore
 	// ActiveConfig is the configuration object the wiring loaded and then
 	// mutated (WithGame's override) — the same pointer its closures capture.
 	// UseGame updates it in place so those closures see a switch without a

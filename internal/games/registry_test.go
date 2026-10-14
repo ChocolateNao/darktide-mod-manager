@@ -33,6 +33,10 @@ func (stubGame) SourceDefaults() map[string]map[string]string {
 	return map[string]map[string]string{}
 }
 
+func (stubGame) GameActions() []domain.GameAction {
+	return nil
+}
+
 func withCleanRegistry(t *testing.T) {
 	t.Helper()
 	Reset()
@@ -135,3 +139,5 @@ func (blankIDGame) ID() string { return "  " }
 type badMethodGame struct{ stubGame }
 
 func (badMethodGame) ModInstallMethod() string { return "teleport" }
+
+func (badMethodGame) GameActions() []domain.GameAction { return nil }

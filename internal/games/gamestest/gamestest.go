@@ -69,3 +69,8 @@ func (d Def) SourceDefaults() map[string]map[string]string {
 
 	return d.Defaults
 }
+
+// GameActions implements domain.GameDefinition.
+func (Def) GameActions() []domain.GameAction {
+	return nil
+}

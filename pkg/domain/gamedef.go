@@ -44,6 +44,8 @@ type GameDefinition interface {
 	// then option name — e.g. {"nexus": {"game_domain": "..."}}. A value in
 	// the user's source config always wins over these.
 	SourceDefaults() map[string]map[string]string
+	// GameActions returns code-defined special actions for this game.
+	GameActions() []GameAction
 }
 
 // Installation methods a GameDefinition may declare.

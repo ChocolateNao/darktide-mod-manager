@@ -98,3 +98,9 @@ func (Definition) SourceDefaults() map[string]map[string]string {
 		"github": {"topic": "darktide-mod"},
 	}
 }
+
+// GameActions implements domain.GameDefinition. The actions live in
+// actions.go: a game package is the only place that knows what is special about
+// its game, so the handlers are as much part of the definition as the paths and
+// the app id are.
+func (Definition) GameActions() []domain.GameAction { return actions() }

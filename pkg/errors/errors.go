@@ -77,6 +77,31 @@ const (
 	// debugging one needs to see exactly that.
 	ErrCodeHookDenied Code = "HOOK_DENIED"
 	ErrCodeDuplicate  Code = "DUPLICATE"
+
+	// Game actions.
+	//
+	// An action failing to *resolve* is an argument mistake and is reported as
+	// ErrCodeInvalidArgument; these three describe a real action that could not
+	// be looked up, is not offered on this platform, or was found and then
+	// failed. Splitting them is what lets a frontend disable the right button
+	// (unavailable) instead of showing an error after the user pressed it.
+	ErrCodeActionNotFound    Code = "ACTION_NOT_FOUND"
+	ErrCodeActionUnavailable Code = "ACTION_UNAVAILABLE"
+	ErrCodeActionFailed      Code = "ACTION_FAILED"
+
+	// Cloud sharing.
+	ErrCodeCloudProviderNotFound Code = "CLOUD_PROVIDER_NOT_FOUND"
+	ErrCodeCloudAuthRequired     Code = "CLOUD_AUTH_REQUIRED"
+	ErrCodeShareExpired          Code = "SHARE_EXPIRED"
+	ErrCodeShareInvalid          Code = "SHARE_INVALID"
+	ErrCodeShareRevoked          Code = "SHARE_REVOKED"
+	ErrCodeGameNotRegistered     Code = "GAME_NOT_REGISTERED"
+	ErrCodeFileTooLarge          Code = "FILE_TOO_LARGE"
+	ErrCodeIntegrityMismatch     Code = "INTEGRITY_MISMATCH"
+	ErrCodeAllProvidersFailed    Code = "ALL_PROVIDERS_FAILED"
+	ErrCodeShareNotFound         Code = "SHARE_NOT_FOUND"
+	ErrCodeCloudUploadFailed     Code = "CLOUD_UPLOAD_FAILED"
+	ErrCodeCloudDownloadFailed   Code = "CLOUD_DOWNLOAD_FAILED"
 )
 
 // AppError is the concrete error type returned by every service. The zero value
@@ -103,6 +128,41 @@ func Wrap(err error, code Code, format string, args ...any) error {
 
 	return &AppError{Code: code, Message: fmt.Sprintf(format, args...), Cause: err}
 }
+
+// Annotate adds context to err the way Wrap does, except that it does not restate
+// a code err already carries.
+//
+// Wrapping an error with the code it already has prints that code twice —
+// "GAME_NOT_FOUND: could not locate an installation: GAME_NOT_FOUND: none found" —
+// which reads as two separate failures where there is one. In that case only the
+// inner *message* is borrowed. The cause is still attached, so errors.Is keeps
+// finding the original error and a caller can still walk the chain.
+func Annotate(err error, code Code, format string, args ...any) error {
+	if err == nil {
+		return nil
+	}
+
+	if IsAppError(err, code) {
+		return &AppError{
+			Code:    code,
+			Message: fmt.Sprintf(format, args...) + ": " + Message(err),
+			Cause:   causeMessage{err: err},
+		}
+	}
+
+	return Wrap(err, code, format, args...)
+}
+
+// causeMessage renders an error as its message alone, dropping the code the
+// reader has already been given. It still unwraps to the original error, so
+// errors.Is, errors.As and Code keep seeing the whole chain.
+type causeMessage struct {
+	err error
+}
+
+func (c causeMessage) Error() string { return Message(c.err) }
+
+func (c causeMessage) Unwrap() error { return c.err }
 
 // Error implements error. The rendered text always starts with the code so that
 // log output remains greppable: "MOD_NOT_FOUND: mod \"x\" is not installed".
@@ -329,4 +389,50 @@ var (
 		Message: "no runner registered for hook type",
 	}
 	ErrDuplicate = &AppError{Code: ErrCodeDuplicate, Message: "duplicate entry"}
+
+	ErrCloudProviderNotFound = &AppError{
+		Code:    ErrCodeCloudProviderNotFound,
+		Message: "cloud provider not found",
+	}
+	ErrCloudAuthRequired = &AppError{
+		Code:    ErrCodeCloudAuthRequired,
+		Message: "provider authentication required",
+	}
+	ErrShareExpired = &AppError{
+		Code:    ErrCodeShareExpired,
+		Message: "share link has expired",
+	}
+	ErrShareInvalid = &AppError{
+		Code:    ErrCodeShareInvalid,
+		Message: "share link is invalid or corrupted",
+	}
+	ErrShareRevoked = &AppError{
+		Code:    ErrCodeShareRevoked,
+		Message: "share has been revoked",
+	}
+	ErrGameNotRegistered = &AppError{
+		Code:    ErrCodeGameNotRegistered,
+		Message: "share targets a game this manager does not have",
+	}
+	ErrFileTooLarge = &AppError{
+		Code:    ErrCodeFileTooLarge,
+		Message: "file exceeds provider size limit",
+	}
+	ErrIntegrityMismatch = &AppError{
+		Code:    ErrCodeIntegrityMismatch,
+		Message: "downloaded file hash mismatch",
+	}
+	ErrAllProvidersFailed = &AppError{
+		Code:    ErrCodeAllProvidersFailed,
+		Message: "all providers failed",
+	}
+	ErrShareNotFound     = &AppError{Code: ErrCodeShareNotFound, Message: "share not found"}
+	ErrCloudUploadFailed = &AppError{
+		Code:    ErrCodeCloudUploadFailed,
+		Message: "cloud upload failed",
+	}
+	ErrCloudDownloadFailed = &AppError{
+		Code:    ErrCodeCloudDownloadFailed,
+		Message: "cloud download failed",
+	}
 )

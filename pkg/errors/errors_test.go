@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	goerrors "errors"
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -249,4 +250,58 @@ func TestAppErrorJSONShape(t *testing.T) {
 	require.NoError(t, marshalErr, "json.Marshal")
 
 	assert.Equal(t, `{"code":"CONFIG_IO","message":"outer"}`, string(data), "json")
+}
+
+func TestAnnotateDoesNotRepeatACode(t *testing.T) {
+	inner := New(ErrCodeGameNotFound, "no installation found; set the game path in the settings")
+
+	err := Annotate(inner, ErrCodeGameNotFound, "action %q could not locate an installation", "x:y")
+
+	// The rendered text is what a user reads. Stating the code twice makes one
+	// failure look like two.
+	assert.Equal(t,
+		`GAME_NOT_FOUND: action "x:y" could not locate an installation: `+
+			`no installation found; set the game path in the settings`,
+		err.Error(), "Error()")
+
+	assert.Equal(t, 1, strings.Count(err.Error(), string(ErrCodeGameNotFound)), "code repetition")
+
+	// The cause survives so callers can still branch on the original error, and
+	// the inner code is still reachable through the chain.
+	assert.ErrorIs(t, err, inner, "errors.Is")
+	assert.True(t, IsAppError(err, ErrCodeGameNotFound), "inner code still reachable")
+}
+
+func TestAnnotateAdoptsTheCodeWhenItDiffers(t *testing.T) {
+	inner := New(ErrCodeConfigIO, "cannot read the settings file")
+
+	err := Annotate(inner, ErrCodeActionUnavailable, "action %q cannot run", "x:y")
+
+	assert.Equal(t,
+		`ACTION_UNAVAILABLE: action "x:y" cannot run: CONFIG_IO: cannot read the settings file`,
+		err.Error(), "Error()")
+
+	assert.True(t, IsAppError(err, ErrCodeActionUnavailable), "outer code")
+
+	// IsAppError walks the whole chain, so a caller asking about the cause's
+	// code still gets an answer.
+	assert.True(t, IsAppError(err, ErrCodeConfigIO), "inner code")
+}
+
+func TestAnnotatePassesNilThrough(t *testing.T) {
+	assert.Nil(t, Annotate(nil, ErrCodeActionFailed, "unused"), "Annotate(nil)")
+}
+
+// Annotate has to cope with an error that carries no code at all: a bare
+// os.PathError from somewhere the typed model has not reached yet.
+func TestAnnotateWrapsAPlainError(t *testing.T) {
+	inner := goerrors.New("no such file")
+
+	err := Annotate(inner, ErrCodeActionFailed, "action %q could not read its folder", "x:y")
+
+	assert.Equal(t,
+		`ACTION_FAILED: action "x:y" could not read its folder: no such file`,
+		err.Error(), "Error()")
+
+	assert.ErrorIs(t, err, inner, "errors.Is")
 }

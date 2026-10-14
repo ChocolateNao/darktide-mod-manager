@@ -149,6 +149,17 @@ func IDs() []string {
 	return out
 }
 
+// Lookup adapts the package-level registry to a consumer that wants to resolve
+// one game by id without importing this package's functions.
+//
+// The action runner needs exactly that, and nothing else here: it describes an
+// action belonging to any game, including one the user has not made active, so
+// it cannot ask the locator — which only knows the active game.
+type Lookup struct{}
+
+// Get returns the definition registered for an id.
+func (Lookup) Get(id string) (domain.GameDefinition, bool) { return Get(id) }
+
 // Reset empties the registry. Production code never calls it; tests share one
 // process-wide registry, and without a way to clear it every test package
 // would inherit whatever the last one registered.
