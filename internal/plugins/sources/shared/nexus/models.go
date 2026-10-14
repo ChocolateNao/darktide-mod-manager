@@ -3,6 +3,7 @@ package nexus
 import (
 	"math"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -292,23 +293,85 @@ func (c modContext) locationURL(versionID string) string {
 		return ""
 	}
 
-	return "nexus://" + c.gameDomain + "/mod-file-versions/" + versionID + "/download-repacked"
+	return DefaultAPIBase + "/mod-file-versions/" + versionID + "/download-repacked"
 }
 
-// installableCategory reports whether a version category holds a payload a user
-// could install.
+// versionCategory is what the manager makes of a version's category.
 //
-// The API states the same set in the description of IsActive ("main, update,
-// optional, or miscellaneous"), and old_version is deliberately absent: it is a
-// superseded release kept for history, and installing it instead of the current
-// one is exactly the mistake this check exists to prevent.
-func installableCategory(category string) bool {
+// The distinction that matters is not "installable or not" but "the API said no"
+// versus "the API said something this build has never heard of". Collapsing the
+// two is what let a site change break every mod at once.
+type versionCategory int
+
+const (
+	// categoryInstallable is a category the API documents as holding a payload a
+	// user could install: main, update, optional or miscellaneous.
+	categoryInstallable versionCategory = iota
+
+	// categorySuperseded is old_version — a release kept for history. Installing
+	// it in place of the current one is the mistake the category check exists to
+	// prevent, so it is refused rather than merely ranked lower.
+	categorySuperseded
+
+	// categoryUnknown is anything else, including an empty category: a value
+	// Nexus has introduced since this was written, or a version whose category
+	// came back blank.
+	//
+	// Unknown is not treated as a refusal. A filter that rejects everything it
+	// does not recognise makes the manager unusable the first time the site adds
+	// a category, and it does so silently — the mod simply "has no downloadable
+	// version" while a perfectly good grant sits in the user's hand. Offering the
+	// version instead lets the download fail loudly and specifically if it really
+	// is not installable, which is the better of the two failures.
+	categoryUnknown
+)
+
+// classifyCategory sorts a category reported by the API into the three cases the
+// manager acts on.
+func classifyCategory(category string) versionCategory {
 	switch strings.ToLower(strings.TrimSpace(category)) {
 	case "main", "update", "optional", "miscellaneous":
-		return true
+		return categoryInstallable
+	case "old_version":
+		return categorySuperseded
 	default:
-		return false
+		return categoryUnknown
 	}
+}
+
+// describeCategories renders the categories present in a version list, for an
+// error message.
+//
+// A message that says only "no downloadable version" leaves the reader with
+// nothing to act on: the fix is either in this build or in a link, and which one
+// is visible only in the categories. Duplicates are collapsed and the order is
+// fixed so the same list always produces the same sentence.
+func describeCategories(versions []fileVersion) string {
+	seen := map[string]int{}
+	order := make([]string, 0, 4)
+
+	for _, candidate := range versions {
+		name := strings.ToLower(strings.TrimSpace(candidate.Category))
+		if name == "" {
+			name = "(blank)"
+		}
+
+		if _, ok := seen[name]; ok {
+			continue
+		}
+
+		seen[name] = 1
+
+		order = append(order, name)
+	}
+
+	if len(order) == 0 {
+		return "none — the file published no versions at all"
+	}
+
+	slices.Sort(order)
+
+	return strings.Join(order, ", ")
 }
 
 // positionValue parses the decimal position the API publishes.
@@ -343,9 +406,11 @@ func positionValue(raw string) (float64, bool) {
 // this returned the primary, an update would never be found. The primary flag is
 // still recorded in SourceData.
 //
-// Versions in a category that cannot be installed are skipped before the
-// comparison, because a file's newest version is sometimes a removed or archived
-// entry and offering that would produce an install that fails.
+// Versions in a category that the API documents as superseded are skipped before
+// the comparison, because a file's newest version is sometimes a removed or
+// archived entry and offering that would produce an install that fails. A
+// category this build does not recognise is not skipped — see categoryUnknown —
+// so that a change on Nexus's side cannot empty the candidate set.
 func pickVersion(versions []fileVersion) (fileVersion, bool) {
 	best := fileVersion{}
 	found := false
@@ -353,7 +418,7 @@ func pickVersion(versions []fileVersion) (fileVersion, bool) {
 	bestAt := time.Time{}
 
 	for _, candidate := range versions {
-		if !installableCategory(candidate.Category) {
+		if classifyCategory(candidate.Category) == categorySuperseded {
 			continue
 		}
 
@@ -482,6 +547,17 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 
 	if ctx.thumbnailURL != "" {
 		mod.SourceData["thumbnail_url"] = ctx.thumbnailURL
+	}
+
+	if page := ctx.pageURL(); page != "" {
+		mod.SourceURL = page
+		mod.SourceData["source_url"] = page
+	}
+	// Nexus download links require authentication for many cases; store release URL as
+	// update/source reference
+	if du := ctx.locationURL(versionID); du != "" {
+		mod.DownloadURL = ""
+		mod.SourceData["download_url_candidate"] = du
 	}
 
 	return mod

@@ -14,7 +14,8 @@ const mask = "[REDACTED]"
 
 // defaultSensitive lists the field names that must never reach a log sink. It
 // covers the credentials this application actually handles (source API keys,
-// refresh tokens) plus the usual suspects a future call site might log.
+// refresh tokens, cloud object-storage keys) plus the usual suspects a future
+// call site might log.
 //
 // Matching is name-based and case/underscore-insensitive, so "api_key",
 // "apiKey" and "API-KEY" all hit the same entry.
@@ -25,6 +26,17 @@ var defaultSensitive = []string{
 	"token",
 	"access_token",
 	"refresh_token",
+	"id_token",
+	"access_key",
+	"secret_key",
+	"client_secret",
+	"client_id",
+	"app_key",
+	"app_secret",
+	"credentials",
+	"credential",
+	"keyring",
+	"bearer",
 	"password",
 	"passwd",
 	"secret",
@@ -121,16 +133,38 @@ func (r *redactingWriter) Write(p []byte) (int, error) {
 
 // mask replaces every sensitive value in fields and reports whether anything
 // changed.
+//
+// It recurses into nested objects. A flat walk would leave every value inside
+// a credential bag untouched: zerolog encodes a map passed to .Interface() as a
+// nested object rather than as several top-level keys, so
+// .Interface("credentials", creds) would carry a live access token past this
+// writer while an equivalent .Fields(creds) would not. The masking has to
+// reach where the secret can actually be.
 func (r *redactingWriter) mask(fields map[string]json.RawMessage) bool {
 	changed := false
 
-	for key := range fields {
-		if _, sensitive := r.keys[normalizeKey(key)]; !sensitive {
+	for key, value := range fields {
+		if _, sensitive := r.keys[normalizeKey(key)]; sensitive {
+			fields[key] = json.RawMessage(`"` + mask + `"`)
+			changed = true
+
 			continue
 		}
 
-		fields[key] = json.RawMessage(`"` + mask + `"`)
-		changed = true
+		var nested map[string]json.RawMessage
+		if err := json.Unmarshal(value, &nested); err != nil || len(nested) == 0 {
+			continue
+		}
+
+		if r.mask(nested) {
+			rebuilt, err := json.Marshal(nested)
+			if err != nil {
+				continue
+			}
+
+			fields[key] = rebuilt
+			changed = true
+		}
 	}
 
 	return changed

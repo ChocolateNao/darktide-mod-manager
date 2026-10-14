@@ -63,19 +63,22 @@ func message(err error) string {
 // it was given makes the test that sets it pass for an unrelated reason, which is
 // how a status-mapping test ends up proving nothing at all.
 type stubServer struct {
-	srv                     *httptest.Server
-	versionsBody            string
-	versionBody             string
-	dlLinkBody              string
-	versionByScopedIDBody   string
-	trendingBody            string
-	depBody                 string
-	modBody                 string
-	dlBody                  string
-	filesBody               string
-	url                     string
-	fileBody                string
-	missingFileID           string
+	srv                   *httptest.Server
+	versionsBody          string
+	versionBody           string
+	dlLinkBody            string
+	versionByScopedIDBody string
+	trendingBody          string
+	depBody               string
+	modBody               string
+	dlBody                string
+	filesBody             string
+	url                   string
+	fileBody              string
+	missingFileID         string
+	// dlLinkFileID names the one file id the legacy download_link endpoint
+	// authorizes. Blank authorizes whatever is asked for.
+	dlLinkFileID            string
 	requests                []string
 	bodies                  []string
 	assetBody               []byte
@@ -163,6 +166,18 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/download-repacked"):
 		s.writeJSON(w, s.dlStatus, s.dlBody)
 	case strings.HasSuffix(path, "/download_link"):
+		// Which number this endpoint accepts is not the manager's business: the
+		// same path has answered for the number a pasted link carries and for the
+		// version's game-scoped id. The fixture can therefore name the one id it
+		// authorizes and refuse every other, which is what the fallback needs to
+		// be tested against.
+		if want, got := s.dlLinkFileID, fileIDOfDownloadLink(path); want != "" && got != want {
+			s.writeJSON(w, http.StatusNotFound,
+				`{"code":404,"message":"No File found for mod"}`)
+
+			break
+		}
+
 		s.writeJSON(w, s.dlLinkStatus, s.dlLinkBody)
 	case strings.HasSuffix(path, "/dependencies"):
 		s.writeJSON(w, s.depStatus, s.depBody)
@@ -202,6 +217,21 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeJSON writes body with the given status, defaulting to 200.
+// fileIDOfDownloadLink pulls the file id out of a legacy download_link path.
+//
+// The path is /v1/games/{domain}/mods/{mod}/files/{id}/download_link, so the id
+// is read from the end rather than counted from the front.
+func fileIDOfDownloadLink(path string) string {
+	_, rest, found := strings.Cut(path, "/files/")
+	if !found {
+		return ""
+	}
+
+	id, _, _ := strings.Cut(rest, "/download_link")
+
+	return id
+}
+
 func (s *stubServer) writeJSON(w http.ResponseWriter, status int, body string) {
 	if status == 0 {
 		status = http.StatusOK
@@ -313,6 +343,11 @@ func fileFixtureJSON() string {
 }
 
 func versionsFixtureJSON() string {
+	// 8003 is old_version — a release the author has superseded. That is the one
+	// category the manager refuses, because a file's newest version is often
+	// exactly that, and installing it in place of the current one would be a
+	// downgrade the user never asked for. A category the manager has never heard
+	// of is offered rather than skipped; see TestPickVersionOffersAnUnrecognisedCategory.
 	return `{"data":{"versions":[
 		{"id":"8001","file":{"id":"7001","name":"Better UI Main"},"position":"1.0",
 		 "game_scoped_id":"900","name":"Better UI 1.0.0","version":"1.0.0",
@@ -322,7 +357,7 @@ func versionsFixtureJSON() string {
 		 "category":"main","uploaded_at":"2026-02-01T09:30:00Z","is_primary":false},
 		{"id":"8003","file":{"id":"7001","name":"Better UI Main"},"position":"3.0",
 		 "game_scoped_id":"900","name":"Better UI 1.3.0","version":"1.3.0",
-		 "category":"archived","uploaded_at":"2026-06-01T00:00:00Z","is_primary":false}]}}`
+		 "category":"old_version","uploaded_at":"2026-06-01T00:00:00Z","is_primary":false}]}}`
 }
 
 func dependenciesFixtureJSON() string {
@@ -846,12 +881,12 @@ func TestGetModWalksTheResourcesInOrder(t *testing.T) {
 
 	assert.Equal(t, "nexus-900-7001", mod.ID, "mod.ID = %q, want nexus-900-7001", mod.ID)
 	// The fixture's newest installable version is 1.2.0; the 1.3.0 entry is
-	// archived and must not be offered.
+	// superseded (old_version) and must not be offered.
 	assert.Equal(
 		t,
 		"1.2.0",
 		mod.Version,
-		"mod.Version = %q, want 1.2.0: the newest installable version, not the archived one",
+		"mod.Version = %q, want 1.2.0: the newest installable version, not the superseded one",
 		mod.Version,
 	)
 
@@ -1023,11 +1058,14 @@ func TestGetModResolvesALegacyFileIDFromALink(t *testing.T) {
 	wantID := ModID("1419", "8094444")
 	assert.Equal(t, wantID, mod.ID, "mod id = %q, want %q", mod.ID, wantID)
 
+	// The link named one specific file version, and the lookup that resolved it
+	// already read that version. The version list is not consulted: re-picking
+	// from it would install a release the site's one-time grant never authorised,
+	// and would fail outright on a file whose newest entry is superseded.
 	want := []string{
 		"GET /v3/mod-files/7001",
 		"GET /v3/games/darktide/mod-file-versions/7001",
 		"GET /v3/mod-files/8094444",
-		"GET /v3/mod-files/8094444/versions",
 		"GET /v3/games/darktide/mods/1419",
 		"GET /v3/mod-file-versions/8002/dependencies",
 	}
@@ -1038,20 +1076,30 @@ func TestGetModResolvesALegacyFileIDFromALink(t *testing.T) {
 	for i := range want {
 		assert.Equal(t, want[i], got[i], "request %d = %q, want %q", i, got[i], want[i])
 	}
+
+	for _, call := range got {
+		assert.NotContains(
+			t,
+			call,
+			"/versions",
+			"GetMod re-listed the file's versions: %v",
+			got,
+		)
+	}
 }
 
 func TestGetModReportsAFileWithNoInstallableVersion(t *testing.T) {
 	s := armedStub(t)
 	s.versionsBody = `{"data":{"versions":[
 		{"id":"8003","position":"3.0","game_scoped_id":"900","name":"Old",
-		 "version":"1.3.0","category":"archived","uploaded_at":"2026-06-01T00:00:00Z"}]}}`
+		 "version":"1.3.0","category":"old_version","uploaded_at":"2026-06-01T00:00:00Z"}]}}`
 	src := newSource(t, s)
 
 	_, err := src.GetMod(t.Context(), ModID("900", "7001"))
 	assert.True(
 		t,
 		isCode(err, appCodeModNotFound),
-		"GetMod with only an archived version = %v, want ErrCodeModNotFound",
+		"GetMod with only a superseded version = %v, want ErrCodeModNotFound",
 		err,
 	)
 
@@ -1062,6 +1110,35 @@ func TestGetModReportsAFileWithNoInstallableVersion(t *testing.T) {
 		"error %q should say the file has no downloadable version",
 		message(err),
 	)
+
+	// "has no downloadable version" on its own sent the user looking at the
+	// Nexus site for an explanation the API already had. The categories are the
+	// explanation, so they are in the message.
+	assert.Contains(
+		t,
+		message(err),
+		"old_version",
+		"error %q should name the categories it refused",
+		message(err),
+	)
+}
+
+// A file whose versions all carry a category this build has never heard of must
+// still resolve. This is the case that produced "has no downloadable version"
+// on a perfectly good link: the filter refused everything it did not recognise,
+// so the candidate set came back empty and the grant went unused.
+func TestGetModAcceptsAnUnrecognisedCategory(t *testing.T) {
+	s := armedStub(t)
+	s.versionsBody = `{"data":{"versions":[
+		{"id":"8002","position":"2.0","game_scoped_id":"900","name":"New",
+		 "version":"1.2.0","category":"rewrapped","uploaded_at":"2026-02-01T00:00:00Z"}]}}`
+	src := newSource(t, s)
+
+	mod, err := src.GetMod(t.Context(), ModID("900", "7001"))
+	require.NoError(t, err, "GetMod with an unfamiliar category = %v, want no error")
+	require.NotNil(t, mod)
+
+	assert.Equal(t, "1.2.0", mod.Version, "mod.Version = %q, want 1.2.0", mod.Version)
 }
 
 func TestGetModReportsAShapeItCannotUse(t *testing.T) {
@@ -1590,7 +1667,10 @@ func TestForgetNXMGrantDropsOnlyTheAuthorization(t *testing.T) {
 	forgetNXMGrant(&domain.Mod{ID: ModID("900", "7001")})
 }
 
-func TestDownloadSpendsAKeyedGrantThroughTheLegacyEndpoint(t *testing.T) {
+// A pasted link names the file by the number the site itself used, and that is
+// the number the legacy endpoint is asked for first. Asking for anything else
+// first costs a request the user's one-time grant can only be spent on once.
+func TestDownloadSpendsAKeyedGrantUnderTheFileIDTheLinkNames(t *testing.T) {
 	s := armedStub(t)
 	src := newSource(t, s)
 	s.versionBody = versionFixtureJSON()
@@ -1621,22 +1701,27 @@ func TestDownloadSpendsAKeyedGrantThroughTheLegacyEndpoint(t *testing.T) {
 	)
 
 	calls := s.callLog()
-	require.Len(t, calls, 3, "Download made %v, want a version read, a mint and a fetch", calls)
-	// The legacy endpoint numbers a file the legacy way, so the version's
-	// game-scoped id has to be read before the mint can be asked for.
-	assert.Equal(t, "GET /v3/mod-file-versions/8001", calls[0], "the version read was %q", calls[0])
+	require.Len(t, calls, 2, "Download made %v, want a mint and a fetch", calls)
 	// The query is the three parts of the grant, and all three are required:
 	// the endpoint answers 403 to a partial set.
-	wantMint := "GET /v1/games/darktide/mods/900/files/8847/download_link" +
+	wantMint := "GET /v1/games/darktide/mods/900/files/7001/download_link" +
 		"?expires=1791538669&key=one-time-key&user_id=189193053"
-	assert.Equal(t, wantMint, calls[1], "the mint request was %q, want %q", calls[1], wantMint)
+	assert.Equal(t, wantMint, calls[0], "the mint request was %q, want %q", calls[0], wantMint)
 
 	assert.Equal(
 		t,
 		"GET /asset",
-		calls[2],
+		calls[1],
 		"the fetch was %q, want a GET of the minted URL",
-		calls[2],
+		calls[1],
+	)
+	// The version was never read: the number the link carried was accepted, so
+	// there was nothing left to look up.
+	assert.False(
+		t,
+		s.saw("/mod-file-versions/"),
+		"the version was read (%v) even though the link's own file id worked",
+		calls,
 	)
 	// The mint goes to the API, so it carries the key; the content host is
 	// where the signed URL points, so it must not.
@@ -1644,22 +1729,158 @@ func TestDownloadSpendsAKeyedGrantThroughTheLegacyEndpoint(t *testing.T) {
 	assert.Equal(
 		t,
 		"key-1",
-		keys[1],
+		keys[0],
 		"the mint request carried apikey %q, want the account key",
-		keys[1],
+		keys[0],
 	)
 
 	assert.Equal(
 		t,
 		"",
-		keys[2],
+		keys[1],
 		"the content-host request carried apikey %q; the URL is already signed",
-		keys[2],
+		keys[1],
 	)
 	// The grant is one-time, so it must not outlive the download it authorized.
 	if _, _, _, ok := nxmGrant(mod); ok {
 		assert.Fail(t, "the spent grant is still in the mod's SourceData")
 	}
+}
+
+// When the link's own number is refused, the version's game-scoped id is the
+// second guess — and it costs one extra read, which is worth making only after
+// the first number has actually been refused.
+func TestDownloadFallsBackToTheGameScopedFileID(t *testing.T) {
+	s := armedStub(t)
+	src := newSource(t, s)
+	s.versionBody = versionFixtureJSON()
+	s.dlLinkBody = downloadLinkFixtureJSON(s.url + "/asset")
+	// The endpoint authorizes 8847 and nothing else.
+	s.dlLinkFileID = "8847"
+
+	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
+	mod.SourceData = map[string]any{
+		"version_id":           "8001",
+		sourceDataNXKey:        "one-time-key",
+		sourceDataNXExpires:    "1791538669",
+		sourceDataNXUserID:     "189193053",
+		sourceDataFileScopedID: "8847",
+	}
+
+	dest := filepath.Join(t.TempDir(), "boss_thresholds.zip")
+	_, err := src.Download(t.Context(), mod, dest)
+	require.NoError(t, err, "Download: %v", err)
+
+	body, err := os.ReadFile(dest)
+	require.NoError(t, err, "the archive was not written")
+	assert.Equal(t, string(s.assetBody), string(body))
+
+	calls := s.callLog()
+	require.Len(t, calls, 3, "Download made %v, want a refusal, a mint and a fetch", calls)
+	assert.Equal(
+		t,
+		"GET /v1/games/darktide/mods/900/files/7001/download_link?expires=1791538669&key=one-time-key&user_id=189193053",
+		calls[0],
+		"the link's own number should be asked for first",
+	)
+	assert.Equal(
+		t,
+		"GET /v1/games/darktide/mods/900/files/8847/download_link?expires=1791538669&key=one-time-key&user_id=189193053",
+		calls[1],
+		"the game-scoped id should be the second guess",
+	)
+	assert.Equal(t, "GET /asset", calls[2])
+}
+
+// The version's game-scoped id is not always recorded on the mod, so the
+// fallback sometimes has to read it. The read happens only after a refusal.
+func TestDownloadFallsBackToAFileIDItHasToRead(t *testing.T) {
+	s := armedStub(t)
+	src := newSource(t, s)
+	s.versionBody = versionFixtureJSON()
+	s.dlLinkBody = downloadLinkFixtureJSON(s.url + "/asset")
+	s.dlLinkFileID = "8847"
+
+	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
+	mod.SourceData = map[string]any{
+		"version_id":        "8001",
+		sourceDataNXKey:     "one-time-key",
+		sourceDataNXExpires: "1791538669",
+		sourceDataNXUserID:  "189193053",
+	}
+
+	dest := filepath.Join(t.TempDir(), "boss_thresholds.zip")
+	_, err := src.Download(t.Context(), mod, dest)
+	require.NoError(t, err, "Download: %v", err)
+
+	calls := s.callLog()
+	require.Len(t, calls, 4, "Download made %v, want a refusal, a read, a mint and a fetch", calls)
+	assert.Equal(
+		t,
+		"GET /v3/mod-file-versions/8001",
+		calls[1],
+		"the version read came after the refusal",
+	)
+	assert.Contains(t, calls[2], "/files/8847/download_link")
+	assert.Equal(t, "GET /asset", calls[3])
+}
+
+// Two refusals is the end of the guessing. The error has to name both numbers,
+// because the user can check them against the page they pasted the link from.
+func TestDownloadReportsBothFileIDsWhenNeitherIsAuthorized(t *testing.T) {
+	s := armedStub(t)
+	src := newSource(t, s)
+	s.versionBody = versionFixtureJSON()
+	// An id the endpoint never authorizes, so both candidates are refused.
+	s.dlLinkFileID = "9999"
+
+	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
+	mod.SourceData = map[string]any{
+		"version_id":           "8001",
+		sourceDataNXKey:        "one-time-key",
+		sourceDataNXExpires:    "1791538669",
+		sourceDataNXUserID:     "189193053",
+		sourceDataFileScopedID: "8847",
+	}
+
+	dest := filepath.Join(t.TempDir(), "boss_thresholds.zip")
+	_, err := src.Download(t.Context(), mod, dest)
+	require.Error(t, err)
+	assert.True(t, isCode(err, appErrors.ErrCodeModNotFound), "got %v", err)
+
+	got := message(err)
+	assert.Contains(t, got, `"7001"`, "the link's own number should be named")
+	assert.Contains(t, got, `"8847"`, "the second guess should be named")
+	assert.NoFileExists(t, dest, "a refused download must not leave a file behind")
+}
+
+// An id the server refuses is worth guessing past; a key it rejects, a network
+// failure or a 500 will answer the same way for every number, and repeating the
+// request would turn one failure into several — with a one-time grant,
+// possibly spending it.
+func TestDownloadDoesNotRetryTheSecondIDOnANonRefusalError(t *testing.T) {
+	s := armedStub(t)
+	src := newSource(t, s)
+	s.versionBody = versionFixtureJSON()
+	s.dlLinkStatus = http.StatusInternalServerError
+	s.dlLinkBody = `{"code":500,"message":"upstream is having a bad day"}`
+
+	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
+	mod.SourceData = map[string]any{
+		"version_id":           "8001",
+		sourceDataNXKey:        "one-time-key",
+		sourceDataNXExpires:    "1791538669",
+		sourceDataNXUserID:     "189193053",
+		sourceDataFileScopedID: "8847",
+	}
+
+	dest := filepath.Join(t.TempDir(), "boss_thresholds.zip")
+	_, err := src.Download(t.Context(), mod, dest)
+	require.Error(t, err)
+
+	calls := s.callLog()
+	require.Len(t, calls, 1, "Download made %v, want one attempt", calls)
+	assert.Contains(t, calls[0], "/files/7001/download_link")
 }
 
 func TestDownloadLeavesAPartialGrantToThePremiumEndpoint(t *testing.T) {
@@ -1756,12 +1977,17 @@ func TestDownloadReportsAKeyedMintTheEndpointRefused(t *testing.T) {
 	}
 }
 
-func TestDownloadReportsAVersionWithNoLegacyFileID(t *testing.T) {
+// Neither number can authorize a download when the version publishes no
+// game-scoped id and the link's own number is refused too. There is nothing
+// left to guess, and the error has to say so with both numbers in it.
+func TestDownloadReportsWhenNeitherFileIDCanAuthorize(t *testing.T) {
 	s := armedStub(t)
 	src := newSource(t, s)
 	s.versionBody = `{"data":{"id":"8001","file":{"id":"7001","name":"Better UI Main"},
 	 "position":"2.0","game_scoped_id":"","name":"Better UI 1.2.0","version":"1.2.0",
 	 "category":"main","uploaded_at":"2026-02-01T09:30:00Z","is_primary":true}}`
+	// An id the endpoint never authorizes, so both candidates are refused.
+	s.dlLinkFileID = "9999"
 
 	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
 	mod.SourceData = map[string]any{
@@ -1775,22 +2001,24 @@ func TestDownloadReportsAVersionWithNoLegacyFileID(t *testing.T) {
 
 	_, err := src.Download(t.Context(), mod, dest)
 	if err == nil {
-		require.FailNow(t, "Download succeeded with no legacy file id to authorize")
+		require.FailNow(t, "Download succeeded with nothing to authorize it with")
 	}
 
 	assert.True(
 		t,
-		isCode(err, appCodeDownloadFailed),
-		"the failure is %v, want DOWNLOAD_FAILED",
+		isCode(err, appCodeModNotFound),
+		"the failure is %v, want MOD_NOT_FOUND",
 		err,
 	)
 
+	got := message(err)
+	assert.Contains(t, got, `"7001"`, "the link's own number should be named: %q", got)
 	assert.Contains(
 		t,
-		message(err),
-		"legacy file id",
-		"the message %q does not name the missing id",
-		message(err),
+		got,
+		"authorized no download",
+		"the message %q does not explain what happened",
+		got,
 	)
 }
 

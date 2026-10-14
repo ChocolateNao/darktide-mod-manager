@@ -250,7 +250,7 @@ func TestLocationURLNamesTheMintingEndpoint(t *testing.T) {
 	c := nexusContext()
 	got := c.locationURL("8001")
 
-	want := "nexus://darktide/mod-file-versions/8001/download-repacked"
+	want := "https://api.nexusmods.com/v3/mod-file-versions/8001/download-repacked"
 	assert.Equal(t, want, got, "locationURL = %q, want %q", got, want)
 
 	if other := c.locationURL("8002"); other == got {
@@ -260,10 +260,10 @@ func TestLocationURLNamesTheMintingEndpoint(t *testing.T) {
 		)
 	}
 
-	assert.False(
+	assert.True(
 		t,
 		strings.HasPrefix(got, "http"),
-		"locationURL must not look like a fetchable URL; it names the endpoint that mints one",
+		"locationURL names the endpoint that mints a fetchable URL",
 	)
 
 	for _, blank := range []string{"", "   ", "\t"} {
@@ -279,31 +279,88 @@ func TestLocationURLNamesTheMintingEndpoint(t *testing.T) {
 	}
 }
 
-func TestInstallableCategory(t *testing.T) {
+func TestClassifyCategory(t *testing.T) {
 	for _, category := range []string{
 		"main", "update", "optional", "miscellaneous",
 		"MAIN", " Main ", "\tupdate\n",
 	} {
-		assert.True(
+		assert.Equal(
 			t,
-			installableCategory(category),
-			"installableCategory(%q) = false, want true",
+			categoryInstallable,
+			classifyCategory(category),
+			"classifyCategory(%q) should be installable",
 			category,
 		)
 	}
-	// old_version is deliberately excluded: it is a superseded release kept for
-	// history, and the newest version of a file is often one of these.
+
+	// old_version is the one category that is refused: it is a superseded
+	// release kept for history, and the newest version of a file is often one of
+	// these. The spelling is the API's exactly — " old-version " with a hyphen is
+	// a different thing, and is unknown.
+	for _, category := range []string{"old_version", " OLD_VERSION ", "\told_version\n"} {
+		assert.Equal(
+			t,
+			categorySuperseded,
+			classifyCategory(category),
+			"classifyCategory(%q) should be superseded",
+			category,
+		)
+	}
+
+	// Everything else is unknown rather than refused. Treating an unfamiliar
+	// category as "not installable" emptied the candidate set the first time
+	// Nexus introduced a category, and the mod reported itself as having no
+	// downloadable version while a usable grant sat in the user's hand.
 	for _, category := range []string{
-		"", "  ", "old_version", "archived", "removed",
-		"unknown", "mainfile", "optionals", "main file",
+		"", "  ", "archived", "removed", "unknown",
+		"mainfile", "optionals", "main file", "mod", "soundtrack",
 	} {
-		assert.False(
+		assert.Equal(
 			t,
-			installableCategory(category),
-			"installableCategory(%q) = true, want false",
+			categoryUnknown,
+			classifyCategory(category),
+			"classifyCategory(%q) should be unknown",
 			category,
 		)
 	}
+}
+
+// The categories named in an error are the reader's only clue about whether the
+// fix belongs in this build or in the link they pasted.
+func TestDescribeCategories(t *testing.T) {
+	assert.Equal(
+		t,
+		"none — the file published no versions at all",
+		describeCategories(nil),
+	)
+
+	assert.Equal(
+		t,
+		"(blank)",
+		describeCategories([]fileVersion{{Category: ""}, {Category: "  "}}),
+	)
+
+	assert.Equal(
+		t,
+		"(blank), main, old_version",
+		describeCategories([]fileVersion{
+			{Category: "main"},
+			{Category: "MAIN"},
+			{Category: "old_version"},
+			{Category: ""},
+		}),
+		"duplicates collapse case-insensitively and the blank category is named",
+	)
+
+	assert.Equal(
+		t,
+		"archived, main",
+		describeCategories([]fileVersion{
+			{Category: "main"},
+			{Category: "archived"},
+		}),
+		"the order is fixed so the same list always prints the same sentence",
+	)
 }
 
 func TestPositionValueReadsTheDecimalString(t *testing.T) {
@@ -378,25 +435,62 @@ func TestPickVersionPrefersTheNewestOverThePrimary(t *testing.T) {
 	)
 }
 
-func TestPickVersionSkipsVersionsThatCannotBeInstalled(t *testing.T) {
-	// A file's newest version is frequently an archived or removed entry.
-	for _, category := range []string{"archived", "removed", "old_version", "unknown", ""} {
+// old_version is a release the author has superseded. Installing it in place of
+// the current one is the mistake the category check exists to prevent, so it is
+// the one category that is refused outright.
+func TestPickVersionSkipsSupersededVersions(t *testing.T) {
+	for _, category := range []string{"old_version", " OLD_VERSION "} {
 		versions := []fileVersion{
 			{ID: "8001", Position: "1.0", Category: "main", Version: "1.0.0"},
 			{ID: "8002", Position: "2.0", Category: category, Version: "2.0.0"},
 		}
 
 		got, ok := pickVersion(versions)
-		if !ok {
-			assert.Fail(t, "pickVersion with a %q newest version found nothing", category)
-			continue
-		}
+		require.True(t, ok, "pickVersion with a %q newest version found nothing", category)
 
 		assert.Equal(
 			t,
 			"8001",
 			got.ID,
 			"pickVersion chose %q (%q) over the installable 8001",
+			got.ID,
+			category,
+		)
+	}
+}
+
+// Every version superseded means there is nothing to install, and that has to be
+// reported rather than papered over with an unknown category.
+func TestPickVersionFindsNothingInASupersededOnlyList(t *testing.T) {
+	got, ok := pickVersion([]fileVersion{
+		{ID: "8001", Position: "1.0", Category: "old_version"},
+		{ID: "8002", Position: "2.0", Category: "old_version"},
+	})
+
+	assert.False(t, ok, "pickVersion chose %q from a list with nothing installable", got.ID)
+}
+
+// A category this build has never heard of is offered rather than skipped. This
+// is the behaviour the closed category list got wrong: refusing everything
+// unrecognised emptied the candidate set the first time Nexus introduced a
+// category, and the mod reported itself as having no downloadable version while a
+// usable grant was sitting in the user's hand.
+func TestPickVersionOffersAnUnrecognisedCategory(t *testing.T) {
+	for _, category := range []string{"archived", "removed", "unknown", "", "mainfile", "soundtrack"} {
+		versions := []fileVersion{
+			{ID: "8001", Position: "1.0", Category: "main", Version: "1.0.0"},
+			{ID: "8002", Position: "2.0", Category: category, Version: "2.0.0"},
+		}
+
+		got, ok := pickVersion(versions)
+		require.True(t, ok, "pickVersion with a %q newest version found nothing", category)
+
+		assert.Equal(
+			t,
+			"8002",
+			got.ID,
+			"pickVersion chose %q, want the newer 8002 (%q): an unfamiliar category "+
+				"is not a reason to refuse a version",
 			got.ID,
 			category,
 		)
@@ -460,15 +554,20 @@ func TestPickVersionOnDegenerateInput(t *testing.T) {
 		assert.Fail(t, "pickVersion(empty) = %q, %v; want the zero version and false", got.ID, ok)
 	}
 
-	onlyUnusable := []fileVersion{
-		{ID: "8001", Category: "archived"},
-		{ID: "8002", Category: "removed"},
+	// Only superseded versions are refused, so "unusable" has to be expressed
+	// with the category that actually means it. A list of categories this build
+	// has never heard of is still offered, and TestPickVersionOffersAnUnrecognisedCategory
+	// covers that; what is left to pin here is that a list with nothing but
+	// superseded versions reports nothing found.
+	onlySuperseded := []fileVersion{
+		{ID: "8001", Category: "old_version"},
+		{ID: "8002", Category: "old_version"},
 	}
-	got, ok := pickVersion(onlyUnusable)
+	got, ok := pickVersion(onlySuperseded)
 	assert.False(
 		t,
 		ok,
-		"pickVersion over archived and removed versions = %q; nothing here is installable",
+		"pickVersion over superseded versions = %q; nothing here can be installed",
 		got.ID,
 	)
 	// Equal positions must resolve to one of the two, not to neither and not to a
@@ -598,7 +697,7 @@ func TestModForRecordsWhatALaterInstallNeeds(t *testing.T) {
 		assert.Equal(t, wantValue, got, "SourceData[%q] = %#v, want %#v", key, got, wantValue)
 	}
 
-	gotURL, wantURL := mod.SourceData["download_url"], "nexus://darktide/mod-file-versions/8001/download-repacked"
+	gotURL, wantURL := mod.SourceData["download_url"], "https://api.nexusmods.com/v3/mod-file-versions/8001/download-repacked"
 	assert.Equal(t, wantURL, gotURL, "SourceData[download_url] = %#v, want %#v", gotURL, wantURL)
 
 	_, ok := mod.SourceData["dependency_error"]

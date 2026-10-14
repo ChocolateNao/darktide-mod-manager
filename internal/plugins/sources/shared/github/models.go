@@ -245,6 +245,25 @@ func modFor(ref string, r release) (domain.Mod, bool) {
 	if r.Prerelease {
 		m.SourceData["prerelease"] = true
 	}
+	// Set source URLs
+	if r.HTMLURL != "" {
+		m.SourceURL = r.HTMLURL
+		m.UpdateURL = r.HTMLURL
+	}
+
+	if owner != "" && repo != "" {
+		repoURL := "https://github.com/" + owner + "/" + repo
+
+		m.SourceData["repo_url"] = repoURL
+		if m.SourceURL == "" {
+			m.SourceURL = repoURL + "/releases/latest"
+			m.UpdateURL = repoURL + "/releases/latest"
+		}
+	}
+
+	if du, ok := m.SourceData["download_url"].(string); ok && du != "" {
+		m.DownloadURL = du
+	}
 
 	return m, true
 }

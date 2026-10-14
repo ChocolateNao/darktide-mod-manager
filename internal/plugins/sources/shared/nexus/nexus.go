@@ -89,6 +89,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -150,6 +151,15 @@ const (
 	sourceDataNXKey     = "nxm_key"
 	sourceDataNXExpires = "nxm_expires"
 	sourceDataNXUserID  = "nxm_user_id"
+
+	// sourceDataFileScopedID records the legacy game-scoped file number of the
+	// version the mod resolved to.
+	//
+	// The v1 download endpoint is addressed by that number, not by the v3 file
+	// id, so authorising a keyed download needs it. Resolving the mod already
+	// read the version that carries it, so keeping it here removes a second
+	// request from the one place a user is waiting on a timed one-time key.
+	sourceDataFileScopedID = "file_scoped_id"
 )
 
 // Source is the Nexus Mods source.
@@ -485,20 +495,32 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	// because a pasted link numbers a file the legacy way, and only the v3 id is
 	// what the file endpoint understands. The resolution is a no-op for an id the
 	// manager produced itself, which is the common case.
-	file, err := s.modFileForID(ctx, scopedID, fileID)
+	file, named, err := s.modFileForID(ctx, scopedID, fileID)
 	if err != nil {
 		return nil, err
 	}
 
-	versions, err := s.modFileVersions(ctx, file.ID)
-	if err != nil {
-		return nil, err
-	}
+	version, ok := named, named.ID != ""
 
-	version, ok := pickVersion(versions)
+	// A legacy link number names one specific file version, and the read that
+	// resolved it already brought that version back. Re-listing the file's
+	// versions and picking a different one would install something the site did
+	// not authorise — the link's key was issued for the version the user clicked.
+	//
+	// An id the manager produced carries no named version, and this path is what
+	// keeps an update check resolving to the newest version of a file.
 	if !ok {
-		return nil, appErrors.New(appErrors.ErrCodeModNotFound,
-			"Nexus mod %s file %s has no downloadable version", scopedID, fileID)
+		versions, listErr := s.modFileVersions(ctx, file.ID)
+		if listErr != nil {
+			return nil, listErr
+		}
+
+		version, ok = pickVersion(versions)
+		if !ok {
+			return nil, appErrors.New(appErrors.ErrCodeModNotFound,
+				"Nexus mod %s file %s has no downloadable version (categories seen: %s)",
+				scopedID, fileID, describeCategories(versions))
+		}
 	}
 
 	info, err := s.modContext(ctx, scopedID)
@@ -510,6 +532,12 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	if mod == nil {
 		return nil, appErrors.New(appErrors.ErrCodeModNotFound,
 			"Nexus mod %s file %s could not be identified", scopedID, fileID)
+	}
+
+	// The legacy file number is kept so that authorising a keyed download does
+	// not have to fetch the version a second time to recover it.
+	if scoped := strings.TrimSpace(version.GameScopedID); scoped != "" {
+		mod.SourceData[sourceDataFileScopedID] = scoped
 	}
 
 	s.attachDependencies(ctx, mod)
@@ -762,27 +790,43 @@ func (s *Source) modFileVersionByScopedID(
 // game-scoped id, and one request against the version endpoint turns it into
 // the v3 id. An id that already is a v3 id is returned untouched, so a mod the
 // manager itself produced — and every mod it already stores — costs nothing.
-func (s *Source) modFileForID(ctx context.Context, scopedID, fileID string) (fileAggregate, error) {
+//
+// The second return value is the version the legacy number named, and it is only
+// set on that path. A game-scoped file number in an nxm link identifies one
+// specific file version, and the read that resolves it already has that version
+// in hand; discarding it here is what made GetMod re-list every version of the
+// file and install a different one than the site authorised. An id that is
+// already a v3 id names a file, not a version, so the zero value there is the
+// honest answer and the caller falls back to the version list.
+func (s *Source) modFileForID(
+	ctx context.Context,
+	scopedID, fileID string,
+) (fileAggregate, fileVersion, error) {
 	file, err := s.modFile(ctx, fileID)
 	if err == nil {
-		return file, nil
+		return file, fileVersion{}, nil
 	}
 
 	if !appErrors.IsAppError(err, appErrors.ErrCodeModNotFound) {
-		return fileAggregate{}, err
+		return fileAggregate{}, fileVersion{}, err
 	}
 
-	_, v3FileID, err := s.modFileVersionByScopedID(ctx, scopedID, fileID)
+	named, v3FileID, err := s.modFileVersionByScopedID(ctx, scopedID, fileID)
 	if err != nil {
-		return fileAggregate{}, err
+		return fileAggregate{}, fileVersion{}, err
 	}
 
 	if v3FileID == "" {
-		return fileAggregate{}, appErrors.New(appErrors.ErrCodeModNotFound,
+		return fileAggregate{}, fileVersion{}, appErrors.New(appErrors.ErrCodeModNotFound,
 			"Nexus mod %s file %s is not a file this manager can install", scopedID, fileID)
 	}
 
-	return s.modFile(ctx, v3FileID)
+	file, err = s.modFile(ctx, v3FileID)
+	if err != nil {
+		return fileAggregate{}, fileVersion{}, err
+	}
+
+	return file, named, nil
 }
 
 // attachDependencies records a version's requirements on the mod.
@@ -876,7 +920,8 @@ func (s *Source) versionIDFor(ctx context.Context, mod *domain.Mod, fileID strin
 	version, ok := pickVersion(versions)
 	if !ok {
 		return "", appErrors.New(appErrors.ErrCodeModNotFound,
-			"Nexus file %s has no downloadable version", fileID)
+			"Nexus file %s has no downloadable version (categories seen: %s)",
+			fileID, describeCategories(versions))
 	}
 
 	return strings.TrimSpace(version.ID), nil
@@ -972,46 +1017,149 @@ func (s *Source) downloadURLForKeyed(
 			"mod %q carries no usable Nexus download authorization", sourceutil.ModLabel(mod))
 	}
 
-	scopedID, _, ok := ParseModID(mod.ID)
+	scopedID, linkFileID, ok := ParseModID(mod.ID)
 	if !ok {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"mod %q does not carry a Nexus mod and file id", mod.ID)
 	}
-	// The legacy endpoint numbers a file the legacy way, and the id in the link
-	// is the version's game-scoped id rather than the v3 mod-file id the manager
-	// stores. One read recovers it; guessing would name a different file.
-	version, err := s.modFileVersion(ctx, versionID)
-	if err != nil {
-		return "", err
-	}
 
-	fileScopedID := strings.TrimSpace(version.GameScopedID)
-	if fileScopedID == "" {
-		return "", appErrors.New(appErrors.ErrCodeDownloadFailed,
-			"Nexus version %s published no legacy file id to authorize", versionID)
-	}
-
-	var mirrors downloadLinkResponse
-
-	path := "/games/" + s.gameDomain + "/mods/" + scopedID +
-		"/files/" + fileScopedID + "/download_link"
 	query := url.Values{}
 	query.Set("key", grantKey)
 	query.Set("expires", expires)
 	query.Set("user_id", userID)
 
+	// Which number the legacy endpoint expects is Nexus's business and has not
+	// been consistent across the API's two eras: the same path has answered for
+	// the number a pasted nxm:// link carries and for the version's game-scoped
+	// id, and a grant spent on the wrong one is a 404 that reads like a dead
+	// link. So the number the user actually pasted is asked for first, and the
+	// resolved one is only tried after the server has refused the first.
+	//
+	// A refusal is the only thing that advances the loop. A rejected key, a
+	// network failure or a 500 will answer the same way for every number, and
+	// repeating the request would turn one failure into several — with a
+	// one-time grant, possibly spending it.
+	// An id the server refuses means the wrong number; an id it accepts but
+	// answers with an empty mirror list means a different thing entirely, and
+	// the two must not be reported as one. Whichever happened decides what the
+	// user is told.
+	tried := make([]string, 0, 2)
+	authorizedEmpty := false
+
+	candidates := []string{strings.TrimSpace(linkFileID)}
+
+	for attempt := 0; attempt < len(candidates); attempt++ {
+		fileID := candidates[attempt]
+		if fileID == "" || slices.Contains(tried, fileID) {
+			continue
+		}
+
+		tried = append(tried, fileID)
+
+		uri, authorized, err := s.mintKeyedURL(ctx, scopedID, fileID, query, mod)
+		if err == nil {
+			return uri, nil
+		}
+
+		if !appErrors.IsAppError(err, appErrors.ErrCodeModNotFound) {
+			return "", err
+		}
+
+		authorizedEmpty = authorizedEmpty || authorized
+
+		if attempt == 0 {
+			// The link's own number did not work. Only now is the extra read
+			// worth making: resolving the mod already read the version and kept
+			// its game-scoped id, so that value is used when it is there. It is
+			// absent for a mod resolved through the version list rather than
+			// through a link, and for one stored before this was recorded, and in
+			// both cases one read recovers it.
+			if legacy := s.legacyFileIDFor(ctx, mod, versionID); legacy != "" {
+				candidates = append(candidates, legacy)
+			}
+		}
+	}
+
+	if authorizedEmpty {
+		return "", appErrors.New(appErrors.ErrCodeDownloadFailed,
+			"Nexus authorized the download of mod %s under file id %s but offered no mirror",
+			sourceutil.ModLabel(mod), quoteAll(tried))
+	}
+
+	return "", appErrors.New(appErrors.ErrCodeModNotFound,
+		"Nexus authorized no download for %s under file id %s",
+		sourceutil.ModLabel(mod), quoteAll(tried))
+}
+
+// mintKeyedURL spends a grant against one file id and returns the first mirror
+// the API offers.
+//
+// The second result reports whether the server authorized the request at all.
+// It is what lets the caller tell a number it refused from a download it
+// authorized and then could not serve, which are different problems with
+// different fixes.
+func (s *Source) mintKeyedURL(
+	ctx context.Context,
+	scopedID, fileID string,
+	query url.Values,
+	mod *domain.Mod,
+) (uri string, authorized bool, err error) {
+	var mirrors downloadLinkResponse
+
+	path := "/games/" + s.gameDomain + "/mods/" + scopedID +
+		"/files/" + fileID + "/download_link"
+
 	if err := s.authedV1JSON(ctx, path, query, &mirrors, httpx.KindDownload); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	for _, mirror := range mirrors {
 		if uri := strings.TrimSpace(mirror.URI); uri != "" {
-			return uri, nil
+			return uri, true, nil
 		}
 	}
 
-	return "", appErrors.New(appErrors.ErrCodeDownloadFailed,
-		"Nexus authorized the download of mod %s but offered no mirror", sourceutil.ModLabel(mod))
+	return "", true, appErrors.New(appErrors.ErrCodeModNotFound,
+		"Nexus authorized the download of mod %s under file id %s but offered no mirror",
+		sourceutil.ModLabel(mod), fileID)
+}
+
+// legacyFileIDFor recovers the game-scoped id of the version a keyed download
+// has to address.
+//
+// It is the second guess, not the first: a pasted link's own number is what the
+// website itself used, and the two have been observed to disagree about which
+// one the legacy endpoint accepts.
+func (s *Source) legacyFileIDFor(ctx context.Context, mod *domain.Mod, versionID string) string {
+	if scoped := strings.TrimSpace(
+		sourceutil.StringOf(mod.SourceData[sourceDataFileScopedID]),
+	); scoped != "" {
+		return scoped
+	}
+
+	version, err := s.modFileVersion(ctx, versionID)
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(version.GameScopedID)
+}
+
+// quoteAll renders a list of ids for an error message, so the next failure of
+// this kind says which numbers were asked for without a source dive.
+func quoteAll(ids []string) string {
+	quoted := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			quoted = append(quoted, strconv.Quote(id))
+		}
+	}
+
+	if len(quoted) == 0 {
+		return "(none)"
+	}
+
+	return strings.Join(quoted, " or ")
 }
 
 // nxmGrant reads the one-time download authorization a keyed nxm link left in a

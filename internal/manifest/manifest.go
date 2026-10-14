@@ -106,15 +106,19 @@ type Manifest struct {
 
 // ModInfo is the [mod] table: who the mod is and what it needs.
 type ModInfo struct {
-	ID            string   `toml:"id"`
-	Name          string   `toml:"name"`
-	Version       string   `toml:"version"`
-	Author        string   `toml:"author"`
-	Description   string   `toml:"description"`
-	GameVersion   string   `toml:"game_version"`
-	Dependencies  []string `toml:"dependencies"`
-	ConflictsWith []string `toml:"conflicts_with"`
-	Tags          []string `toml:"tags"`
+	SourceData    map[string]string `toml:"source_data,omitempty"`
+	SourceURL     string            `toml:"source_url,omitempty"`
+	Version       string            `toml:"version"`
+	Author        string            `toml:"author"`
+	Description   string            `toml:"description"`
+	GameVersion   string            `toml:"game_version"`
+	ID            string            `toml:"id"`
+	DownloadURL   string            `toml:"download_url,omitempty"`
+	UpdateURL     string            `toml:"update_url,omitempty"`
+	Name          string            `toml:"name"`
+	Dependencies  []string          `toml:"dependencies"`
+	ConflictsWith []string          `toml:"conflicts_with"`
+	Tags          []string          `toml:"tags"`
 }
 
 // Hooks are read as arrays because the manifest uses [[hooks.pre_enable]]

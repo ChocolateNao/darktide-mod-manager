@@ -432,6 +432,18 @@ func (c *CacheManager) downloadOnce(
 		written = staging
 	}
 
+	// Some sources describe their payload as a folder rather than as one file —
+	// a local mod folder is the ordinary case, since a folder is what a person
+	// actually has. The cache's contract is one blob file per key, and the
+	// installer reads archives, so the folder is zipped here. Enforcing it here
+	// rather than in one source means the next source that returns a folder
+	// works without being taught about it.
+	written, err = c.normaliseStaged(ctx, mod, written)
+	if err != nil {
+		discardStaging(staging, written)
+		return "", err
+	}
+
 	size, err := c.validateStaged(ctx, mod, written)
 	if err != nil {
 		discardStaging(staging, written)
@@ -472,7 +484,14 @@ func discardStaging(paths ...string) {
 			continue
 		}
 
-		_ = os.Remove(p)
+		if err := os.Remove(p); err == nil {
+			continue
+		}
+
+		// A folder-shaped download that failed leaves a directory behind, and a
+		// plain Remove cannot clear one. Nothing downstream reads staging, so
+		// removing the tree is the only way to stop it accumulating.
+		_ = os.RemoveAll(p)
 	}
 }
 
@@ -499,6 +518,99 @@ func installBlob(src, dst string) error {
 	}
 
 	return nil
+}
+
+// normaliseStaged turns whatever a source wrote into the single file the cache
+// promises, and returns the path to it.
+//
+// A source that writes one file is already done, and the same path comes back so
+// the caller keeps working on exactly what it had. A source that writes a folder
+// gets it zipped next to the staging path — next to, so installBlob's rename stays
+// on one filesystem and therefore atomic — and the folder is then removed, because
+// leaving it would leak a temporary copy of somebody's mod folder into the temp
+// directory for as long as the process lives.
+func (c *CacheManager) normaliseStaged(
+	ctx context.Context,
+	mod *domain.Mod,
+	written string,
+) (string, error) {
+	info, err := os.Stat(written)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Nothing was written at all; validateStaged reports that in terms
+			// of the mod, which is what the user needs to read.
+			return written, nil
+		}
+
+		return written, appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
+			"read the download for mod %q", modLabel(mod))
+	}
+
+	if !info.IsDir() {
+		return written, nil
+	}
+
+	archive := written + ".zip"
+
+	result, err := packFolder(ctx, written, archive, modLabel(mod))
+	if err != nil {
+		_ = os.Remove(archive)
+		_ = os.RemoveAll(written)
+
+		return archive, err
+	}
+
+	if err := os.RemoveAll(written); err != nil {
+		// The archive is good; a leftover folder is untidy rather than broken.
+		// It is logged because it accumulates and nobody else would notice.
+		c.log.Warn().
+			Str("op", "cache-download").
+			Str("mod", modLabel(mod)).
+			Str("path", written).
+			Err(err).
+			Msg("could not remove the unpacked download")
+	}
+
+	c.log.Debug().
+		Str("op", "cache-download").
+		Str("mod", modLabel(mod)).
+		Int("entries", len(result.Files)).
+		Int64("payload_bytes", result.TotalSize).
+		Msg("packed a folder download into an archive")
+
+	return archive, nil
+}
+
+// packFolder zips a folder a source downloaded, naming the mod in every message
+// it produces.
+//
+// The mod is named here rather than only by the caller because these are the
+// messages a user sees when their download went wrong, and "no files to pack"
+// tells them nothing about which mod to go and look at.
+func packFolder(ctx context.Context, root, dest, label string) (*storage.PackResult, error) {
+	entries, err := storage.CollectTree(root)
+	if err != nil {
+		return nil, appErrors.Annotate(err, appErrors.ErrCodeDownloadFailed,
+			"could not read the folder that mod %q downloaded as", label)
+	}
+
+	if len(entries) == 0 {
+		return nil, appErrors.New(appErrors.ErrCodeDownloadFailed,
+			"the folder that mod %q downloaded as is empty", label)
+	}
+
+	packed := make([]storage.PackEntry, 0, len(entries))
+	for _, entry := range entries {
+		packed = append(packed, entry.PackEntry())
+	}
+
+	result, err := storage.PackArchive(ctx, dest, packed)
+	if err != nil {
+		return nil, appErrors.Annotate(err, appErrors.ErrCodeDownloadFailed,
+			"could not pack the folder that mod %q downloaded as", label)
+	}
+
+	return result, nil
 }
 
 // validateStaged checks a freshly downloaded file before it becomes the cached

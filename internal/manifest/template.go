@@ -29,17 +29,9 @@ game_version = ""
 dependencies = []
 conflicts_with = []
 tags = []
+source_url = ""
+download_url = ""
+update_url = ""
+# source_data = { key = "value" }
 
-# Hooks are scripts that run at fixed points in a mod's lifecycle. Uncomment a
-# block to add one. ` + "`content`" + ` is the script itself, ` + "`type`" + ` is "lua" or
-# "javascript", and ` + "`timeout`" + ` is in seconds.
-#
-# [[hooks.pre_enable]]
-# type = "javascript"
-# content = "dmm.log.info('enabled')"
-# # Run the script in this folder instead of the mod's own.
-# working_dir = ""
-# # Environment variables the script may read, as KEY=value.
-# env = []
-# timeout = 10
 `
