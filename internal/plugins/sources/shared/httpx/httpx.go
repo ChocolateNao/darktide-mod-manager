@@ -35,7 +35,7 @@ import (
 const (
 	// DefaultTimeout bounds a single request. Mod hosts are frequently slow, but
 	// not this slow; a hung connection must not pin an install forever.
-	DefaultTimeout = 30 * time.Second
+	DefaultTimeout = 10 * time.Second
 
 	// DefaultUserAgent identifies the manager to hosts that rate-limit by client.
 	DefaultUserAgent = "darktide-mod-manager"

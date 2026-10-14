@@ -58,6 +58,10 @@ linters:
         - "G118"  # Allow unused parameters (if you have a reason for them)
         - "G204"  # Allow Subprocesses (TODO: review if this is a security risk)
         - "G304"  # Allow file permissions (TODO: review if this is a security risk)
+        # Google/Dropbox/Microsoft publish their OAuth2 token and consent URLs as
+        # part of their public API surface. They are endpoints, not credentials,
+        # and every one of them appears in a browser's network log.
+        - "G101"
     lll:
       line-length: 100
     govet:
