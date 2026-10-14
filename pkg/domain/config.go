@@ -8,16 +8,18 @@ import (
 // Config is the complete user configuration. Every field has a usable default so
 // that a zero Config is still valid; ApplyDefaults fills in anything unset.
 type Config struct {
-	Hooks      HooksConfig             `json:"hooks"`
-	Sources    map[string]SourceConfig `json:"sources"`
-	Games      map[string]GameSettings `json:"games,omitempty"`
-	ActiveGame string                  `json:"active_game"`
-	UI         UIConfig                `json:"ui"`
-	Advanced   AdvancedConfig          `json:"advanced"`
-	Storage    StorageConfig           `json:"storage"`
-	AutoUpdate AutoUpdateConfig        `json:"auto_update"`
-	Cache      CacheConfig             `json:"cache"`
-	Logging    LoggingConfig           `json:"logging"`
+	Hooks        HooksConfig             `json:"hooks"`
+	Sources      map[string]SourceConfig `json:"sources"`
+	Games        map[string]GameSettings `json:"games,omitempty"`
+	ActiveGame   string                  `json:"active_game"`
+	UI           UIConfig                `json:"ui"`
+	Advanced     AdvancedConfig          `json:"advanced"`
+	Storage      StorageConfig           `json:"storage"`
+	AutoUpdate   AutoUpdateConfig        `json:"auto_update"`
+	Cache        CacheConfig             `json:"cache"`
+	CloudSharing CloudSharingConfig      `json:"cloud_sharing"`
+	Sharing      SharingConfig           `json:"sharing"`
+	Logging      LoggingConfig           `json:"logging"`
 }
 
 // ScriptPermissions is the capability set one hook script runs with. A
@@ -130,6 +132,47 @@ type CacheConfig struct {
 	VerifyHashes bool   `json:"verify_hashes"`
 }
 
+// CloudSharingConfig controls the sharing subsystem.
+type CloudSharingConfig struct {
+	Providers         map[string]map[string]string `json:"providers,omitempty"`
+	DefaultProvider   string                       `json:"default_provider"`
+	FallbackProviders []string                     `json:"fallback_providers,omitempty"`
+	ShareExpiryDays   int                          `json:"share_expiry_days"`
+	AutoInstall       bool                         `json:"auto_install"`
+}
+
+// SharingConfig groups the two ways mods are handed to somebody else.
+//
+// The cloud block is kept for backwards compatibility with configurations that
+// still name it, but a share no longer needs a storage provider: the default
+// path is a direct peer-to-peer transfer, and this config only records the
+// choices a user can still make about it.
+type SharingConfig struct {
+	// P2P holds the transport settings for direct sharing.
+	P2P P2PSharingConfig `json:"p2p"`
+}
+
+// P2PSharingConfig holds the transport settings for direct sharing.
+//
+// Nothing here can turn the data channel off. Mod bytes always travel
+// end-to-end over DTLS; a STUN server is used, when one is configured or by
+// default, only to discover which address the peer is reachable at.
+type P2PSharingConfig struct {
+	// STUNServers are consulted before the built-in default. A STUN server
+	// learns the client's public address and nothing else about the transfer.
+	STUNServers []string `json:"stun_servers,omitempty"`
+	// TURNRelays are relay servers to fall back on when no direct path can be
+	// found. A relay forwards every byte, so this is opt-in and never filled
+	// in by default.
+	TURNRelays []string `json:"turn_relays,omitempty"`
+	// ExpiryDays makes every new share expire after this many days. Zero means
+	// a share is permanent unless the sender says otherwise on the command.
+	ExpiryDays int `json:"expiry_days"`
+	// ChunkSizeKB overrides the data channel chunk size, in kilobytes. Zero
+	// keeps the protocol default.
+	ChunkSizeKB int `json:"chunk_size_kb,omitempty"`
+}
+
 // SourceConfig is the per-source configuration block.
 type SourceConfig struct {
 	Options map[string]string `json:"options,omitempty"`
@@ -190,6 +233,14 @@ func DefaultConfig() Config {
 			MaxSizeGB:    5,
 			MaxAgeDays:   30,
 			VerifyHashes: true,
+		},
+		CloudSharing: CloudSharingConfig{
+			ShareExpiryDays: 30,
+		},
+		Sharing: SharingConfig{
+			// Expiry stays opt-in: a share with no expiry is permanent, which is
+			// what somebody handing a link to a friend expects it to mean.
+			P2P: P2PSharingConfig{},
 		},
 		Hooks: HooksConfig{
 			DefaultTimeout: DurationOf(10 * time.Second),
@@ -261,6 +312,13 @@ func (c *Config) ApplyDefaults() {
 
 	if !c.Cache.VerifyHashes {
 		c.Cache.VerifyHashes = true
+	}
+
+	// A negative expiry would make every generated link dead on arrival, so it
+	// is repaired to the default. Zero is meaningful here and means "never
+	// expires", which is why it is not repaired.
+	if c.CloudSharing.ShareExpiryDays < 0 {
+		c.CloudSharing.ShareExpiryDays = d.CloudSharing.ShareExpiryDays
 	}
 
 	if c.Hooks.DefaultTimeout <= 0 {
@@ -449,6 +507,31 @@ func (c *Config) Clone() *Config {
 	// which is why this one line is the whole of the deep copy here.
 	if c.Logging.Redact != nil {
 		out.Logging.Redact = append([]string(nil), c.Logging.Redact...)
+	}
+
+	if c.CloudSharing.FallbackProviders != nil {
+		out.CloudSharing.FallbackProviders = append(
+			[]string(nil),
+			c.CloudSharing.FallbackProviders...)
+	}
+
+	if c.CloudSharing.Providers != nil {
+		out.CloudSharing.Providers = make(
+			map[string]map[string]string,
+			len(c.CloudSharing.Providers),
+		)
+		for id, opts := range c.CloudSharing.Providers {
+			if opts == nil {
+				continue
+			}
+
+			copied := make(map[string]string, len(opts))
+			for k, v := range opts {
+				copied[k] = v
+			}
+
+			out.CloudSharing.Providers[id] = copied
+		}
 	}
 
 	return &out

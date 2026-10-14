@@ -8,13 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/actions"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/logging"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/cloud"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/p2p"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -274,6 +277,23 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
+	shareStore := storage.NewShareStore(db)
+
+	// The cloud providers sit behind the registry the same way the mod sources
+	// do. Providers register their own factories, so the S3 adapter (and every
+	// one after it) is built from the configuration here and reaches the
+	// orchestrator only through the CloudProvider interface.
+	cloudRegistry := services.NewCloudRegistry()
+	if err := cloud.RegisterConfigured(
+		cloudRegistry,
+		cfg.CloudSharing,
+		*logService.Logger(),
+	); err != nil {
+		// Not fatal: sharing is optional, and a provider that will not build
+		// simply does not appear in the picker.
+		logService.Logger().Warn().Err(err).Msg("cloud providers not configured")
+	}
+
 	// The registry is built before the cache because the cache's downloader is
 	// the registry: a mod's bytes come from whichever source owns it, and every
 	// bundled source both lists and downloads its own mods. Nothing the cache
@@ -398,14 +418,91 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
+	// Actions are registered from the games themselves: a game package is the
+	// only thing that knows what is special about its game, so a new game
+	// becomes supported here without editing this file.
+	actionRegistry := actions.NewRegistry()
+
+	for _, game := range games.All() {
+		if err := actionRegistry.RegisterGame(game); err != nil {
+			_ = joinAll(cleanups)
+
+			return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidArgument,
+				"registering the actions of game %q", game.ID())
+		}
+	}
+
+	// One launcher serves both the action runner and the client's source-link
+	// methods: "open this address in the user's browser" is the same act however
+	// it was asked for, and two instances would mean two places to change the
+	// allowlist or the platform's opener command.
+	urlLauncher := &platform.URLLauncher{Platform: platformName}
+
+	actionRunner, err := actions.NewRunner(actions.RunnerDeps{
+		Registry: actionRegistry,
+		// internal/games satisfies DefinitionLookup as it stands, so the runner
+		// can describe an action belonging to a game the user has not made
+		// active without the runner knowing how games are registered.
+		Definitions: games.Lookup{},
+		Games:       locator,
+		Opener:      urlLauncher,
+		Commands:    actions.NewExecRunner(),
+		// An action runs somebody else's program; its output belongs in the log
+		// next to the rest of the run, not only in the panel that triggered it.
+		Echo:     logging.ActionOutput(),
+		Platform: platformName,
+	})
+	if err != nil {
+		_ = joinAll(cleanups)
+		return nil, err
+	}
+
+	shareService := services.NewShareService(services.ShareServiceDeps{
+		Registry:     cloudRegistry,
+		Store:        shareStore,
+		GameLocator:  locator,
+		ModInstaller: modService,
+		Logger:       *logService.Logger(),
+		Config: &services.ShareConfig{
+			DefaultProvider:   cfg.CloudSharing.DefaultProvider,
+			FallbackProviders: cfg.CloudSharing.FallbackProviders,
+			ShareExpiryDays:   cfg.CloudSharing.ShareExpiryDays,
+			AutoInstall:       cfg.CloudSharing.AutoInstall,
+		},
+		Clock: now,
+	})
+
+	p2pShareService := services.NewP2PShareService(services.P2PShareServiceDeps{
+		GameLocator:  locator,
+		ModInstaller: modService,
+		Logger:       *logService.Logger(),
+		Config:       p2pConfig(cfg),
+		Clock:        now,
+	})
+
+	// Closing the service closes every peer connection and deletes every staged
+	// archive, so it has to run before the mod service and the database go away.
+	// Prepending rather than appending keeps that ordering true however the rest
+	// of the wiring grows.
+	cleanups = append([]func() error{func() error {
+		p2pShareService.Close()
+
+		return nil
+	}}, cleanups...)
+
 	return &Bundle{
 		Deps: ClientDeps{
-			Mods:    modService,
-			Sources: registry,
-			Game:    locator,
-			Cache:   cacheManager,
-			Hooks:   hookExecutor,
-			Config:  store,
+			Mods:         modService,
+			Sources:      registry,
+			Game:         locator,
+			Cache:        cacheManager,
+			Hooks:        hookExecutor,
+			Shares:       shareService,
+			P2PShares:    p2pShareService,
+			Actions:      actionRegistry,
+			ActionRunner: actionRunner,
+			URLs:         urlLauncher,
+			Config:       store,
 			// The same pointer the closures above capture, so a runtime switch
 			// (UseGame) that mutates it is visible to every policy question.
 			ActiveConfig: cfg,
@@ -420,6 +517,53 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		Logging:      logService,
 		Cleanups:     cleanups,
 	}, nil
+}
+
+// p2pConfig builds the transport configuration for peer-to-peer sharing.
+//
+// The STUN servers the user configured are the default, and Google's public
+// server is the last resort. A relay is never added automatically: a TURN server
+// forwards the payload, which is the one thing this feature exists to avoid.
+func p2pConfig(cfg *domain.Config) *services.P2PShareConfig {
+	servers := []string(nil)
+
+	var (
+		expiry    time.Duration
+		chunkSize int
+	)
+
+	if cfg != nil {
+		for _, server := range cfg.Sharing.P2P.STUNServers {
+			if trimmed := strings.TrimSpace(server); trimmed != "" {
+				servers = append(servers, trimmed)
+			}
+		}
+
+		if cfg.Sharing.P2P.ExpiryDays > 0 {
+			expiry = time.Duration(cfg.Sharing.P2P.ExpiryDays) * 24 * time.Hour
+		}
+
+		if cfg.Sharing.P2P.ChunkSizeKB > 0 {
+			chunkSize = cfg.Sharing.P2P.ChunkSizeKB * 1024
+		}
+	}
+
+	servers = append(servers, p2p.DefaultSTUNServers()...)
+
+	return &services.P2PShareConfig{
+		Peer: p2p.Config{
+			STUNServers: servers,
+			ChunkSize:   chunkSize,
+			// pion narrates its own internals at a volume that would bury a
+			// CLI's output — "RTP stream is already closed" is what a
+			// successful teardown looks like from inside the library. The
+			// adapter writes into the one logger this process has, so that
+			// volume lands in the log file and costs nothing until somebody
+			// asks for it by lowering the level.
+			PionLogger: logging.PionLogger(),
+		},
+		DefaultExpiry: expiry,
+	}
 }
 
 // buildLogging returns the log service for this process and its cleanup.
