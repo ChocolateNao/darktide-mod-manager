@@ -16,8 +16,7 @@ import (
 )
 
 // fakeSource is a domain.ModSource whose every behaviour is a func field, so a
-// test can supply exactly the behaviour it cares about and leave the rest nil
-// (the accessors then report a zero value, which is what the registry reads).
+// test supplies only what it cares about; the rest read as zero values.
 type fakeSource struct {
 	search   func(ctx context.Context, q domain.SearchQuery) ([]domain.Mod, error)
 	getMod   func(ctx context.Context, modID string) (*domain.Mod, error)
@@ -336,9 +335,8 @@ func TestRegisterIsIdempotentForTheSameInstance(t *testing.T) {
 		err := r.Register(src)
 		require.NoError(t, err)
 	}
-	// Registering the same object twice happens for real: a plugin whose init
-	// runs twice, or a DI container that rebuilds. Failing there would be
-	// noise, not a useful signal.
+	// Registering the same object twice happens for real: a plugin whose init runs
+	// twice, or a DI container that rebuilds. Failing there would be noise.
 	{
 		err := r.Register(src)
 		assert.NoError(t, err, "re-registering the same instance: %v", err)
@@ -1304,8 +1302,8 @@ func containsString(haystack []string, needle string) bool {
 	return false
 }
 
-// A source the user switched off is deliberately never built, so reporting it as
-// enabled would show a green tick beside a source the manager will not use.
+// TestInfoReportsTheConfigurationRatherThanTheBuild: a source the user switched off
+// is never built, so reporting it as enabled shows a tick beside an unused source.
 func TestInfoReportsTheConfigurationRatherThanTheBuild(t *testing.T) {
 	registerFactory(t, "switchable", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "switchable"}, nil
@@ -1342,17 +1340,15 @@ func TestInfoReportsTheConfigurationRatherThanTheBuild(t *testing.T) {
 		got := fresh.Info("switchable")
 		assert.True(t, got.Enabled, "a source with no configuration block is reported as disabled")
 	}
-	// A source that cannot be produced is not enabled in any sense, whatever the
-	// configuration says, so that the settings screen can show why.
-	// TestInfoForUnresolvableSourceIsStillReturned covers that half.
+	// A source that cannot be produced is not enabled at all; see
+	// TestInfoForUnresolvableSourceIsStillReturned.
 }
 
 // ------------------------------------------------------- stored credentials
 
 // forgettingSource is a fakeSource that can also drop its credential. It is a
-// separate type rather than a field on fakeSource so that "this source can
-// forget" stays a property of the plugin rather than something every test double
-// quietly has.
+// separate type so that "this source can forget" stays a property of the plugin
+// rather than something every test double quietly has.
 type forgettingSource struct {
 	*fakeSource
 	forgotten atomic.Int64
@@ -1361,15 +1357,12 @@ type forgettingSource struct {
 func (f *forgettingSource) ForgetCredentials() { f.forgotten.Add(1) }
 
 // TestInfoReportsAStoredKeyFromTheConfiguration: whether a key is stored is a
-// question about the settings file. Answering it from the source object would
-// report the key of the running process only, so the same installation would
-// show a stored key in the CLI and none in the GUI.
+// question about the settings file, and answering it from the source object would
+// report the running process's key only.
 func TestInfoReportsAStoredKeyFromTheConfiguration(t *testing.T) {
 	withKey := domain.DefaultConfig()
 	withKey.Sources["nexus"] = domain.SourceConfig{Enabled: true, APIKey: "  stored-key  "}
-	// The block is written by whoever saved the key, so it may have been spelled
-	// with a capital letter. Reading has to fold the id or the answer depends on
-	// which surface asked.
+	// Whoever saved the key may have spelled it with a capital, so reading folds it.
 	withKey.Sources["GitHub"] = domain.SourceConfig{Enabled: true, APIKey: "gh-key"}
 
 	blank := domain.DefaultConfig()
@@ -1422,9 +1415,8 @@ func TestForgetCredentialsClearsTheLiveSourceAndTheRecordedState(t *testing.T) {
 		err := r.Register(src)
 		require.NoError(t, err)
 	}
-	// The registry caches the built source for the life of the process, so a
-	// forgotten key has to be dropped from that object too: clearing the file
-	// alone would leave the key in memory until the app was restarted.
+	// The registry caches the built source, so clearing the file alone would leave
+	// the key in memory until restart.
 	{
 		err := r.Authenticate(
 			t.Context(),

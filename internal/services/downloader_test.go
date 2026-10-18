@@ -16,9 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fetchSource is a source that can also download, so it satisfies Downloader the
-// way every bundled source does. The two calls are recorded rather than performed:
-// what these tests are about is the dispatch, not the transfer.
+// fetchSource records downloads and verifies rather than performing them.
 type fetchSource struct {
 	dlErr     error
 	verifyErr error
@@ -45,8 +43,7 @@ func (s *fetchSource) Verify(_ context.Context, mod *domain.Mod, path string) er
 	return s.verifyErr
 }
 
-// plainSource cannot download at all, which is what a metadata-only provider
-// would look like to the cache.
+// plainSource cannot download, as a metadata-only provider would be to the cache.
 type plainSource struct {
 	scriptSource
 }
@@ -71,8 +68,7 @@ func TestRegistryDownloaderDelegatesToTheModsSource(t *testing.T) {
 	local := &fetchSource{scriptSource: scriptSource{id: "local"}}
 	downloader := NewRegistryDownloader(downloaderRegistry(t, github, local))
 
-	// One cache serves every provider, so the download must reach the source that
-	// owns the mod rather than a single pinned one.
+	// One cache serves every provider, so a download must reach the owning source.
 	{
 		_, err := downloader.Download(context.Background(),
 			&domain.Mod{ID: "m", SourceID: "local"}, "/tmp/local.zip")
@@ -178,8 +174,8 @@ func TestRegistryDownloaderNamesASourceThatCannotDownload(t *testing.T) {
 		"error = %v, want SOURCE_UNAVAILABLE",
 		err,
 	)
-	// The message has to name the source: "cannot download" without saying which
-	// one leaves the user looking through every provider they have configured.
+	// The message has to name the source, or the user is left checking every
+	// provider they configured.
 	assert.Contains(
 		t,
 		appErrors.Message(err),
@@ -188,8 +184,7 @@ func TestRegistryDownloaderNamesASourceThatCannotDownload(t *testing.T) {
 		err,
 	)
 
-	// A source that claims no digest has nothing to verify against, so reporting
-	// a failure would reject every mod it lists.
+	// A source that claims no digest has nothing to verify against.
 	{
 		err := downloader.Verify(
 			context.Background(),
@@ -233,8 +228,7 @@ func TestRegistryDownloaderSurvivesNoRegistry(t *testing.T) {
 	mod := &domain.Mod{ID: "m", SourceID: "local"}
 
 	// A nil receiver must answer rather than panic: the cache manager is built
-	// before the registry in one wiring path, and a manager that cannot start is
-	// worse than one that reports a missing plugin.
+	// before the registry on one wiring path.
 	{
 		_, err := downloader.Download(
 			context.Background(),
@@ -290,8 +284,7 @@ func TestRegistryDownloaderHonoursACancelledContext(t *testing.T) {
 			appErrors.ErrCodeOperationCanceled,
 		), "error = %v, want OPERATION_CANCELED", err)
 	}
-	// The registry builds sources without a context because that work is local,
-	// so the cancellation has to be checked here or it would be dropped entirely.
+	// The registry builds sources without a context, so cancellation is checked here.
 	assert.Empty(
 		t,
 		source.downloads,
@@ -327,8 +320,7 @@ func TestRegistryDownloaderToleratesANilContext(t *testing.T) {
 }
 
 // TestRegistryDownloaderFetchesThroughTheRealCache is the reason this type
-// exists: the cache manager holds one downloader, and without this adapter every
-// install stops before the first byte with "no downloader is configured".
+// exists: without it every install stops before the first byte.
 func TestRegistryDownloaderFetchesThroughTheRealCache(t *testing.T) {
 	source := &fetchSource{scriptSource: scriptSource{id: "local"}}
 
@@ -345,9 +337,8 @@ func TestRegistryDownloaderFetchesThroughTheRealCache(t *testing.T) {
 	})
 	require.NoError(t, err, "new cache manager")
 
-	// The scripted source refuses to write a file, so the transfer must fail at
-	// the validation step rather than at the missing-downloader check. That is
-	// the distinction this test exists to pin.
+	// The scripted source writes no file, so the transfer must fail at the
+	// validation step rather than at the missing-downloader check.
 	mod := &domain.Mod{
 		ID: "better_ui", Version: "1.2.0", SourceID: "local",
 		SourceData: map[string]any{"local_path": filepath.Join(t.TempDir(), "better_ui")},

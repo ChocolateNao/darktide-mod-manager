@@ -50,10 +50,8 @@ func newConfigShowCommand(s *session) *cobra.Command {
 			}
 
 			fmt.Fprintf(s.env.Out, "# %s\n", path)
-			// Marshalling the decoded configuration is not the same as printing
-			// the file, and that is deliberate: printing the file would show the
-			// user's hand-written layout, and this command exists to show what
-			// the manager actually believes, defaults and all.
+			// Marshalling the decoded configuration is not printing the file, and
+			// that is deliberate: this shows what the manager believes, defaults and all.
 			return writeJSON(s.env.Out, cfg)
 		},
 	}
@@ -109,12 +107,8 @@ func newConfigSetCommand(s *session) *cobra.Command {
 			return err
 		},
 	}
-	// The value is whatever the user typed, including something that looks like
-	// a flag. Without this, `dmm config set cache.max_size_gb -1` is refused by
-	// the flag parser with "unknown shorthand flag: '1' in -1", which tells a
-	// person nothing about the setting they were trying to change. Stopping flag
-	// parsing at the first positional argument means everything after the key is
-	// the value, and the setting's own range check produces the real answer.
+	// The value is whatever the user typed, even something that looks like a flag:
+	// `dmm config set cache.max_size_gb -1` would otherwise be refused as an unknown shorthand.
 	command.Flags().SetInterspersed(false)
 
 	return command

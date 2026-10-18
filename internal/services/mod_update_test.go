@@ -232,8 +232,7 @@ func TestApplyUpdateWithZeroRetentionRemovesTheOldPayload(t *testing.T) {
 		cfg.Storage.BackupRetentionDays = 0
 		o.config = newStaticConfig(&cfg)
 	})
-	// newHarness only substitutes the storage path for a nil config, so the
-	// service must be pointed at the temp storage explicitly.
+	// newHarness only substitutes the storage path for a nil config.
 	svc, err := NewModService(ModServiceDeps{
 		Sources: h.sources, Cache: h.cache, Index: h.index, Hooks: h.hooks,
 		Locator: h.locator, Deployer: h.deployer, Extractor: storage.NewArchiveExtractor(),
@@ -387,9 +386,8 @@ func TestApplyUpdateFailsWithoutTouchingTheOldPayload(t *testing.T) {
 }
 
 func TestApplyUpdateRejectsASecondConcurrentUpdate(t *testing.T) {
-	// The first update is held inside its own PreInstall hook, which is well
-	// after beginUpdate registered it, so the second call is unambiguously
-	// concurrent rather than merely unlucky.
+	// The first update is held inside its own PreInstall hook, well after
+	// beginUpdate registered it, so the second call is unambiguously concurrent.
 	h := updateScenario(t)
 	release := make(chan struct{})
 	entered := make(chan struct{})
@@ -579,8 +577,7 @@ func TestKeepOldVersionsFollowsRetention(t *testing.T) {
 }
 
 func TestCancelUpdateStopsAnUpdateInFlight(t *testing.T) {
-	// The hooks block, which is where an update spends most of its wall clock.
-	// CancelUpdate must abort it rather than waiting for the release.
+	// The hooks block, where an update spends most of its wall clock.
 	h := updateScenario(t)
 	release := make(chan struct{})
 	h.hooks.block = release
@@ -625,8 +622,7 @@ func TestCancelUpdateStopsAnUpdateInFlight(t *testing.T) {
 	}
 
 	close(release)
-	// The old payload and record must be intact: a cancelled update changes
-	// nothing.
+	// A cancelled update changes nothing.
 	{
 		_, err := os.Stat(h.payloadPath("better_ui", "1.0.0"))
 		assert.NoError(t, err, "the installed payload must survive a cancelled update: %v", err)
@@ -747,10 +743,6 @@ func TestUpdateContextWithoutARegisteredRun(t *testing.T) {
 
 	assert.Nil(t, got.Err(), "a context nobody registered should be untouched: %v", got.Err())
 }
-
-// ---------------------------------------------------------------------------
-// small helpers, tested directly
-// ---------------------------------------------------------------------------
 
 func TestTopLevelNames(t *testing.T) {
 	files := []domain.ModFile{
@@ -1118,9 +1110,9 @@ func TestDownloadLocationAcceptsTheUsualSpellings(t *testing.T) {
 	}
 }
 
-// A source that publishes a URL is cached by that URL; a source with no URL at
-// all — the bundled local source — is cached by where its payload lives, or the
-// mod service cannot derive a cache key for its mods and cannot install them.
+// A source that publishes a URL is cached by that URL; the bundled local source,
+// which has none, is cached by where its payload lives — or the mod service cannot
+// derive a cache key for its mods and cannot install them.
 func TestDownloadLocationPrefersAURLOverTheLocalPath(t *testing.T) {
 	mod := &domain.Mod{SourceData: map[string]any{
 		"download_url": "https://example.invalid/better_ui.zip",

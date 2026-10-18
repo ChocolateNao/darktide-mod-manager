@@ -7,38 +7,29 @@ import (
 )
 
 // P2PProtocolVersion is the version stamped into every offer and every frame
-// header. It is a single number rather than a semver range because the two ends
-// of a share are, by construction, two copies of the same manager: there is no
-// registry of older clients to negotiate with, only a decision about whether to
-// attempt the transfer at all.
+// header. It is a number rather than a semver range because both ends run the
+// same manager: there is nothing to negotiate with, only a decision to attempt.
 const P2PProtocolVersion = 1
 
-// P2PSourceFallback is how a recipient gets a mod without taking the file from
-// the peer. It is part of the offer rather than an afterthought because the
-// offer is the only thing the recipient can read before deciding whether to
-// trust the sender, and "fetch it yourself from Nexus" has to be offered at the
-// same moment as "trust this stranger's bytes".
+// P2PSourceFallback is how a recipient gets a mod without taking the file from the
+// peer. It rides in the offer, the only thing a recipient can read before deciding
+// whether to trust the sender.
 const (
 	// P2PSourceFallbackNone means the sender found no upstream URL for a mod.
 	P2PSourceFallbackNone = ""
 	// P2PSourceFallbackDownload means DownloadURL can be fetched directly.
 	P2PSourceFallbackDownload = "download"
-	// P2PSourceFallbackBrowse means SourceURL has to be visited by hand
-	// because the file behind it needs an account or an API key the manager
-	// does not hold. Nexus mods land here.
+	// P2PSourceFallbackBrowse means SourceURL must be visited by hand: the file
+	// needs an account or an API key the manager does not hold.
 	P2PSourceFallbackBrowse = "browse"
-	// P2PSourceFallbackUpdate points at the newest release of the same mod,
-	// which is what makes "get the updated version yourself" a single click
-	// for GitHub-sourced mods.
+	// P2PSourceFallbackUpdate points at the newest release of the same mod, which
+	// is what makes "get the updated version yourself" a single click.
 	P2PSourceFallbackUpdate = "update"
 )
 
-// P2PShareOffer is everything the sender is willing to tell the recipient
-// before a single byte of mod data moves.
-//
-// It travels inside the sealed link payload, so the recipient learns it by
-// decrypting the link they were sent — there is no server-side copy and no way
-// to read an offer out of a chat log.
+// P2PShareOffer is everything the sender will tell the recipient before a single
+// byte of mod data moves. It travels inside the sealed link payload, so there is
+// no server-side copy and no way to read an offer out of a chat log.
 type P2PShareOffer struct {
 	CreatedAt   time.Time       `json:"c"`
 	ExpiresAt   *time.Time      `json:"e,omitempty"`
@@ -53,10 +44,8 @@ type P2PShareOffer struct {
 
 // P2PSharedFile is one archive in an offer.
 //
-// Size and HashSHA256 are the same numbers the transfer will be checked
-// against, published up front rather than announced mid-stream, so a recipient
-// can refuse a transfer of something far larger than they expected without
-// having connected first.
+// Size and HashSHA256 are the numbers the transfer is checked against, published
+// up front so a recipient can refuse an oversized share without connecting.
 type P2PSharedFile struct {
 	FileID     string `json:"i"`
 	Name       string `json:"n"`
@@ -70,16 +59,13 @@ type P2PSharedFile struct {
 type ModSourceLink struct {
 	// ModID is the mod this fallback belongs to.
 	ModID string `json:"m"`
-	// SourceID is the manager source plugin the link came from, e.g. "nexus"
-	// or "github", so the recipient can label it and, where the credentials
-	// exist, import from it directly.
+	// SourceID is the manager source plugin the link came from, so the
+	// recipient can label it and, where credentials exist, import from it.
 	SourceID string `json:"s,omitempty"`
 	// SourceURL is the mod's page on the source.
 	SourceURL string `json:"p,omitempty"`
-	// DownloadURL is a direct file URL when the source has one. Sources that
-	// require authentication, such as Nexus, leave it empty: handing the
-	// recipient a URL they cannot fetch is worse than admitting there is not
-	// one.
+	// DownloadURL is a direct file URL when the source has one. Authenticated
+	// sources leave it empty: an unfetchable URL is worse than none.
 	DownloadURL string `json:"d,omitempty"`
 	// UpdateURL points at the newest version, which lets a recipient replace
 	// an installed mod rather than reinstall the exact version being shared.
@@ -89,19 +75,16 @@ type ModSourceLink struct {
 	Fallback string `json:"f,omitempty"`
 }
 
-// HasURL reports whether any upstream link is worth offering. A mod with none
-// of these has no fallback, and the UI says so rather than showing dead
-// buttons.
+// HasURL reports whether any upstream link is worth offering; a mod with none has no
+// fallback, so the UI says so instead of showing dead buttons.
 func (l ModSourceLink) HasURL() bool {
 	return l.DownloadURL != "" || l.SourceURL != "" || l.UpdateURL != ""
 }
 
-// P2PSourceLinkForMod builds the fallback descriptor for a mod, choosing the
-// most useful kind of link the mod's stored URLs allow.
-//
-// The order matters: a direct download beats a page to visit, and the update
-// link is only preferred when there is no direct download, because "fetch this
-// exact file" is more precise than "go and find the newest one yourself".
+// P2PSourceLinkForMod builds the fallback descriptor for a mod, choosing the most
+// useful link its stored URLs allow. A direct download beats a page to visit, and
+// the update link is only preferred without one: "fetch this exact file" is more
+// precise than "go and find the newest one yourself".
 func P2PSourceLinkForMod(mod Mod) ModSourceLink {
 	link := ModSourceLink{
 		ModID:       mod.ID,
@@ -125,9 +108,8 @@ func P2PSourceLinkForMod(mod Mod) ModSourceLink {
 	return link
 }
 
-// P2PLinkKind distinguishes the two halves of the handshake. The share is two
-// links: the sender publishes an offer, the recipient answers it, and each link
-// is sealed under the same secret.
+// P2PLinkKind distinguishes the two halves of the handshake: the sender publishes
+// an offer, the recipient answers it, and each link is sealed under the same secret.
 type P2PLinkKind string
 
 const (
@@ -139,9 +121,8 @@ const (
 
 // P2PSharePayload is the plaintext that a link seals.
 //
-// One struct serves both kinds so that the codec has a single shape to encode.
-// Answer payloads leave Offer empty; that costs a couple of JSON bytes against
-// zstd and saves a parallel set of encode and decode paths to keep in step.
+// One struct serves both kinds so the codec has a single shape; answer payloads
+// leave Offer empty, a couple of JSON bytes against zstd.
 type P2PSharePayload struct {
 	CreatedAt time.Time      `json:"c"`
 	Offer     *P2PShareOffer `json:"o,omitempty"`
@@ -152,12 +133,9 @@ type P2PSharePayload struct {
 	Version   int            `json:"v"`
 }
 
-// P2PShareLink is a decoded offer link.
-//
-// It is what the recipient holds once they have pasted in the link and the seal
-// has been opened. Secret is included because the handshake needs it and because
-// dropping it here would mean threading a second value through every caller
-// that only wants the offer.
+// P2PShareLink is a decoded offer link, what the recipient holds once the seal is
+// opened. Secret is included because the handshake needs it, and dropping it would
+// mean threading a second value through every caller that only wants the offer.
 type P2PShareLink struct {
 	CreatedAt time.Time     `json:"created_at"`
 	Link      string        `json:"link"`
@@ -179,14 +157,9 @@ func (l *P2PShareLink) ExpiresAt() *time.Time {
 
 // IsExpired reports whether the offer may no longer be accepted.
 //
-// The check lives on the link rather than only in the service because a
-// recipient reading an expired link has to be told so, and a service-only check
-// would leave the frontend guessing.
-//
-// The deadline itself is excluded: "expires at T" means T is the first instant
-// at which the share is gone. Treating T as still valid would make the last
-// moment of a share depend on clock skew between two machines, which is exactly
-// the sort of ambiguity a time-limited link exists to remove.
+// The check lives on the link so a recipient reading an expired link is told so
+// rather than left to guess. The deadline itself is excluded: treating T as still
+// valid would make a share's last moment depend on clock skew between two machines.
 func (l *P2PShareLink) IsExpired(now time.Time) bool {
 	if l == nil {
 		return false
@@ -213,10 +186,8 @@ type P2PAnswerLink struct {
 
 // P2PSharePreview is what a recipient is shown before deciding.
 //
-// It deliberately carries the upstream fallbacks next to the file list: "18 MiB
-// over the wire" and "or grab these three mods from Nexus instead" are the same
-// decision, and separating them into two screens is how people end up accepting
-// a transfer they did not want.
+// The upstream fallbacks sit next to the file list on purpose: "18 MiB over the
+// wire" and "or grab these three from Nexus instead" are one decision.
 type P2PSharePreview struct {
 	CreatedAt   time.Time       `json:"created_at"`
 	ExpiresAt   *time.Time      `json:"expires_at,omitempty"`
@@ -238,19 +209,16 @@ type P2PCreateOptions struct {
 	ChunkSize   int
 }
 
-// P2PShareState is the lifecycle of one share, from either side.
-//
-// The frontend renders this verbatim and the CLI maps it to a word, so adding a
-// state here is a visible change to every surface and should be deliberate.
+// P2PShareState is the lifecycle of one share, from either side. The frontend renders
+// it verbatim and the CLI maps it to a word, so a new state is a visible change.
 type P2PShareState string
 
 const (
 	// P2PShareStateCreated means the archives are packed and the link exists,
 	// but nobody has accepted it.
 	P2PShareStateCreated P2PShareState = "created"
-	// P2PShareStateOffered means the recipient has read the offer and is
-	// deciding. This is where declining in favour of the source links
-	// happens.
+	// P2PShareStateOffered means the recipient has read the offer and is deciding,
+	// which is where declining in favour of the source links happens.
 	P2PShareStateOffered P2PShareState = "offered"
 	// P2PShareStateConnecting means an answer exists and ICE is running.
 	P2PShareStateConnecting P2PShareState = "connecting"
@@ -283,11 +251,8 @@ func (s P2PShareState) Terminal() bool {
 	}
 }
 
-// P2PShareSession is the manager's view of one share, at either end.
-//
-// It exists so the frontend and the CLI can render progress without subscribing
-// to per-byte events: the manager updates this record and emits a change, and
-// both surfaces redraw from it.
+// P2PShareSession is the manager's view of one share, at either end. The frontend and
+// the CLI render progress from this record instead of subscribing to per-byte events.
 type P2PShareSession struct {
 	UpdatedAt        time.Time        `json:"updated_at"`
 	CreatedAt        time.Time        `json:"created_at"`
@@ -304,9 +269,8 @@ type P2PShareSession struct {
 	TransferredBytes int64            `json:"transferred_bytes"`
 }
 
-// Progress returns completed bytes as a fraction of the total, bounded to
-// [0,1]. A share of zero bytes reports 1: there is nothing left to send, and
-// reporting 0 would leave a progress bar stuck at the start forever.
+// Progress returns completed bytes as a fraction of the total, bounded to [0,1]. A
+// zero-byte share reports 1, or the progress bar would sit at the start forever.
 func (s *P2PShareSession) Progress() float64 {
 	if s == nil || s.TotalSize <= 0 {
 		return 1
@@ -344,10 +308,9 @@ type P2PTransferProgress struct {
 
 // ComputeSHA256Hex returns the lowercase hex SHA-256 of data.
 //
-// It lives in the domain package because the hash is part of the share contract
-// — it appears in the offer, in every frame header, and in what the recipient
-// prints on mismatch — and three layers having to agree on the encoding of a
-// byte slice is three chances to disagree.
+// It lives here because the hash is part of the share contract — offer, frame header,
+// and the mismatch message — and three layers encoding a byte slice three ways is
+// three chances to disagree.
 func ComputeSHA256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 

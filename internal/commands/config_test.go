@@ -204,9 +204,8 @@ func TestConfigKeysListsEverySettingAndTheSourcePatterns(t *testing.T) {
 	require.NotNil(t, keys, "ConfigKeys returned nil")
 
 	joined := strings.Join(keys, " ")
-	// The three source patterns are listed by name rather than enumerated per
-	// source: the set of sources is the configuration's business, and a key list
-	// that grew one entry per source would change whenever a source did.
+	// The patterns are listed by name rather than enumerated per source: the set of
+	// sources is the configuration's business.
 	for _, want := range []string{
 		"cache.max_size_gb", "game.path",
 		"sources.<id>.enabled", "sources.<id>.api_key", "sources.<id>.paths",

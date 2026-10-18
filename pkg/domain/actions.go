@@ -7,28 +7,21 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// ActionIDSeparator is what joins a game id to an action's own name.
-//
-// The separator is deliberate rather than incidental: an action id is a
-// capability addressed by string over three surfaces (the API, the Wails
-// bindings, the command line), and the game prefix is what lets any of them
-// answer "which actions does this game have?" without a registry lookup, while
-// still refusing an action on a game that did not define it.
+// ActionIDSeparator is what joins a game id to an action's own name. The prefix is
+// deliberate: it lets any of the three surfaces that speak action ids answer "which
+// actions does this game have?" without a registry lookup.
 const ActionIDSeparator = ":"
 
-// ActionID identifies one game-specific action, e.g. "darktide:validate_loadorder".
-//
-// The type is a string rather than a struct because the id travels as a string
-// through JSON-RPC (the frontend), argv (the CLI) and the database-free
-// registry. The parsing helpers below are the only place its shape is decided.
+// ActionID identifies one game-specific action, e.g. "darktide:validate_loadorder". It
+// is a string because the id travels as one through JSON-RPC, argv, and the registry;
+// the helpers below are the only place its shape is decided.
 type ActionID string
 
 // String returns the id as a plain string.
 func (a ActionID) String() string { return string(a) }
 
-// Game returns the game id prefix, or "" when the id carries no separator at
-// all. Callers that need the prefix to be trustworthy should use Validate,
-// which rejects a malformed id rather than answering for one.
+// Game returns the game id prefix, or "" when the id carries no separator. Callers
+// needing a trustworthy prefix should use Validate, which rejects malformed ids.
 func (a ActionID) Game() string {
 	prefix, _, ok := strings.Cut(strings.TrimSpace(string(a)), ActionIDSeparator)
 	if !ok {
@@ -48,12 +41,9 @@ func (a ActionID) Suffix() string {
 	return suffix
 }
 
-// Validate reports whether the id is a well-formed action id for gameID.
-//
-// It rejects anything that is not exactly "<gameID>:<name>" with a non-empty
-// name on both sides. The check is strict rather than a prefix test so that
-// "darktide:delete:everything" cannot be a valid id for the game
-// "darktide:delete".
+// Validate reports whether the id is exactly "<gameID>:<name>" with a non-empty name on
+// both sides. Strict rather than a prefix test, so "darktide:delete:everything" cannot
+// be a valid id for the game "darktide:delete".
 func (a ActionID) Validate(gameID string) error {
 	game := strings.TrimSpace(gameID)
 	whole := strings.TrimSpace(string(a))
@@ -98,11 +88,8 @@ func NewActionID(gameID, name string) (ActionID, error) {
 
 // ActionOptionType is the shape of an action option's value.
 //
-// The four kinds are the ones a frontend can render and a command line can
-// parse without the manager knowing what the option means: a free-text field, a
-// checkbox, a number and a fixed choice list. "path" is a string with a
-// different prompt, because a file the user picks is not free text even though
-// it arrives as one.
+// The four kinds are those a frontend can render and a command line can parse without
+// the manager knowing what the option means: text, checkbox, number, choice.
 type ActionOptionType string
 
 const (
@@ -124,12 +111,9 @@ func (t ActionOptionType) IsValid() bool {
 	}
 }
 
-// ActionOption describes one argument an action takes.
-//
-// Options are part of the action's code-defined description rather than
-// something the caller supplies: a frontend renders the form from them, the CLI
-// parses flags from them, and the runner coerces the values before the handler
-// sees them. Defining them once is what keeps the three surfaces from drifting.
+// ActionOption describes one argument an action takes. Options belong to the action's
+// definition rather than to the caller: a frontend renders the form from them, the CLI
+// parses flags from them, and the runner coerces them.
 type ActionOption struct {
 	Default     any
 	Name        string
@@ -158,10 +142,7 @@ func (o ActionOption) Validate() error {
 			"action option %q is a select with no choices", o.Name)
 	}
 
-	// A required option is not required to have a default: the whole point of
-	// one is that the caller must supply a value nobody could guess. What is
-	// refused is a default on a required option, which would make "required"
-	// mean nothing — the caller could always fall through to it.
+	// A default on a required option would make "required" mean nothing.
 
 	if o.Required && o.Default != nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -181,11 +162,8 @@ func (o ActionOption) Validate() error {
 	return nil
 }
 
-// ActionPlatform restricts an action to the platforms it makes sense on.
-//
-// It is a separate type from Platform because the two answer different
-// questions: Platform is where the process is, ActionPlatform is where the
-// action may run, and an action with no restriction must be expressible without
+// ActionPlatform restricts an action to the platforms it makes sense on. It is separate
+// from Platform because an action with no restriction must be expressible without
 // naming a platform.
 type ActionPlatform string
 
@@ -196,9 +174,8 @@ const (
 	ActionPlatformDarwin    ActionPlatform = "darwin"
 )
 
-// ActionPlatformFor converts a runtime platform into the matching action
-// restriction. A platform without an action equivalent — the BSDs, for now —
-// maps to universal, which is the honest answer: nothing in this manager is
+// ActionPlatformFor converts a runtime platform into the matching action restriction. A
+// platform with no equivalent (the BSDs) maps to universal: nothing here is
 // Windows-only by virtue of running on FreeBSD.
 func ActionPlatformFor(p Platform) ActionPlatform {
 	return ActionPlatform(p)
@@ -215,10 +192,8 @@ func (p ActionPlatform) IsValid() bool {
 	}
 }
 
-// Normalize returns the restriction itself when it is valid and universal
-// otherwise. An unrecognised restriction is not an error at read time: a
-// definition written by a newer manager should still list its actions rather
-// than making them all disappear.
+// Normalize returns the restriction when valid and universal otherwise. An unrecognised
+// restriction is not an error at read time, or actions from a newer manager disappear.
 func (p ActionPlatform) Normalize() ActionPlatform {
 	if p.IsValid() {
 		return p
@@ -227,10 +202,8 @@ func (p ActionPlatform) Normalize() ActionPlatform {
 	return ActionPlatformUniversal
 }
 
-// Matches reports whether the action may run on target.
-//
-// An empty restriction means universal, which is what makes an action
-// definition that simply omits the field do the right thing.
+// Matches reports whether the action may run on target. An empty restriction means
+// universal, so a definition that omits the field does the right thing.
 func (p ActionPlatform) Matches(target Platform) bool {
 	switch p.Normalize() {
 	case ActionPlatformUniversal:
@@ -240,21 +213,16 @@ func (p ActionPlatform) Matches(target Platform) bool {
 	}
 }
 
-// ActionLogger is the slice of logging a handler needs.
-//
-// It is the same one-method shape as api.Logger, declared here so pkg/domain
-// does not have to import pkg/api. A handler gets this rather than a *zerolog.Logger
-// because a handler's output belongs to whoever ran it: the CLI wants it on
-// stdout, the frontend wants it in a result field, and a test wants it captured.
+// ActionLogger is the slice of logging a handler needs — the same shape as api.Logger,
+// redeclared so pkg/domain need not import pkg/api. A handler gets this rather than a
+// *zerolog.Logger because its output belongs to whoever ran it.
 type ActionLogger interface {
 	Printf(format string, args ...any)
 }
 
-// ActionOpener lets a handler ask the operating system to open a folder or a
-// URL.
-//
-// It is injected instead of imported so that a handler stays testable without
-// opening anything on the developer's desktop, and so the decision about which
+// ActionOpener lets a handler ask the operating system to open a folder or a URL. It is
+// injected rather than imported so a handler stays testable without opening anything on
+// the developer's desktop, and so the decision about which
 // schemes may be opened lives in one place — the platform package — rather than
 // being repeated by every handler.
 type ActionOpener interface {
@@ -315,12 +283,13 @@ func (a ActionContext) Logf(format string, args ...any) {
 
 // GameAction is a code-defined action specific to one game.
 //
-// Actions are declared in Go rather than in configuration on purpose: a handler
-// is a function, and a configuration file that named one would be a promise the
-// manager cannot keep. What the configuration *can* hold is which actions are
-// offered; what the code holds is what they do.
+// Actions live in Go, not configuration: a handler is a function, so a config
+// could only name it, not supply it. Configuration chooses which are offered.
 type GameAction struct {
-	Handler      GameActionHandler
+	// `json:"-"` because `encoding/json` refuses a func type outright, and an
+	// action list crosses the Wails bridge — an untagged Handler took the app
+	// down. Behaviour is reached via ExecuteGameAction by ID.
+	Handler      GameActionHandler `json:"-"`
 	Script       *ActionScript
 	ID           ActionID
 	GameID       string
@@ -456,9 +425,8 @@ func FormatActionArg(name string) string {
 				out.WriteByte('-')
 			}
 		default:
-			// A name that is not a plain identifier has no sensible flag form;
-			// dropping the character keeps the CLI usable and the definition
-			// registrable rather than failing at parse time.
+			// A non-identifier character has no sensible flag form; dropping it
+			// keeps the CLI usable rather than failing at parse time.
 		}
 	}
 

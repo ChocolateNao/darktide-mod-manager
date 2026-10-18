@@ -22,17 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// Fakes
-// ---------------------------------------------------------------------------
+// Fakes.
 
-// fakeProvider is a CloudProvider that records calls and fails on demand.
-// It is the seam the whole orchestrator is designed around: every behaviour
-// below is exercised without a network in sight.
-// content maps a file id to the bytes the provider "holds" for it. Download
-// writes those bytes out, so the integrity check has something real to hash —
-// a provider that writes nothing would make every hash mismatch, and the test
-// could not tell a working check from a broken one.
+// fakeProvider is a CloudProvider that records calls and fails on demand. Its
+// content map holds the bytes it was given, so Download writes something real for
+// the integrity check to hash: a provider writing nothing makes every hash fail
+// and the test cannot tell a working check from a broken one.
 type fakeProvider struct {
 	link        domain.ShareLink
 	resolveErr  error
@@ -80,9 +75,7 @@ func (p *fakeProvider) Upload(
 
 	p.uploads = append(p.uploads, files)
 
-	// A real provider keeps the bytes it was handed, so the download on the far
-	// side gets the archive the sharer packed rather than a re-fabricated one.
-	// Reading them here is what makes the happy path's hash check honest.
+	// Reading the bytes here is what makes the happy path's hash check honest.
 	for _, f := range files {
 		if f.Source == "" {
 			continue
@@ -179,9 +172,8 @@ func (p *fakeProvider) uploadCount() int {
 	return len(p.uploads)
 }
 
-// refNames returns the ids Download was asked for, in order. A share that
-// packs transfers one archive per mod, so this is also the assertion that a mod
-// went up and came back as a single object.
+// refNames returns the ids Download was asked for, in order. A share packs one
+// archive per mod, so this is also the assertion that a mod went up as one object.
 func (p *fakeProvider) refNames() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -195,8 +187,7 @@ func (p *fakeProvider) refNames() []string {
 	return names
 }
 
-// tamper swaps what the provider will hand back for a file, standing in for a
-// truncated or substituted upload on the way down.
+// tamper swaps what the provider hands back for a file, as a truncated upload would.
 func tamper(t *testing.T, provider *fakeProvider, id string) {
 	t.Helper()
 
@@ -238,8 +229,7 @@ func (i *recordingInstaller) InstallArchiveFromShare(
 	return out, nil
 }
 
-// archiveSpy inspects each archive while the install still holds it, and hands
-// back a mod stamped with where it came from.
+// archiveSpy inspects each archive while the install still holds it.
 type archiveSpy struct {
 	onArchive func(string)
 }
@@ -435,8 +425,7 @@ func (i *stubInstaller) Install(
 }
 
 // InstallArchiveFromShare records the archive it was handed instead of placing
-// anything. The orchestrator's job is to get a verified archive to this seam;
-// what the installer does with it is covered by the mod service's own tests.
+// anything. The orchestrator's job is to get a verified archive to this seam.
 func (i *stubInstaller) InstallArchiveFromShare(
 	_ context.Context,
 	mod *domain.Mod,
@@ -458,13 +447,10 @@ func (i *stubInstaller) InstallArchiveFromShare(
 	return out, nil
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// Helpers.
 
-// shareClock is the instant every shareServiceFor-built service reports. It is
-// pinned so expiry assertions can be relative to it rather than to the wall
-// clock, which would drift as the test run crosses a day boundary.
+// shareClock is the instant every shareServiceFor-built service reports, pinned so
+// expiry assertions stay relative instead of drifting with the wall clock.
 var shareClock = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func shareServiceFor(t *testing.T, provider domain.CloudProvider, store ShareStore) *ShareService {
@@ -496,9 +482,8 @@ func shareServiceWith(
 	})
 }
 
-// testMods returns one mod with real files on disk. A share packs what it finds,
-// so a fixture without a LocalPath is refused rather than silently producing an
-// empty archive.
+// testMods returns one mod with real files on disk: a share refuses a fixture
+// without a LocalPath rather than silently packing an empty archive.
 func testMods(t *testing.T, gameID string) []domain.Mod {
 	return []domain.Mod{{
 		ID:        "mod-a",
@@ -509,9 +494,7 @@ func testMods(t *testing.T, gameID string) []domain.Mod {
 	}}
 }
 
-// ---------------------------------------------------------------------------
-// CreateShare
-// ---------------------------------------------------------------------------
+// CreateShare.
 
 func TestCreateShareUploadsAndBuildsLink(t *testing.T) {
 	provider := &fakeProvider{id: "s3"}
@@ -537,8 +520,8 @@ func TestCreateShareUploadsAndBuildsLink(t *testing.T) {
 }
 
 func TestCreateShareStampsGameIDFromActiveGame(t *testing.T) {
-	// Mods with an empty GameID must not produce a blank share: the game comes
-	// from the active game, and a share without one cannot be resolved.
+	// An empty GameID must not produce a blank share: the game comes from the
+	// active one, and a share without a game cannot be resolved.
 	provider := &fakeProvider{id: "s3"}
 	store := newMemShareStore()
 
@@ -563,8 +546,8 @@ func TestCreateShareRefusesModsFromAnotherGame(t *testing.T) {
 	_, err := svc.CreateShare(context.Background(), testMods(t, "darktide"), []string{"s3"})
 	require.NoError(t, err)
 
-	// A mix of games is the real hazard: the game id stamped on the record is
-	// the first mod's, so the other mod's files land in the wrong place.
+	// The real hazard is a mix: the record takes the first mod's game id, so the
+	// other mod's files would land in the wrong place.
 	mixed := []domain.Mod{
 		{ID: "a", Name: "A", Version: "1", GameID: "darktide"},
 		{ID: "b", Name: "B", Version: "1", GameID: "other"},
@@ -589,8 +572,7 @@ func TestCreateShareUnknownProviderIsRejected(t *testing.T) {
 	_, err := svc.CreateShare(context.Background(), testMods(t, "darktide"), []string{"gdrive"})
 	require.Error(t, err)
 
-	// The unknown provider is one of possibly several, so it is reported
-	// inside the aggregate rather than as the sole failure.
+	// One bad provider of several is reported inside the aggregate.
 	assert.Contains(t, err.Error(), "gdrive")
 }
 
@@ -622,8 +604,7 @@ func TestCreateShareMultiProviderFallback(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// The link is the carrier form the orchestrator encodes, and it names the
-	// provider that actually took the upload.
+	// The carrier link names the provider that actually took the upload.
 	assert.Contains(t, result.Primary.URL, domain.ShareLinkFormat("dropbox"))
 	assert.Equal(t, "dropbox", result.Primary.ProviderID)
 	assert.Equal(t, 0, broken.uploadCount(), "the failed provider must not be in the result")
@@ -660,12 +641,9 @@ func TestCreateShareAppliesExpiryFromConfig(t *testing.T) {
 	assert.True(t, result.Primary.ExpiresAt.After(shareClock))
 }
 
-// ---------------------------------------------------------------------------
-// ResolveShare
-// ---------------------------------------------------------------------------
+// ResolveShare.
 
-// shareLinkFor builds a link whose URL carries a payload for mods, the way the
-// real CreateShare does.
+// shareLinkFor builds a link whose URL carries a payload for mods, as CreateShare does.
 func shareLinkFor(t *testing.T, gameID string) domain.ShareLink {
 	t.Helper()
 
@@ -712,8 +690,8 @@ func TestResolveSharePreviewsMods(t *testing.T) {
 }
 
 func TestResolveShareRejectsUnregisteredGame(t *testing.T) {
-	// The guard that matters most: a Darktide share must never resolve into
-	// another game's storage.
+	// The guard that matters most: a share must never resolve into another game's
+	// storage.
 	provider := &fakeProvider{
 		id:   "s3",
 		refs: []domain.FileReference{{ID: "a.zip", Size: 10}},
@@ -762,17 +740,11 @@ func TestResolveShareRejectsMalformedLink(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrShareInvalid)
 }
 
-// ---------------------------------------------------------------------------
-// InstallShare
-// ---------------------------------------------------------------------------
+// InstallShare.
 
-// modOnDisk writes a mod with one file, shares it, and returns the link a
-// recipient would be handed for it.
-//
-// The mod is packed by the real packer, so the hash in the payload is the
-// archive's and the fake provider stores the archive bytes Upload read off
-// disk. The round trip is therefore genuine: what is verified on install is the
-// same set of bytes that was packed.
+// modOnDisk writes a mod with one file, shares it, and returns the recipient's
+// link. The real packer builds the archive and the fake provider stores those bytes,
+// so the round trip is genuine rather than a fixture echoing itself.
 func modOnDisk(t *testing.T, provider *fakeProvider) domain.ShareLink {
 	t.Helper()
 
@@ -820,13 +792,12 @@ func TestInstallShareStampsGameID(t *testing.T) {
 }
 
 func TestInstallShareHandsOverAPackedArchive(t *testing.T) {
-	// The whole point of the archive: the installer is given one verified file,
-	// not a list of loose files it has to reassemble.
+	// The installer gets one verified file, not loose files to reassemble.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
-	// The staging folder is cleaned up once the install returns, so the archive
-	// is inspected at the seam — the only moment it is guaranteed to be there.
+	// Staging is cleaned up once the install returns, so the archive is inspected
+	// at the seam — the only moment it is guaranteed to be there.
 	var (
 		paths  []string
 		opened []string
@@ -852,9 +823,8 @@ func TestInstallShareHandsOverAPackedArchive(t *testing.T) {
 }
 
 func TestInstallShareHonoursPromisedHash(t *testing.T) {
-	// The happy path must stay green if the check is going to be worth
-	// anything: the bytes the sharer uploaded are the bytes the recipient
-	// verifies.
+	// The check is only worth anything if the happy path stays green: the bytes
+	// the sharer uploaded are the bytes the recipient verifies.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
@@ -868,14 +838,11 @@ func TestInstallShareHonoursPromisedHash(t *testing.T) {
 }
 
 func TestInstallShareRejectsHashMismatch(t *testing.T) {
-	// The sharer promised one hash and the provider returned different bytes.
-	// Silent acceptance would install whatever the provider sent, which is
-	// exactly what a truncated or swapped upload looks like.
+	// The provider hands back bytes other than the ones it was given, which is
+	// what a truncated or swapped upload looks like.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
-	// The provider now hands back different bytes than the ones it was given.
-	// The payload promised the sharer's hash, so this must fail the check.
 	tamper(t, provider, "mod-a.zip")
 
 	svc := shareServiceFor(t, provider, newMemShareStore())
@@ -887,9 +854,8 @@ func TestInstallShareRejectsHashMismatch(t *testing.T) {
 }
 
 func TestInstallShareRefusesAModThatWasNeverPacked(t *testing.T) {
-	// A payload built by hand can describe a mod without naming the archive it
-	// arrived in. Guessing at its layout would install whatever the guess put
-	// on disk, so it is refused instead.
+	// A hand-built payload can omit the archive it arrived in; guessing the layout would
+	// install whatever the guess put on disk.
 	provider := newFakeProvider("s3")
 	provider.refs = []domain.FileReference{{ID: "loose.txt", Size: 3}}
 	provider.content["loose.txt"] = "abc"
@@ -916,8 +882,8 @@ func TestInstallShareRefusesAModThatWasNeverPacked(t *testing.T) {
 }
 
 func TestInstallShareStopsAtTheFirstFailure(t *testing.T) {
-	// A failure part-way through must not leave the earlier mods installed and
-	// the later ones missing: the caller sees an error, not a half share.
+	// A part-way failure must not leave earlier mods installed and later ones
+	// missing: the caller sees an error, not a half share.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 	tamper(t, provider, "mod-a.zip")
@@ -933,8 +899,8 @@ func TestInstallShareStopsAtTheFirstFailure(t *testing.T) {
 }
 
 func TestInstallShareMapsAutoInstall(t *testing.T) {
-	// AutoInstall is the sharer's request, so it has to become an explicit
-	// enable rather than being left to the recipient's folder detection.
+	// AutoInstall is the sharer's request, so it becomes an explicit enable
+	// rather than being left to the recipient's folder detection.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
@@ -972,8 +938,8 @@ func TestInstallShareRejectsUnregisteredGame(t *testing.T) {
 }
 
 func TestShareLinkForNamesThePackedArchive(t *testing.T) {
-	// The payload a real share builds names the archive per mod, so a link that
-	// predates packing is visibly different from one this manager makes.
+	// A real payload names the archive per mod, so a link predating packing is
+	// visibly different from one this manager makes.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
@@ -988,9 +954,7 @@ func TestShareLinkForNamesThePackedArchive(t *testing.T) {
 	assert.Equal(t, []string{"mod-a.zip"}, payload.Mods[0].FileIDs)
 }
 
-// ---------------------------------------------------------------------------
-// Share management
-// ---------------------------------------------------------------------------
+// Share management.
 
 func TestListSharesReturnsStored(t *testing.T) {
 	store := newMemShareStore()
@@ -1084,9 +1048,7 @@ func TestUpdateShareAddsAndRemovesMods(t *testing.T) {
 	assert.Equal(t, []string{"B"}, names)
 }
 
-// ---------------------------------------------------------------------------
-// Link parsing
-// ---------------------------------------------------------------------------
+// Link parsing.
 
 func TestShareLinkFromURLAcceptsBothForms(t *testing.T) {
 	svc := shareServiceFor(t, &fakeProvider{id: "s3"}, newMemShareStore())
@@ -1123,9 +1085,7 @@ func TestShareLinkFromURLRejectsGarbage(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrShareInvalid)
 }
 
-// ---------------------------------------------------------------------------
-// Nil safety
-// ---------------------------------------------------------------------------
+// Nil safety.
 
 func TestShareServiceNilReceiverIsSafe(t *testing.T) {
 	var svc *ShareService

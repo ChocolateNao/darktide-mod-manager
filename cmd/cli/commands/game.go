@@ -14,15 +14,8 @@ func newGameCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "game",
 		Short: "List, switch, and inspect games",
-		// There is deliberately no `game set`: setting the path is a decision
-		// about configuration rather than about the game, so it lives in
-		// `dmm config set game.path <path>`. The help says so, because the
-		// first thing anyone types after `game detect` finds nothing is
-		// `game set`, and being told "unknown command" by a program that has
-		// an obvious alternative is a poor welcome.
-		//
-		// Switching the active game is the exception: it is a decision about
-		// which game the manager is for, so it lives here as `game use <id>`.
+		// There is deliberately no `game set`: the path is configuration,
+		// set with `dmm config set game.path`. Switching games is the decision here.
 		Long: "List, switch, and inspect games.\n\n" +
 			"`game list` shows the registered games and which one is active;\n" +
 			"`game use <id>` switches the active game and remembers it; and\n" +
@@ -67,11 +60,9 @@ func newGameView(info api.GameInfo) gameView {
 	}
 }
 
-// activeGameView finds the active entry in a SupportedGames result.
-//
-// SupportedGames always marks exactly one game active — an unset
-// active_game resolves to the registry default — so a miss means the API and
-// this view disagreeed, and saying so beats printing nothing.
+// activeGameView finds the active entry in a SupportedGames result. SupportedGames
+// always marks exactly one game active, so a miss means the API and this view
+// disagreed, and saying so beats printing nothing.
 func activeGameView(infos []api.GameInfo) (gameView, bool) {
 	for _, info := range infos {
 		if info.IsActive {
@@ -371,11 +362,8 @@ func newGameInfoCommand(s *session) *cobra.Command {
 			if path, err := client.GetModsPath(ctx, install); err == nil {
 				modsPath = path
 			} else if !s.opts.quiet {
-				// The mods folder is the one thing that can be unresolvable on
-				// its own — an override pointing at a directory that no longer
-				// exists, say — and a mod cannot be enabled without it. Saying so
-				// here is more use than failing the whole command, because the
-				// installation itself was found and is worth reporting.
+				// The mods folder can be unresolvable on its own and no mod
+				// can be enabled without it — but the installation was found, so warn.
 				fmt.Fprintf(s.env.Err, "warning: %s\n", oneLine(err))
 			}
 

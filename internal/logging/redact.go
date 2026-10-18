@@ -12,13 +12,12 @@ import (
 // mask replaces the value of any sensitive field.
 const mask = "[REDACTED]"
 
-// defaultSensitive lists the field names that must never reach a log sink. It
-// covers the credentials this application actually handles (source API keys,
-// refresh tokens, cloud object-storage keys) plus the usual suspects a future
-// call site might log.
+// defaultSensitive lists the field names that must never reach a log sink: the
+// credentials this application handles (source API keys, refresh tokens, cloud
+// object-storage keys) plus the usual suspects a future call site might log.
 //
-// Matching is name-based and case/underscore-insensitive, so "api_key",
-// "apiKey" and "API-KEY" all hit the same entry.
+// Matching ignores case and underscores, so "api_key", "apiKey" and "API-KEY"
+// hit the same entry.
 var defaultSensitive = []string{
 	"api_key",
 	"apikey",
@@ -67,9 +66,8 @@ func normalizeKey(key string) string {
 // sink.
 //
 // It sits between the level gate and the destination rather than being a
-// zerolog.Hook because the event is already encoded by then; working on the
-// encoded line is what lets one implementation protect every sink, including
-// the GUI event emitter.
+// zerolog.Hook because the event is already encoded; working on the encoded line
+// is what lets one implementation protect every sink, GUI emitter included.
 type redactingWriter struct {
 	w    io.Writer
 	keys map[string]struct{}
@@ -94,10 +92,8 @@ func NewRedactingWriter(w io.Writer, extra []string) io.Writer {
 
 // Write masks sensitive fields in p.
 //
-// It fails open on purpose: a line that does not parse as a JSON object is
-// forwarded unchanged rather than dropped. Losing a log line is a smaller harm
-// than losing the ability to debug a non-JSON sink, and redacting an unparsable
-// line is guesswork.
+// It fails open: a line that does not parse as a JSON object is forwarded
+// unchanged, because redacting it would be guesswork.
 func (r *redactingWriter) Write(p []byte) (int, error) {
 	if r == nil || r.w == nil {
 		return len(p), nil
@@ -134,12 +130,9 @@ func (r *redactingWriter) Write(p []byte) (int, error) {
 // mask replaces every sensitive value in fields and reports whether anything
 // changed.
 //
-// It recurses into nested objects. A flat walk would leave every value inside
-// a credential bag untouched: zerolog encodes a map passed to .Interface() as a
-// nested object rather than as several top-level keys, so
-// .Interface("credentials", creds) would carry a live access token past this
-// writer while an equivalent .Fields(creds) would not. The masking has to
-// reach where the secret can actually be.
+// It recurses, because zerolog encodes a map passed to .Interface() as a nested
+// object: a flat walk would let .Interface("credentials", creds) carry a live
+// access token past this writer.
 func (r *redactingWriter) mask(fields map[string]json.RawMessage) bool {
 	changed := false
 
@@ -172,10 +165,9 @@ func (r *redactingWriter) mask(fields map[string]json.RawMessage) bool {
 
 // HookDropBelow returns a writer that discards events below minLevel.
 //
-// zerolog v1.35.1 exposes no Event.SetLevel, and Event.msg runs its hooks and
-// then writes unconditionally, so a hook cannot suppress anything. The gate
-// below is the mechanism that actually drops events, and it is also what the
-// file and console sinks use.
+// zerolog v1.35.1 exposes no Event.SetLevel and Event.msg writes after running
+// its hooks, so a hook cannot suppress anything: the gate below is what actually
+// drops events, and the file and console sinks use it too.
 func HookDropBelow(minLevel zerolog.Level) io.Writer {
 	return &gate{level: newAtomicLevel(minLevel)}
 }

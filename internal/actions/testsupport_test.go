@@ -9,10 +9,8 @@ import (
 )
 
 // fakeGame is a minimal game definition. It implements the whole interface
-// because domain.GameDefinition is an interface and the runner only ever reads
-// the handful of methods below — but implementing it explicitly means a new
-// method on the interface breaks these tests loudly instead of silently making
-// the fake unusable.
+// explicitly so that a new method there breaks these tests loudly rather than
+// silently making the fake unusable.
 type fakeGame struct {
 	actionErr   error
 	id          string
@@ -44,8 +42,8 @@ func (g *fakeGame) LoadOrderFile() string                        { return "" }
 func (g *fakeGame) InstallModes() []domain.ModInstallMode        { return nil }
 func (g *fakeGame) SourceDefaults() map[string]map[string]string { return nil }
 
-// GameActions returns the requested number of trivial actions, or fails so a
-// test can prove a game's own validation error surfaces through the registry.
+// GameActions returns the requested number of trivial actions, or none when
+// actionErr is set so a test can prove a validation error surfaces.
 func (g *fakeGame) GameActions() []domain.GameAction {
 	if g.actionErr != nil {
 		return nil

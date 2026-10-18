@@ -21,12 +21,10 @@ import (
 )
 
 // workspace is a private manager tree for one test: its own config file, cache,
-// database and storage, plus a game folder and a folder of local mods.
-//
-// Every variable platform.ResolveDirs consults is pointed at one temp directory.
-// That is not tidiness — the wiring resolves those directories before it reads
-// any option, so a test that sets only a config path still reads and writes the
-// real user's configuration for everything else.
+// database, storage, game folder and folder of local mods. Every variable
+// platform.ResolveDirs consults is pointed at one temp directory, because the
+// wiring resolves those before it reads any option — a test that set only a
+// config path would still write the real user's configuration for everything else.
 type workspace struct {
 	home         string
 	configPath   string
@@ -70,11 +68,9 @@ func newWorkspace(t *testing.T) *workspace {
 	return w
 }
 
-// options builds the DI options for this workspace. The four network-backed
-// sources are switched off by default: every test here is about the command
-// layer, and letting a search reach api.github.com would make the suite depend
-// on somebody's network. The local source is the one that works offline, so it is
-// the one every test installs from.
+// options builds the DI options for this workspace. The network-backed sources
+// are switched off by default, since letting a search reach api.github.com would
+// make the suite depend on somebody's network; the local source works offline.
 func (w *workspace) options() di.Options {
 	opts := di.Options{
 		ConfigPath:  w.configPath,
@@ -124,8 +120,7 @@ func (w *workspace) mustApp(t *testing.T, mutate ...func(*di.Options)) *App {
 	return a
 }
 
-// makeGame creates a directory the detector accepts: the binary, a data folder
-// and the mods folder it resolves to.
+// makeGame creates a directory the detector accepts: binary, data folder, mods.
 func (w *workspace) makeGame(t *testing.T) {
 	t.Helper()
 
@@ -149,8 +144,8 @@ func (w *workspace) makeGame(t *testing.T) {
 	}
 }
 
-// writeConfig stores a configuration file before the container is built, which is
-// the only moment a value like game.path reaches the manager.
+// writeConfig stores a configuration file, which is the only moment a value
+// like game.path reaches the manager.
 func (w *workspace) writeConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	t.Helper()
 
@@ -168,10 +163,9 @@ func (w *workspace) writeConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	}
 }
 
-// writeModArchive writes a real zip into the local mods folder and returns its
-// path. The name carries a space before the version because the local source
-// strips a trailing " 1.2.0" from a file name to build an id, and an underscore
-// would leave the version in the id instead.
+// writeModArchive writes a real zip into the local mods folder. The name carries
+// a space before the version because the local source strips a trailing " 1.2.0"
+// from a file name to build an id, and an underscore would leave it in.
 func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	t.Helper()
 
@@ -185,9 +179,8 @@ func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	return path
 }
 
-// writeZip writes a zip file with the given entries. It builds a real archive
-// rather than stubbing the extractor, because ModService's behaviour depends on
-// what is actually in the container.
+// writeZip writes a real zip, because ModService's behaviour depends on what is
+// actually in the container.
 func writeZip(t *testing.T, path string, entries map[string]string) {
 	t.Helper()
 
@@ -218,8 +211,8 @@ func writeZip(t *testing.T, path string, entries map[string]string) {
 	}
 }
 
-// newConfigStore builds the real configuration store, so a test that writes a
-// config file is exercising the same persistence the manager reads.
+// newConfigStore builds the real store, so a written config is the same
+// persistence the manager reads.
 func newConfigStore(t *testing.T, path string) services.ConfigStore {
 	t.Helper()
 	return storage.NewConfigStore(path)
@@ -291,10 +284,9 @@ func (h *recordingHandler) count() int {
 	return len(h.events)
 }
 
-// blockingSource is a source whose GetMod and Search never return until their
-// context is done. It is how a test gets an operation that is provably in flight,
-// which is the only way to test that cancelling the scope reaches the work
-// rather than merely changing a field nobody reads.
+// blockingSource never returns until its context is done, which is the only way
+// to test that cancelling the scope reaches the work rather than a field nobody
+// reads.
 type blockingSource struct {
 	entered chan struct{}
 	id      string
@@ -336,17 +328,14 @@ func (s *blockingSource) Authenticate(context.Context, domain.AuthCredentials) e
 
 func (s *blockingSource) ValidateCredentials(context.Context) error { return nil }
 
-// canceledAsOperation reports a cancelled context as the manager's own code. The
-// stub returns it rather than a bare context.Canceled so a test can also pin
-// that a cancellation is not laundered into a generic failure on the way back
-// through the registry and the fan-out.
+// canceledAsOperation reports a cancelled context as the manager's own code, so a
+// test can pin that it is not laundered into a generic failure on the way back.
 func canceledAsOperation() error {
 	return appErrors.New(appErrors.ErrCodeOperationCanceled, "cancelled by the test")
 }
 
-// registerBlockingSource installs a blocking source in the process-wide factory
-// registry and removes it afterwards, so a test cannot leak a source into the
-// next one.
+// registerBlockingSource installs a blocking source and removes it afterwards,
+// so a test cannot leak a source into the next one.
 func registerBlockingSource(t *testing.T, id string) *blockingSource {
 	t.Helper()
 

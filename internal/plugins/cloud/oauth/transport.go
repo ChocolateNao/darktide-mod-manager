@@ -14,11 +14,9 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// transport performs authenticated calls against one provider's API.
-//
-// It exists so the three OAuth adapters differ only in their URLs and payload
-// shapes. The access token is attached per request rather than on a shared
-// client, because a client outlives a token and would keep sending the old one.
+// transport performs authenticated calls against one provider's API. The access
+// token is attached per request rather than on a shared client, because a client
+// outlives a token and would keep sending the old one.
 type transport struct {
 	session *Session
 	apiBase string
@@ -108,11 +106,9 @@ func (t transport) raw(
 	return raw, resp.Header, nil
 }
 
-// put streams a local file to rawURL.
-//
-// The file is streamed rather than read into memory: a share archive is as
-// large as the mods it holds, and buffering one is how a manager exhausts the
-// memory of a machine that was about to hand over a 4 GB mod.
+// put streams a local file to rawURL. The file is streamed rather than buffered:
+// a share archive is as large as the mods it holds, and buffering one is how a
+// manager exhausts the memory of a machine about to hand over a 4 GB mod.
 func (t transport) put(
 	ctx context.Context,
 	method, rawURL, localPath string,
@@ -172,18 +168,12 @@ func (t transport) put(
 		}, appErrors.ErrCodeCloudUploadFailed, "upload to %s", rawURL)
 	}
 
-	// A resumable or multipart upload answers with the file it accepted; a
-	// provider that does not may leave the file where it was asked to be, and
-	// that is the only id there is to hand back.
+	// A resumable or multipart upload answers with the file it accepted; one that
+	// does not may leave the file where it was asked to be, the only id there is.
 	return resp.Header, nil
 }
 
 // get streams a provider object into destPath.
-//
-// The bytes are written to a sibling temporary name and moved into place, so a
-// cancelled or failed transfer never leaves something that looks like the
-// archive the payload described — which is exactly what an integrity check has
-// to be able to rely on.
 func (t transport) get(ctx context.Context, rawURL, destPath string) error {
 	if t.session == nil {
 		return domain.ErrCloudAuthRequired
@@ -223,10 +213,8 @@ func (t transport) get(ctx context.Context, rawURL, destPath string) error {
 // writeDownload streams an open response body into destPath.
 //
 // The bytes land on a sibling temporary name and are moved into place, so a
-// cancelled or failed transfer never leaves something that looks like the
-// archive the payload described. That is what lets the recipient's integrity
-// check mean something: a hash mismatch is the provider's fault, not a
-// half-written file of ours.
+// failed transfer never leaves something that looks like the archive the payload
+// described — a hash mismatch must be the provider's fault, not our file.
 func writeDownload(body io.Reader, destPath string) error {
 	parent := filepath.Dir(destPath)
 	if err := os.MkdirAll(parent, 0o750); err != nil {
@@ -340,11 +328,9 @@ func (t transport) getWithHeaders(
 	return writeDownload(resp.Body, destPath)
 }
 
-// putRange streams a local file into an open upload session in fragments.
-//
-// The ranges are sent one at a time from the file rather than from a buffer:
-// an archive is as large as the mods it holds, and the whole point of a session
-// is that the service reassembles what it is given.
+// putRange streams a local file into an open upload session in fragments. The
+// ranges are read from the file rather than a buffer: an archive is as large as
+// the mods it holds, and a session exists so the service reassembles them.
 func (t transport) putRange(
 	ctx context.Context,
 	uploadURL, localPath string,

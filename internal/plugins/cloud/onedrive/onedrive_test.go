@@ -11,8 +11,8 @@ func TestObjectPathIsUnderTheDriveRoot(t *testing.T) {
 	p, err := New(Config{ClientID: "id"})
 	require.NoError(t, err)
 
-	// The id the payload carries is the path under the drive root, and the
-	// root-qualified form is what both the upload and the metadata read use.
+	// The payload's id is the path under the drive root, and the root-qualified
+	// form is what both the upload and the metadata read use.
 	assert.Equal(t, "/DarktideModManager", p.folder)
 	assert.Contains(t, p.objectPath("mod-a.zip"), "mod-a.zip")
 }
@@ -23,9 +23,8 @@ func TestProviderRequiresAClientID(t *testing.T) {
 }
 
 func TestConsentURLAsksForFileScopeOnly(t *testing.T) {
-	// Files.ReadWrite reaches only what this app puts there, which is exactly
-	// the set a share touches. Full drive scope would be a permission the
-	// feature does not need.
+	// Files.ReadWrite reaches only what this app puts there; the full drive scope
+	// is a permission the feature does not need.
 	p, err := New(Config{ClientID: "id"})
 	require.NoError(t, err)
 

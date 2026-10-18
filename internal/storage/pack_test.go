@@ -116,9 +116,8 @@ func TestPackArchiveLeavesNothingBehindOnFailure(t *testing.T) {
 	})
 	require.Error(t, err)
 
-	// A partial archive at destPath is indistinguishable from a finished one,
-	// so the failure must not leave one — and must not leave a stray temp file
-	// in the parent either.
+	// A partial archive is indistinguishable from a finished one, so neither it nor
+	// the temp file may survive the failure.
 	assert.NoFileExists(t, dest)
 
 	entries, err := os.ReadDir(filepath.Dir(dest))

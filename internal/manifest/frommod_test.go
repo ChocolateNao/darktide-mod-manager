@@ -95,9 +95,9 @@ func TestFromModCarriesEverythingTheManifestCanHold(t *testing.T) {
 	}
 }
 
-// A manifest travels with the mod. Recording this machine's enabled flag,
-// install path or content hash would put one user's installation state into
-// everyone else's copy, so those fields are left out on purpose.
+// A manifest travels with the mod: recording this machine's enabled flag or
+// content hash would put one user's installation state into everyone else's
+// copy.
 func TestFromModLeavesMachineLocalStateOut(t *testing.T) {
 	m := FromMod(installedMod())
 
@@ -162,9 +162,8 @@ func TestFromModHooksSurviveTheRoundTrip(t *testing.T) {
 	}
 }
 
-// The point of the whole projection: the manifest a recipient reads tells them
-// where the mod lives, so they can fetch it themselves instead of trusting a
-// peer. Losing that on a round trip would make the file decorative.
+// The point of the projection: the manifest a recipient reads tells them where
+// the mod lives, so they can fetch it themselves instead of trusting a peer.
 func TestFromModSourceLinksSurviveTheRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
@@ -189,9 +188,8 @@ func TestFromModSourceLinksSurviveTheRoundTrip(t *testing.T) {
 func TestWriteKeepsTheExistingManifestName(t *testing.T) {
 	dir := t.TempDir()
 
-	// A mod that already ships metadata.toml must not gain a competing
-	// mod.toml: Read takes the first name in priority order, so a second file
-	// would be silently ignored forever.
+	// A mod that already ships metadata.toml must not gain a competing mod.toml: Read
+	// takes the first name in priority order, so a second file is ignored forever.
 	if err := os.WriteFile(
 		filepath.Join(dir, "metadata.toml"),
 		[]byte("[mod]\nid = \"x\"\n"),

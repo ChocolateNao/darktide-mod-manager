@@ -89,9 +89,8 @@ func newSourceListCommand(s *session) *cobra.Command {
 			if !withDetails {
 				return s.writeJSONOrTable(s.env.Out, views, table, "No sources are registered.")
 			}
-			// With --details every source gets a field block too, so a
-			// description is not squeezed into a column. The table still comes
-			// first, because the table is what a person scans.
+			// With --details every source also gets a field block, so a description
+			// is not squeezed into a column; the table still comes first.
 			if err := s.writeJSONOrTable(
 				s.env.Out,
 				views,
@@ -207,14 +206,10 @@ func newSourceSearchCommand(s *session) *cobra.Command {
 	return command
 }
 
-// searchMods performs the search the command asked for, through the public
-// client.
-//
-// The two forms are separate questions, and the single-source form can only
-// carry a text query: SearchSource takes a string, not a SearchQuery, because
-// it is the one a person types. The extra filters are therefore refused rather
-// than quietly dropped — a user who typed --tag and got unfiltered results has
-// been told something untrue by omission, and would have to notice to catch it.
+// searchMods performs the search the command asked for, through the public client.
+// The two forms are separate questions, and the single-source form carries only a
+// text query: SearchSource takes a string, not a SearchQuery. The extra filters are
+// refused rather than dropped — unfiltered results after --tag would be a lie.
 func searchMods(ctx context.Context, client *api.Client, sourceID, text string,
 	tags []string, gameVersion string, page, pageSize int, sortBy string,
 ) ([]api.Mod, error) {
@@ -395,11 +390,8 @@ func newSourceAuthCommand(s *session) *cobra.Command {
 		},
 	}
 	flags := command.Flags()
-	// The username is passed through to the source and stored, because a source
-	// plugin may ask for one and the credentials map is free-form. None of the
-	// bundled sources use it — GitHub and Vortex take a single token, and Nexus
-	// v3 has no account name anywhere in its protocol — so the help says so
-	// rather than implying that typing one does something today.
+	// The username is passed through because a plugin may ask for one and the
+	// credentials map is free-form, though none of the bundled sources use it.
 	flags.StringVar(&user, "user", "",
 		"account name, for a source that asks for one (none of the bundled sources do)")
 	flags.StringVar(
@@ -418,20 +410,16 @@ func newSourceAuthCommand(s *session) *cobra.Command {
 	return command
 }
 
-// resolveAPIKey works out which credential to authenticate with.
+// resolveAPIKey works out which credential to authenticate with. The sources are
+// tried in the order the help lists them and the terminal comes last, because an
+// explicit choice is never second-guessed by a prompt: a prompt that appears when
+// somebody asked for something specific is one they must dismiss rather than
+// answer. Prompting only fills a gap, so `dmm source auth nexus` asks at a
+// terminal while the same command in a script still fails naming the variable.
 //
-// The sources are tried in the order the help lists them, and the terminal comes
-// last rather than first. An explicit choice — a flag, a named environment
-// variable — is never second-guessed by a prompt, because a prompt that appears
-// when somebody asked for something specific is a prompt they have to dismiss
-// instead of answer. Prompting only fills a gap, so `dmm source auth nexus` at a
-// terminal asks while the same command in a script still fails with the error
-// that names the environment variable to set.
-//
-// An environment variable the caller named is treated as a mistake to report
-// when it is empty, rather than as a gap to fill from somewhere else: somebody
-// who typed --api-key-env has said where the key is, and quietly reading a
-// different one would make the flag's name a lie.
+// An environment variable the caller named is a mistake to report when empty
+// rather than a gap to fill elsewhere: somebody who typed --api-key-env has said
+// where the key is.
 func (s *session) resolveAPIKey(
 	ctx context.Context,
 	sourceID, apiKey string,
@@ -483,8 +471,7 @@ func (s *session) resolveAPIKey(
 }
 
 // keyFlagsGiven reports whether any flag that supplies a key was used. --forget
-// has to refuse a key rather than quietly ignore it: a user who typed a key and
-// asked to forget would otherwise end up with whichever they did not mean.
+// must refuse a key rather than ignore it: the user would keep the one they did not mean.
 func keyFlagsGiven(
 	apiKey string,
 	apiKeyStdin bool,
@@ -493,9 +480,8 @@ func keyFlagsGiven(
 	return strings.TrimSpace(apiKey), apiKeyStdin, strings.TrimSpace(envVar) != ""
 }
 
-// defaultKeyEnvVar is the environment variable a source's key is read from when
-// the user does not say. It is derived from the source id, so the name is
-// predictable from `dmm source auth nexus` without consulting documentation.
+// defaultKeyEnvVar is the environment variable a source's key is read from when the
+// user does not say, derived from the source id so `dmm source auth nexus` implies it.
 func defaultKeyEnvVar(sourceID string) string {
 	name := strings.Map(func(r rune) rune {
 		switch {
@@ -595,22 +581,18 @@ func newSourceTestCommand(s *session) *cobra.Command {
 	}
 }
 
-// The three states `source test` can report. They are strings because they are
-// printed and serialised, and a single table of them keeps the JSON view and the
-// table view from being able to disagree.
+// The three states `source test` can report, as strings so one table keeps the
+// JSON view and the table view from disagreeing.
 const (
 	sourceTestOK            = "ok"
 	sourceTestFailed        = "failed"
 	sourceTestNotConfigured = "not configured"
 )
 
-// sourceTestState decides what can honestly be said about one source.
-//
-// A source that takes no credentials has nothing to check and is reported as
-// working. A source that takes them but has none stored is reported as not
-// configured, because the underlying check is a no-op in that state and calling
-// it a success would be reporting the absence of a check as its result. Only a
-// stored credential is actually put to the test.
+// sourceTestState decides what can honestly be said about one source. A source
+// that takes no credentials is reported as working; one that takes them but has
+// none stored is reported as not configured, because the check is a no-op there
+// and calling it a success would report the absence of a check as its result.
 func sourceTestState(ctx context.Context, client *api.Client, id string) string {
 	info, err := client.SourceInfo(ctx, id)
 	if err != nil {
@@ -670,17 +652,13 @@ func (s *session) setSourceEnabled(cmd *cobra.Command, sourceID string, enabled 
 	if err != nil {
 		return err
 	}
-	// The source has to exist before anything is written. SetConfigValue creates
-	// a settings block on demand, so without this check `source disable typo`
-	// would print "typo disabled" and leave a block for a source that is not
-	// there in the user's file — a claim the program cannot keep up.
+	// The source has to exist first: SetConfigValue creates a settings block on
+	// demand, so `source disable typo` would print "typo disabled" for a block that is not there.
 	if _, err := client.SourceInfo(cmd.Context(), sourceID); err != nil {
 		return err
 	}
-	// The key is written through the dotted settings key rather than a struct so
-	// the file on disk keeps whatever the user hand-edited into it: rewriting
-	// the whole configuration from a decoded copy would drop a comment-shaped
-	// key this version does not know about yet.
+	// Written through the dotted settings key rather than a struct, so the file
+	// keeps whatever the user hand-edited into it.
 	if err := client.SetConfigValue(cmd.Context(),
 		fmt.Sprintf("sources.%s.enabled", sourceID), yesNo(enabled)); err != nil {
 		return err

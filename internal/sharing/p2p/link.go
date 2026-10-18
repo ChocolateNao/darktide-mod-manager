@@ -12,15 +12,12 @@ import (
 
 // Link prefixes.
 //
-// A share is two links. The sender publishes an offer link and the recipient
-// answers with an answer link; both are sealed under the same secret, and each
-// carries exactly one session description. The two prefixes differ so that
-// pasting the wrong half into the manager produces "that is an answer, not an
-// offer" rather than a decode failure halfway through a transfer.
-//
-// They are deliberately not the dmm://share/<provider>/ shape the cloud links
-// use. Those name a server; these name a peer, and a recipient who reads one
-// should not have to consult a provider list to find out what they are holding.
+// A share is two links: an offer the sender publishes and an answer the
+// recipient returns, each sealed under the same secret and carrying exactly one
+// session description. The prefixes differ so that pasting the wrong half gives
+// "that is an answer, not an offer" rather than a decode failure halfway
+// through a transfer, and they are deliberately not the dmm://share/<provider>/
+// shape the cloud links use: those name a server, these name a peer.
 const (
 	// OfferLinkPrefix is the scheme of a sender's published link.
 	OfferLinkPrefix = "dmm://p2p/v1/"
@@ -28,18 +25,14 @@ const (
 	AnswerLinkPrefix = "dmm://p2pa/v1/"
 )
 
-// linkSecretBytes sizes the capability secret that travels in the link.
-//
-// 16 bytes is chosen for the length of the link rather than for the strength of
-// the key. The secret has to be pasted, so every character is a cost paid by the
-// recipient; 128 bits is far past brute force while costing 22 base64url
-// characters, which is roughly one line of most terminals.
+// linkSecretBytes sizes the capability secret that travels in the link. Chosen
+// for the length of the link rather than for the strength of the key: the
+// secret is pasted, so 128 bits, costing 22 base64url characters, is the better
+// trade against a brute force nobody can attempt.
 const linkSecretBytes = 16
 
-// maxLinkBytes bounds a link accepted from the outside. A real link carrying an
-// SDP, an inventory and a mod list for a large selection is comfortably under
-// 64 KiB; the ceiling is here so a paste of a minified web page fails fast
-// instead of allocating whatever it happens to be.
+// maxLinkBytes bounds a link accepted from the outside, so that a paste of a
+// minified web page fails fast instead of allocating whatever it happens to be.
 const maxLinkBytes = 1 << 20
 
 // Errors a link can fail with. Each one is a sentinel rather than a formatted
@@ -53,8 +46,7 @@ var (
 	// where an offer was expected, or the reverse.
 	ErrWrongLinkKind = errors.New("link is the wrong half of a share")
 	// ErrUnknownProtocolVersion reports a link this build cannot speak. It is
-	// separate from a decode failure so the message can say "update the
-	// manager" instead of "corrupt link".
+	// separate from a decode failure so the message can say "update the manager".
 	ErrUnknownProtocolVersion = errors.New("link uses an unsupported protocol version")
 	// ErrWrongSecret reports a sealed blob that did not open under the secret
 	// carried in the same link, which means the link was edited or truncated.
@@ -62,14 +54,12 @@ var (
 )
 
 // LinkOffer seals an offer and its session description into a shareable link,
-// generating the capability secret that both halves of the share will use.
+// generating the capability secret both halves of the share will use.
 //
-// The returned link is the entire capability: whoever holds it can read the
-// offer and open the data channel. That is deliberate, and is the same bargain
-// every link-based transfer makes — the link is the password. What the seal buys
-// is that the link does not have to be legible to whatever carries it. A chat
-// client that unfurls it sees an opaque token, not the recipient's local
-// address, the list of mods, or the URLs the mods came from.
+// The link is the entire capability: whoever holds it can read the offer and
+// open the data channel. The seal is what keeps a chat client that unfurls the
+// link from showing the recipient's address, the list of mods and their source
+// URLs to everyone else in the room.
 func LinkOffer(offer domain.P2PShareOffer, sdp string) (*domain.P2PShareLink, error) {
 	secret, err := crypto.GenerateSecret(linkSecretBytes)
 	if err != nil {
@@ -105,11 +95,10 @@ func LinkOffer(offer domain.P2PShareOffer, sdp string) (*domain.P2PShareLink, er
 	}, nil
 }
 
-// LinkAnswer seals a recipient's session description into a reply link.
-//
-// The offer's secret is echoed rather than regenerated: both ends have to derive
-// the same session key, and deriving it from anything the sender did not choose
-// would make the handshake fail in a way that looks like an attack.
+// LinkAnswer seals a recipient's session description into a reply link. The
+// offer's secret is echoed rather than regenerated, because both ends have to
+// derive the same session key and deriving it from anything the sender did not
+// choose would fail in a way that looks like an attack.
 func LinkAnswer(offerID, sdp, secret, receiverName string) (*domain.P2PAnswerLink, error) {
 	if offerID == "" {
 		return nil, errors.New("answer needs an offer id")
@@ -144,12 +133,9 @@ func LinkAnswer(offerID, sdp, secret, receiverName string) (*domain.P2PAnswerLin
 	}, nil
 }
 
-// IsOfferLink and IsAnswerLink report whether text looks like the given half of
-// a share, without decrypting it.
-//
-// The UI uses these to route a deep link to the right screen, and they answer
-// from the prefix alone: deciding which screen to open must not require the
-// secret to be correct, because the recipient has not typed one yet.
+// IsOfferLink reports whether text looks like the given half of a share, without
+// decrypting it. The UI routes a deep link on the prefix alone, because the
+// recipient has not typed a secret yet.
 func IsOfferLink(text string) bool {
 	return hasPrefix(text, OfferLinkPrefix)
 }
@@ -160,11 +146,9 @@ func IsAnswerLink(text string) bool {
 }
 
 // OpenOffer parses an offer link, opening the sealed payload with the secret
-// carried in the link itself.
-//
-// The version is checked before the offer is handed back so a recipient sees
-// "update the manager" rather than a preview built from fields a future version
-// may have moved.
+// carried in the link itself. The version is checked before the offer is handed
+// back so a recipient sees "update the manager" rather than a preview built from
+// fields a future version may have moved.
 func OpenOffer(text string) (*domain.P2PShareLink, error) {
 	payload, secret, err := openLink(text, OfferLinkPrefix, domain.P2PLinkKindOffer)
 	if err != nil {
@@ -207,21 +191,17 @@ func OpenAnswer(text string) (*domain.P2PAnswerLink, error) {
 	}, nil
 }
 
-// SessionKeyFor derives the handshake key from a link's secret.
-//
-// Both halves of a share call this with the same secret and get the same key;
-// the label is what stops that key from also being able to open the link, so a
-// peer that has completed a handshake still cannot mint a new offer.
+// SessionKeyFor derives the handshake key from a link's secret. The label is
+// what stops that key from also being able to open the link, so a peer that has
+// completed a handshake still cannot mint a new offer.
 func SessionKeyFor(secret string) ([]byte, error) {
 	return crypto.DeriveKey(secret, crypto.LabelSession)
 }
 
-// sealLink encodes a payload into a prefixed link.
-//
-// The order is marshal, compress, seal, encode. Compression has to happen
-// before encryption because that is the only point at which the plaintext is
-// visible to the compressor, and encrypting before compressing would give up the
-// bulk of the size win on an SDP full of repeated lines.
+// sealLink encodes a payload into a prefixed link. Compression happens before
+// encryption because that is the only point at which the plaintext is visible to
+// the compressor, and encrypting first would give up most of the size win on an
+// SDP full of repeated lines.
 func sealLink(prefix string, payload domain.P2PSharePayload, secret string) (string, error) {
 	if secret == "" {
 		return "", crypto.ErrEmptyPassphrase
@@ -293,21 +273,18 @@ func openLink(
 	return payload, secret, nil
 }
 
-// normaliseLink trims the whitespace a paste brings with it.
-//
-// Links arrive from chat windows, terminals and QR readers, and every one of
-// them can add a trailing newline or a leading space. Failing on that would make
-// the feature look broken for a reason the user cannot see, so it is stripped
-// once, here, rather than at each of the six call sites that accept a link.
+// normaliseLink trims the whitespace a paste brings with it. Links arrive from
+// chat windows, terminals and QR readers, and failing on a trailing newline or a
+// leading space would make the feature look broken for a reason the user cannot
+// see.
 func normaliseLink(text string) string {
 	return strings.TrimSpace(text)
 }
 
-// hasPrefix compares case-insensitively.
-//
-// The scheme is lowercase everywhere the manager emits it, but a link may have
-// travelled through something that uppercased the scheme, and "that is not a
-// link" would be a confusing answer to "I pasted exactly what you sent".
+// hasPrefix compares case-insensitively. The scheme is lowercase everywhere the
+// manager emits it, but a link may have travelled through something that
+// uppercased it, and "that is not a link" would be a confusing answer to "I
+// pasted exactly what you sent".
 func hasPrefix(text, prefix string) bool {
 	if len(text) < len(prefix) {
 		return false

@@ -14,9 +14,8 @@ import (
 // stays so an existing share can still be listed and revoked, which is the one
 // operation that cannot be dropped without stranding someone's data.
 type ShareCommands struct {
-	// base is embedded rather than held as a named field so the lifecycle
-	// methods reach a set directly: a caller holding a single set needs to be
-	// able to shut it down without knowing the shape of the aggregate.
+	// Embedded so the lifecycle methods reach a set directly: a caller holding
+	// one set must be able to shut it down without knowing the aggregate.
 	*base
 }
 
@@ -93,9 +92,8 @@ func (c *ShareCommands) CreateShare(
 	}
 	defer cancel()
 
-	// The ids are resolved to installed mods here rather than in the service:
-	// a mod that is not installed has no files to upload, and a caller should
-	// hear that before anything is sent.
+	// The ids are resolved here rather than in the service: a mod that is not
+	// installed has no files to upload, and the caller should hear that first.
 	mods := make([]api.Mod, 0, len(modIDs))
 
 	for _, id := range modIDs {

@@ -51,10 +51,6 @@ func TestNewModServiceDefaultsPlatformAndClock(t *testing.T) {
 	assert.NotNil(t, svc.now, "clock was left nil; every timestamp write would panic")
 }
 
-// ---------------------------------------------------------------------------
-// listing
-// ---------------------------------------------------------------------------
-
 func TestListModsReturnsEveryStoredMod(t *testing.T) {
 	h := newHarness(t)
 	h.index.put(&domain.Mod{ID: "a", Name: "A", Version: "1.0.0"})
@@ -123,10 +119,6 @@ func TestGetModRejectsBlankIDWithoutTouchingTheIndex(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// install
-// ---------------------------------------------------------------------------
-
 func TestInstallModEndToEnd(t *testing.T) {
 	h := newHarness(t)
 	mod := modFixture("better_ui", "1.2.0")
@@ -154,7 +146,6 @@ func TestInstallModEndToEnd(t *testing.T) {
 	want2 := []string{"better_ui.dll", "mod.toml", "textures/hud.dds"}
 	assert.True(t, equalStrings(got, want2), "payload holds %v, want %v", got, want2)
 
-	// The inventory is recorded without manifests.
 	files, err := h.index.GetFilesByMod(context.Background(), "better_ui")
 	require.NoError(t, err, "read inventory")
 
@@ -168,8 +159,7 @@ func TestInstallModEndToEnd(t *testing.T) {
 		assert.NotEmpty(t, f.Checksum, "file %q has no checksum", f.RelPath)
 	}
 
-	// Hooks ran in the documented order. The auto-enable inserts its own pair
-	// between the install pair, which is why post_install comes last.
+	// Auto-enable inserts its own pair between the install pair.
 	phases := h.hooks.executed()
 
 	wantPhases := []domain.HookPhase{
@@ -296,8 +286,6 @@ func TestInstallUnknownSourceIsSourceNotFound(t *testing.T) {
 
 func TestInstallModWithoutRemoteIDIsInvalidMod(t *testing.T) {
 	h := newHarness(t)
-	// A source that hands back a mod with no id would otherwise create a mod
-	// row keyed by the empty string.
 	// Reachable as "placeholder" but with an empty id: a source that loses the
 	// id would otherwise create a mod row keyed by "".
 	h.withArchive(
@@ -702,10 +690,6 @@ func TestInstallConcurrentSameModRunsOnce(t *testing.T) {
 	assert.Equal(t, n-1, refused, "%d installs refused, want %d", refused, n-1)
 }
 
-// ---------------------------------------------------------------------------
-// enable / disable
-// ---------------------------------------------------------------------------
-
 func TestEnableModDeploysAndRecords(t *testing.T) {
 	h := newHarness(t)
 	mod := modFixture("better_ui", "1.2.0")
@@ -1036,10 +1020,6 @@ func TestDisableModUndeployFailureLeavesRecordEnabled(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// uninstall
-// ---------------------------------------------------------------------------
-
 func TestUninstallRemovesEverything(t *testing.T) {
 	h := newHarness(t)
 	mod := modFixture("better_ui", "1.2.0")
@@ -1208,10 +1188,6 @@ func TestUninstallBlankIDIsRefused(t *testing.T) {
 		require.Error(t, err, "a blank id must be refused")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// hooks management
-// ---------------------------------------------------------------------------
 
 func TestGetModHooksReturnsACopy(t *testing.T) {
 	h := newHarness(t)
@@ -1429,10 +1405,6 @@ func TestUpdateModHooksUnknownIsModNotFound(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// load order
-// ---------------------------------------------------------------------------
-
 func TestReorderModsStoresTheOrder(t *testing.T) {
 	h := newHarness(t)
 	h.index.put(&domain.Mod{ID: "a", Version: "1.0.0"})
@@ -1610,10 +1582,6 @@ func TestReorderModsPropagatesIndexFailure(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// storage root
-// ---------------------------------------------------------------------------
-
 func TestStorageRootRejectsRelativeConfigPath(t *testing.T) {
 	cfg := domain.DefaultConfig()
 	cfg.Storage.Path = "relative/mods"
@@ -1679,10 +1647,6 @@ func TestStorageRootDepsOverrideConfig(t *testing.T) {
 
 	assert.Equal(t, "/from/deps", root, "storage root = %q, want the explicit override", root)
 }
-
-// ---------------------------------------------------------------------------
-// links
-// ---------------------------------------------------------------------------
 
 func TestModPathReportsThePayload(t *testing.T) {
 	h := newHarness(t)
@@ -1840,10 +1804,6 @@ func TestRelinkModPropagatesRepairFailure(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// refresh
-// ---------------------------------------------------------------------------
-
 func TestRefreshModsDisablesModsWhosePayloadVanished(t *testing.T) {
 	h := newHarness(t)
 	h.withArchive(t, modFixture("good", "1.0.0"), "good.dll")
@@ -1961,10 +1921,6 @@ func TestRefreshModsStopsOnCancel(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
 func boolPtr(v bool) *bool { return &v }
 
 // foreignKeyIndex enforces the one constraint the real repository has and a plain
@@ -2021,9 +1977,8 @@ func TestInstallRecordsTheModBeforeItsFileInventory(t *testing.T) {
 		)
 		require.NoError(t, err, "install: %v", err)
 	}
-	// Both halves of the record exist. The payload surviving a failed install is
-	// the recoverable state — reinstalling rewrites it — whereas a file list
-	// pointing at a mod that was never written is not representable at all.
+	// Both halves of the record exist: a payload left over from a failed install is
+	// recoverable, a file list pointing at an unwritten mod is not representable.
 	{
 		_, err := os.Stat(h.payloadPath("better_ui", "1.2.0"))
 		assert.NoError(t, err, "payload missing after install: %v", err)
@@ -2038,9 +1993,8 @@ func TestInstallRecordsTheModBeforeItsFileInventory(t *testing.T) {
 func TestInstallMergesCallerSourceDataWithoutOverwritingTheSource(t *testing.T) {
 	h := newHarness(t)
 	h.withArchive(t, modFixture("better_ui", "1.2.0"), "textures/hud.dds")
-	// The source's own record is the authority on the mod: it is what the
-	// platform said. A caller repeating one of its keys is either echoing it or
-	// contradicting it, and the second is not allowed to happen silently.
+	// The source's own record is the authority on the mod: a caller repeating one
+	// of its keys is echoing it, and contradicting it is not allowed silently.
 	h.source.mods["better_ui"].SourceData["version_id"] = "8001"
 
 	{
@@ -2108,14 +2062,12 @@ func TestMergeSourceDataToleratesWhatItIsHanded(t *testing.T) {
 	mergeSourceData(&domain.Mod{ID: "better_ui"}, map[string]any{})
 }
 
-// TestInstallWithGameRootMode verifies that a mod with InstallModeGameRoot
-// deploys to the game root instead of the mods folder, and does not appear
-// in the load order file.
+// TestInstallWithGameRootMode verifies that a game-root mod deploys beside the
+// mods folder and stays out of the load order file.
 func TestInstallWithGameRootMode(t *testing.T) {
 	h := newHarness(t)
 	h.withArchive(t, modFixture("game_root_mod", "1.0.0"), "mods/mymod/file.txt")
 
-	// Install with game_root mode
 	_, err := h.svc.Install(context.Background(), "vortex", "game_root_mod", InstallOptions{
 		SourceData: map[string]any{"install_mode": "game_root"},
 	})
@@ -2138,18 +2090,16 @@ func TestInstallWithGameRootMode(t *testing.T) {
 		mod.ModFolderName,
 	)
 
-	// Enable the mod - should deploy to game root
 	{
 		err := h.svc.EnableMod(context.Background(), "game_root_mod")
 		require.NoError(t, err, "enable: %v", err)
 	}
 
-	// The mod should not appear in load order file
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, err := os.ReadFile(loadOrderPath)
 	if err != nil {
-		// File might not exist if no mods are in load order
+		// The file is only written once a mod is in the order.
 		require.True(t, os.IsNotExist(err), "read load order file: %v", err)
 	} else {
 		assert.NotContains(
@@ -2161,8 +2111,8 @@ func TestInstallWithGameRootMode(t *testing.T) {
 	}
 }
 
-// TestInstallWithModsFolderMode verifies that a mod with InstallModeModsFolder
-// (the default) deploys to the mods folder and appears in the load order file.
+// TestInstallWithModsFolderMode verifies that a mods-folder mod deploys into the
+// mods folder and appears in the load order file.
 func TestInstallWithModsFolderMode(t *testing.T) {
 	h := newHarness(t)
 	h.withArchive(t, modFixture("mods_folder_mod", "1.0.0"), "mymod/file.txt")
@@ -2184,13 +2134,11 @@ func TestInstallWithModsFolderMode(t *testing.T) {
 
 	assert.NotEmpty(t, mod.ModFolderName, "ModFolderName should be set for mods_folder mod")
 
-	// Enable the mod - should deploy to mods folder
 	{
 		err := h.svc.EnableMod(context.Background(), "mods_folder_mod")
 		require.NoError(t, err, "enable: %v", err)
 	}
 
-	// The mod should appear in load order file
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, err := os.ReadFile(loadOrderPath)
@@ -2206,11 +2154,8 @@ func TestInstallWithModsFolderMode(t *testing.T) {
 	)
 }
 
-// TestPrimaryModFolderName verifies that the primary folder name is extracted
-// correctly from various archive structures.
-//
-// The test ModFile entries mimic real archive extraction: directories have
-// SizeBytes=0 and empty Checksum, while files have non-zero SizeBytes.
+// TestPrimaryModFolderName exercises several archive shapes. The ModFile entries
+// mimic real extraction: a directory entry has SizeBytes=0 and an empty checksum.
 func TestPrimaryModFolderName(t *testing.T) {
 	tests := []struct {
 		name     string

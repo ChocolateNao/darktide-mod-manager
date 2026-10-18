@@ -24,18 +24,16 @@ const defaultHookTimeout = 10 * time.Second
 
 // maxHookTimeout is the compile-time safety ceiling: no configured MaxTimeout
 // or permission cap may exceed it. It sits well above the default MaxTimeout so
-// a deliberate config raise still works (§3.7: MaxTimeout wins within the
-// absolute bound).
+// a deliberate config raise still works.
 const maxHookTimeout = 600 * time.Second
 
 // hookEnvAllowlist is the set of variable names inherited from the manager's own
 // environment and handed to a hook. Mod authors are untrusted: a hook that could
 // read the process environment would find the database path, and on a machine
 // where the user has an API key exported, that key. Anything a hook needs beyond
-// this list has to be declared explicitly in HookScript.Env.
-//
-// Windows names are matched case-insensitively (as the OS itself does); on POSIX
-// the same names are simply the conventional ones.
+// this list has to be declared explicitly in HookScript.Env. Windows names are
+// matched case-insensitively, as the OS itself does; on POSIX the same names are
+// simply the conventional ones.
 var hookEnvAllowlist = []string{
 	"PATH",
 	"HOME",
@@ -74,14 +72,10 @@ var hookEnvAllowlistSet = func() map[string]bool {
 }()
 
 // HookRunner executes one kind of hook script. The interface is deliberately one
-// method wide: a runner only ever runs a script, and keeping it minimal means a
-// third-party runner needs no access to the manager's state.
-//
-// The argument is a PreparedHook rather than the raw domain.HookScript, because
-// the resolved WorkingDir and Env are exactly what makes a hook safe: handing
-// a runner the raw script would let it read an unfiltered environment or an
-// uncontained working directory. The original declaration is still available as
-// hook.Script.
+// method wide, so a third-party runner needs no access to the manager's state. The
+// argument is a PreparedHook rather than the raw domain.HookScript, because the
+// resolved WorkingDir and Env are exactly what makes a hook safe; the original
+// declaration is still available as hook.Script.
 type HookRunner interface {
 	Run(ctx context.Context, hook PreparedHook, mod *domain.Mod) error
 }
@@ -173,9 +167,8 @@ type HookExecutor struct {
 	mu             sync.RWMutex
 }
 
-// NewHookExecutor returns an executor with no runners registered. A hooks
-// plugin package registers the concrete runners; see
-// internal/plugins/hooks.RegisterAll.
+// NewHookExecutor returns an executor with no runners registered; a hooks plugin
+// package registers the concrete ones (see internal/plugins/hooks.RegisterAll).
 func NewHookExecutor(deps HookExecutorDeps) *HookExecutor {
 	cfg := normalizeHooksConfig(deps.Config)
 
@@ -217,9 +210,7 @@ func normalizeHooksConfig(cfg domain.HooksConfig) domain.HooksConfig {
 	}
 
 	if cfg.MaxTimeout > 0 && cfg.MaxTimeout < cfg.DefaultTimeout {
-		// A ceiling below the default would make every hook time out at the
-		// ceiling the moment a per-hook value was clamped to it. An unset
-		// (zero) MaxTimeout is left alone so Timeout can fall back to the
+		// An unset MaxTimeout is left for Timeout to resolve against the
 		// compile-time ceiling.
 		cfg.MaxTimeout = cfg.DefaultTimeout
 	}
@@ -239,12 +230,9 @@ func (h *HookExecutor) hooksConfig() domain.HooksConfig {
 }
 
 // Register installs a runner, inferring its language from LanguageTyper when
-// the runner implements it. A runner that does not implement LanguageTyper must
-// be registered with RegisterRunner.
-//
-// Every runner serves exactly one language: Lua and JavaScript each own their
-// own binding file, and a runner claiming an unknown language is refused before
-// anything is written.
+// the runner implements it. Every runner serves exactly one language: Lua and
+// JavaScript each own their binding file, and a runner claiming an unknown
+// language is refused before anything is written.
 func (h *HookExecutor) Register(r HookRunner) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "cannot register a nil hook runner")
@@ -260,9 +248,8 @@ func (h *HookExecutor) Register(r HookRunner) error {
 }
 
 // RegisterRunner installs a runner for one script language, replacing any
-// previous one. Replacement is allowed on purpose: a test can swap in a fake,
-// and a future runner that supersedes the bundled one must not need a second
-// entry point.
+// previous one. Replacement is deliberate: a test can swap in a fake, and a
+// runner that supersedes the bundled one needs no second entry point.
 func (h *HookExecutor) RegisterRunner(lang domain.ScriptLanguage, r HookRunner) error {
 	if !lang.Valid() {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -353,13 +340,12 @@ func (h *HookExecutor) Permissions(mod *domain.Mod) domain.ScriptPermissions {
 	return h.hooksConfig().Permissions.For(h.currentGameID(), modIDOf(mod))
 }
 
-// Timeout returns the deadline applied to one script (§3.7 of the multi-game
-// plan): the script's declared value (or the default when unset) clamped into
-// [floor, ceiling] where floor is the default timeout and ceiling is the
-// smallest of MaxTimeout and the effective timeout_seconds cap
-// (mod > game > default). A cap below the default still wins over a larger
-// declared value, and MaxTimeout always wins. A negative declared value is
-// treated as unset here; Validate is what rejects it.
+// Timeout returns the deadline applied to one script: the script's declared
+// value (or the default when unset) clamped into [floor, ceiling], where floor
+// is the default timeout and ceiling is the smallest of MaxTimeout and the
+// effective timeout_seconds cap (mod > game > default). A cap below the default
+// still wins over a larger declared value. A negative declared value is treated
+// as unset here; Validate is what rejects it.
 func (h *HookExecutor) Timeout(script domain.HookScript, mod *domain.Mod) time.Duration {
 	cfg := h.hooksConfig()
 
@@ -405,10 +391,10 @@ func (h *HookExecutor) Timeout(script domain.HookScript, mod *domain.Mod) time.D
 	return declared
 }
 
-// Validate checks everything the executor is responsible for before a script is
-// handed to a runner: the language is known, the content is present, the
-// timeout is not nonsensical, and the working directory stays inside the mod's
-// own folder or the game's folder.
+// Validate checks what the executor is responsible for before a script is handed
+// to a runner: the language is known, the content is present, the timeout is
+// not nonsensical, and the working directory stays inside the mod's or the
+// game's folder.
 func (h *HookExecutor) Validate(script domain.HookScript, mod *domain.Mod) error {
 	if !script.Language.Valid() {
 		return appErrors.New(
@@ -447,9 +433,8 @@ func (h *HookExecutor) Validate(script domain.HookScript, mod *domain.Mod) error
 // WorkingDir resolves the directory a script runs in. A blank WorkingDir means
 // the mod's own folder, then the game's; with neither, the process working
 // directory is inherited. An explicit WorkingDir is resolved relative to the mod
-// folder (or the game folder) and must land inside one of them: a mod-supplied
-// path must not be able to make the manager run code in, say, the user's home
-// directory.
+// folder (or the game folder) and must land inside one of them, so a
+// mod-supplied path cannot make the manager run code anywhere else.
 func (h *HookExecutor) WorkingDir(script domain.HookScript, mod *domain.Mod) (string, error) {
 	modPath, gamePath := allowedRoots(mod, h.currentGamePath())
 
@@ -523,9 +508,8 @@ func (h *HookExecutor) Env(script domain.HookScript) ([]string, error) {
 	seen := make(map[string]int, len(hookEnvAllowlist)+len(script.Env))
 	for _, name := range hookEnvAllowlist {
 		value, ok := os.LookupEnv(name)
-		// An inherited variable that is set but empty carries no information and
-		// would only pad the child's environment: PATH= makes a tool look in the
-		// current directory, and HOME= can confuse a shell that checks it exists.
+		// An empty inherited variable carries no information: PATH= makes a tool
+		// look in the current directory.
 		if !ok || value == "" {
 			continue
 		}
@@ -633,7 +617,14 @@ func (h *HookExecutor) execute(
 	}
 
 	label := modLabel(mod)
+
 	for i, script := range scripts {
+		// A paused script is skipped, not an error: a failure here would make
+		// every later hook look broken too.
+		if script.Disabled {
+			continue
+		}
+
 		if err := h.runOne(ctx, phase, i, script, mod, label); err != nil {
 			return err
 		}
@@ -671,10 +662,9 @@ func (h *HookExecutor) currentGameID() string {
 	return strings.TrimSpace(h.gameID())
 }
 
-// Prepare validates a script and resolves its working directory and
-// environment. Runners are expected to call it rather than reading Script.WorkingDir
-// and Script.Env directly; a test can call it to assert the policy without
-// executing anything.
+// Prepare validates a script and resolves its working directory and environment.
+// Runners are expected to call it rather than reading Script.WorkingDir and
+// Script.Env directly.
 func (h *HookExecutor) Prepare(
 	script domain.HookScript,
 	mod *domain.Mod,
@@ -715,9 +705,8 @@ func (h *HookExecutor) runOne(
 	mod *domain.Mod,
 	label string,
 ) error {
-	// ctx is the caller's context; runCtx below is this script's. Which of the
-	// two expired decides the reported code: a cancelled parent is the caller's
-	// doing, not a hook that ran too long.
+	// Which of ctx or runCtx expired decides the reported code: a cancelled parent
+	// is the caller's doing, not a hook that ran too long.
 	parent := ctx
 
 	runner, err := h.runner(script.Language)
@@ -735,9 +724,8 @@ func (h *HookExecutor) runOne(
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Debug, not info: a mod's hook chain runs on every enable, disable and
-	// install, so info-level records would bury the state changes they sit next
-	// to. What is worth seeing at the default level is the outcome, below.
+	// Debug, not info: a mod's hook chain runs on every enable, disable and install,
+	// so info-level records would bury the state changes they sit next to.
 	h.log.Debug().
 		Str("op", "hook").
 		Str("phase", string(phase)).
@@ -761,8 +749,8 @@ func (h *HookExecutor) runOne(
 
 	err = runner.Run(runCtx, p, mod)
 	if err != nil {
-		// Error level: a hook that fails changes what the game sees, so it is
-		// one of the few things in this layer the log must not swallow.
+		// Error level: a hook that fails changes what the game sees, and the log
+		// must not swallow it.
 		h.log.Error().
 			Err(err).
 			Str("op", "hook").

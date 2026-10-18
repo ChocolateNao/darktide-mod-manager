@@ -1,12 +1,12 @@
 // Package lua runs `lua` hook scripts in a gopher-lua state.
 //
-// The state is created fresh for every execution with SkipOpenLibs: only base,
-// string, table and math are opened, and require/module/dofile/loadfile/load are
-// removed again, so a script can reach no subprocess, no arbitrary file read
-// and no module loader. Cancellation rides on the state's context, which
-// gopher-lua checks on every instruction — a `while true do end` still stops
-// at its deadline. Everything a script may touch goes through the shared host
-// package, identically to the JavaScript binding.
+// The state is created fresh per execution with SkipOpenLibs: only base, string,
+// table and math are opened, and require/module/dofile/loadfile/load are removed
+// again, so a script reaches no subprocess, no arbitrary file read and no module
+// loader. Cancellation rides on the state's context, which gopher-lua checks on
+// every instruction, so `while true do end` still stops at its deadline.
+// Everything a script may touch goes through the shared host package, as in the
+// JavaScript binding.
 package lua
 
 import (
@@ -20,11 +20,9 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-// LogSink receives the console output of a hook script. It is called once per
-// execution, after the script ends, with the lines in order.
-//
-// Output is reported whether the hook succeeded or failed: a failing hook is
-// exactly when a mod author needs the log to work out why.
+// LogSink receives the console output of a hook script, once per execution and
+// after the script ends. Output is reported whether the hook succeeded or failed:
+// a failing hook is exactly when a mod author needs the log to work out why.
 type LogSink func(lines []string, dropped int)
 
 // Runner executes Lua hook scripts.
@@ -44,12 +42,9 @@ func NewRunnerWithSink(sink LogSink, providers host.Providers) *Runner {
 // Language identifies the scripts this runner handles.
 func (r *Runner) Language() domain.ScriptLanguage { return domain.LangLua }
 
-// Run evaluates the script in a fresh state.
-//
-// gopher-lua has no instruction hook, so there is no separate step budget:
-// the executor's deadline is enforced by the state's context, which the
-// virtual machine consults on every instruction, and that is what stops a
-// tight loop. The typed errors mirror the JavaScript binding.
+// Run evaluates the script in a fresh state. gopher-lua has no instruction hook,
+// so there is no separate step budget: the executor's deadline is enforced by
+// the state's context, which the VM consults on every instruction.
 func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domain.Mod) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -87,9 +82,8 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 			"prepare the lua sandbox")
 	}
 
-	// raised keeps the Go error behind a permission or availability failure so
-	// the run reports the original typed code (HOOK_DENIED, ...) instead of a
-	// generic script failure once the Lua error unwinds.
+	// raised keeps the Go error behind a permission or availability failure so the
+	// run reports the original typed code (HOOK_DENIED, ...), not a generic failure.
 	var raised error
 
 	if err := bind(st, h, &raised); err != nil {
@@ -124,8 +118,8 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 }
 
 // openSandboxLibs opens the only libraries a hook gets, then removes the base
-// functions that could reach the filesystem or a module loader. Whatever is
-// left is pure computation: strings, tables, math, pcall/error.
+// functions that could reach the filesystem or a module loader. What is left is
+// pure computation: strings, tables, math, pcall/error.
 func openSandboxLibs(st *lua.LState) error {
 	loaders := []struct {
 		fn   lua.LGFunction

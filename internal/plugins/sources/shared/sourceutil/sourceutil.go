@@ -3,9 +3,7 @@
 //
 // A source differs from its peers in what it talks to and what the payloads look
 // like; paging, query matching, error summarising and credential lookup are the
-// same everywhere, and a user who sees "page 2" mean two different things in two
-// places has found a bug. Keeping the shared parts here means they are written
-// once, tested once, and cannot drift apart.
+// same everywhere, so they are written once and tested once rather than drifting.
 package sourceutil
 
 import (
@@ -22,11 +20,9 @@ import (
 // DefaultPageSize is the page size used when a query does not ask for one.
 const DefaultPageSize = 20
 
-// SelectMods filters mods by the query and then applies the requested sorting
-// and paging, so every source agrees on what "page 2" means.
-//
-// The three steps are separate so a caller that already has the full result set
-// can reuse MatchesQuery or Paginate on its own.
+// SelectMods filters mods by the query and then applies the requested sorting and
+// paging, so every source agrees on what "page 2" means. The steps stay separate so
+// a caller holding the full result set can reuse MatchesQuery or Paginate on its own.
 func SelectMods(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 	kept := make([]domain.Mod, 0, len(mods))
 	for _, m := range mods {
@@ -40,13 +36,10 @@ func SelectMods(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 	return Paginate(kept, q.Page, q.PageSize)
 }
 
-// MatchesQuery reports whether a mod satisfies the query. An empty query matches
-// everything, which is what a plain "browse this source" call sends.
-//
-// Tags are ANDed: asking for "ui" and "hd" means the mod has to be both, because
-// a user listing two tags is narrowing the result, not widening it. A mod that
-// declares no game version is never filtered out on that axis, since the field
-// is optional and an absent constraint cannot be violated.
+// MatchesQuery reports whether a mod satisfies the query; an empty query matches
+// everything, which is what a plain "browse this source" call sends. Tags are ANDed
+// because listing two narrows the search rather than widening it, and a mod declaring
+// no game version is never filtered out on that axis.
 func MatchesQuery(m domain.Mod, q domain.SearchQuery) bool {
 	needle := strings.ToLower(strings.TrimSpace(q.Query))
 	if needle != "" {
@@ -81,12 +74,9 @@ func MatchesQuery(m domain.Mod, q domain.SearchQuery) bool {
 	return true
 }
 
-// Paginate slices a result set. An out-of-range page yields an empty slice
-// rather than a panic, and the result is always non-nil so a caller can tell
-// "no results" from "no query run yet" without a nil check.
-//
-// A pageSize above the result length is not an error either: the last page is
-// simply short.
+// Paginate slices a result set. An out-of-range page yields an empty slice rather than
+// a panic, and the result is always non-nil; a pageSize above the result length is not
+// an error either, the last page is simply short.
 func Paginate(mods []domain.Mod, page, pageSize int) []domain.Mod {
 	if len(mods) == 0 {
 		return []domain.Mod{}
@@ -116,10 +106,9 @@ func Paginate(mods []domain.Mod, page, pageSize int) []domain.Mod {
 	return out
 }
 
-// Summarize renders a handful of errors on one line for an aggregate message.
-// At most three are named, because a source that failed against forty
-// repositories should not bury the useful part under a wall of identical text.
-// The count of the rest is reported rather than dropped silently.
+// Summarize renders a handful of errors on one line for an aggregate message. At most
+// three are named, because a source that failed against forty repositories should not
+// bury the useful part; the count of the rest is reported rather than dropped silently.
 func Summarize(errs []error) string {
 	parts := make([]string, 0, len(errs))
 	for _, err := range errs {
@@ -141,9 +130,9 @@ func Summarize(errs []error) string {
 	return strings.Join(parts, "; ")
 }
 
-// FirstNonBlank returns the first argument that is not blank, untrimmed. The
-// original spelling is returned because these values become identifiers and
-// display names, and silently trimming a name would change what the user sees.
+// FirstNonBlank returns the first argument that is not blank, untrimmed. The original
+// spelling is returned because these values become identifiers and display names, and
+// trimming a name would change what the user sees.
 func FirstNonBlank(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -197,10 +186,9 @@ func SplitList(raw string) []string {
 	return out
 }
 
-// StringOf renders a SourceData value as a string, tolerating the many types a
-// value can have after a round trip through the database: a string written by a
-// source plugin comes back as a string, but one written by hand as JSON number
-// or boolean comes back as float64 or bool.
+// StringOf renders a SourceData value as a string, tolerating the many types it can
+// have after a round trip through the database: a string written by a source plugin
+// comes back as a string, one written by hand as float64 or bool.
 func StringOf(raw any) string {
 	switch v := raw.(type) {
 	case nil:

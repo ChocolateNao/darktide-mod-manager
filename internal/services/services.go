@@ -1,16 +1,9 @@
 // Package services holds the mod manager's use cases.
 //
-// Each service owns one slice of behaviour — mod lifecycle, source
-// discovery, game detection, download caching, hook execution — and depends on
-// the small interfaces declared here rather than on concretions. Concretions
-// (SQLite, the filesystem, HTTP sources, Goja) are wired in internal/di and
-// injected through the constructors, which is what lets the whole layer be
-// exercised against fakes.
-//
-// The interfaces are deliberately narrower than the implementations they stand
-// in for. storage.ModRepository, for instance, exposes twenty methods, while
-// ModService needs fewer than half of them; the narrower interface below means a
-// test double has fewer methods to keep honest.
+// Each service owns one slice of behaviour — mod lifecycle, source discovery,
+// game detection, download caching, hook execution — and depends on the narrow
+// interfaces declared here. Concretions are wired in internal/di, and the
+// narrowness keeps a test double's method count low.
 package services
 
 import (
@@ -19,9 +12,8 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// ConfigStore is the slice of storage.ConfigStore the services need. Depending
-// on this rather than the concrete store keeps the services testable and lets a
-// future implementation serve configuration from the database instead of a file.
+// ConfigStore is the slice of storage.ConfigStore the services need, narrow
+// enough that a test double can keep it honest.
 type ConfigStore interface {
 	// Path is the file the configuration is read from and written to.
 	Path() string
@@ -31,14 +23,12 @@ type ConfigStore interface {
 	// Save replaces the stored configuration.
 	Save(cfg *domain.Config) error
 	// SaveIfChanged writes only when the canonical encoding differs from what is
-	// already on disk, and reports whether it wrote. Services call this on paths
-	// that run on a timer so an unchanged configuration is not rewritten.
+	// on disk, and reports whether it wrote.
 	SaveIfChanged(cfg *domain.Config) (bool, error)
 }
 
-// InstallationDetector probes the machine for Darktide installations. The
-// platform package provides the real implementation; tests substitute a fake
-// with a fixed set of candidates.
+// InstallationDetector probes the machine for Darktide installations; tests
+// substitute a fake with a fixed set of candidates.
 type InstallationDetector interface {
 	// FindInstallations probes every known candidate location.
 	FindInstallations(ctx context.Context) ([]domain.GameInstallation, error)
@@ -52,10 +42,9 @@ type InstallationDetector interface {
 // DetectorFactory builds a detector for one registered game plus one game's
 // configuration snapshot.
 //
-// It is a function rather than a stored detector because the configured game
-// path has to be folded in as an extra candidate, and the configuration is
-// re-read on every lookup: a user who repoints the game in the UI must not need
-// the process restarted for detection to agree with the config file.
+// A function rather than a stored detector, because the configuration is re-read
+// on every lookup: a user who repoints the game in the UI must not need a restart
+// for detection to agree with the config file.
 type DetectorFactory func(
 	game domain.GameDefinition,
 	cfg domain.GameSettings,

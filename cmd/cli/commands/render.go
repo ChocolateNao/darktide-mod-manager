@@ -12,12 +12,9 @@ import (
 	"golang.org/x/term"
 )
 
-// Table is a left-aligned, column-aligned text table.
-//
-// It is not a general-purpose table: there is one rule it enforces that a
-// general-purpose table would not, which is that a column's width is measured
-// in runes, not bytes. A mod name is very often not ASCII, and padding by byte
-// length misaligns every column after it for every non-English user.
+// Table is a left-aligned, column-aligned text table. A column's width is
+// measured in runes, not bytes, because mod names are very often not ASCII and
+// padding by byte length misaligns every column after it.
 type Table struct {
 	headers []string
 	rows    [][]string
@@ -57,17 +54,8 @@ func (t *Table) Empty() bool { return len(t.rows) == 0 }
 func (t *Table) Len() int { return len(t.rows) }
 
 // Render writes the table. It is not named WriteTo: that name belongs to
-// io.WriterTo, whose signature counts bytes, and a method that does not count
-// them would be a lie a compiler check would rightly refuse.
-//
-// A table with no rows renders as nothing at all rather than as a header with
-// nothing under it: a header on its own reads as a rendering bug, and the caller
-// has a better sentence for the empty case.
-//
-// When it is written to a terminal, the table is shaped to fit that terminal's
-// grid: wide columns are squeezed rather than left to wrap, and a table taller
-// than the screen is cut with a line saying how many rows it left out. See
-// gridOf for why that is only done for a terminal.
+// io.WriterTo, whose signature counts bytes, and this one does not. Written to a
+// terminal the table is shaped to that terminal's grid — see gridOf.
 func (t *Table) Render(w io.Writer) error {
 	if len(t.rows) == 0 {
 		return nil
@@ -117,27 +105,18 @@ func (t *Table) Render(w io.Writer) error {
 	return err
 }
 
-// columnPadding is the padding Render puts between two columns. Two spaces is
-// enough to tell the columns apart without making a wide table any wider, and
-// it is what every recorded transcript was written with, so changing it would
-// make all of them fail for no reason.
+// columnPadding is the padding Render puts between two columns. Two spaces tell
+// them apart without widening a wide table, and are what the golden files expect.
 const columnPadding = 2
 
-// minColumnWidth is how narrow a column may be squeezed before it stops being
-// worth squeezing. A column is as wide as its longest cell, and one long mod
-// name or path can make a column ten times the width of the rest, so the width
-// is usually one cell's doing; but a column narrower than this has stopped being
-// a value and become a letter, and a table of letters is not a smaller table, it
-// is an unreadable one.
+// minColumnWidth is how narrow a column may be squeezed. A column is as wide as
+// its longest cell; below this the values have become letters, and a table of
+// letters is unreadable rather than smaller.
 const minColumnWidth = 4
 
-// measure returns the natural width of every column and the narrowest each may
-// be squeezed to.
-//
-// The floor is the wider of the column's header and minColumnWidth. A header is
-// never truncated — see NewTable — so a column can never be narrower than the
-// word above it, which is also the right answer on its own: a header is the one
-// cell in the column that is certainly short and certainly load-bearing.
+// measure returns the natural width of every column and the narrowest each may be
+// squeezed to. The floor is the wider of the header and minColumnWidth, because a
+// header is never truncated and is the one cell certainly short and load-bearing.
 func (t *Table) measure() (widths, floors []int) {
 	widths = make([]int, len(t.headers))
 
@@ -158,17 +137,10 @@ func (t *Table) measure() (widths, floors []int) {
 	return widths, floors
 }
 
-// fitWidths narrows widths until the table fits in available columns, and
-// returns the natural widths unchanged when it cannot.
-//
-// The widest column that can still give way is the one that gives, one column at
-// a time, because that is where the width is not information: a column is sized
-// by its longest cell, so one long path makes it far wider than the rest and
-// shrinking every column equally would sacrifice four readable columns to make
-// room for one unreadable one. When nothing is left to give the natural widths
-// come back, because a table that overflows and wraps still says everything it
-// has to say, while a table whose columns have been squeezed past their floors
-// says nothing at all.
+// fitWidths narrows widths until the table fits, and returns them unchanged when
+// it cannot. The widest column that can still give way is the one that gives, one
+// at a time: shrinking every column equally would sacrifice four readable columns
+// for one unreadable one.
 func fitWidths(widths, floors []int, available int) []int {
 	if available <= 0 || columnsWidth(widths) <= available {
 		return widths
@@ -208,11 +180,8 @@ func columnsWidth(widths []int) int {
 	return total
 }
 
-// fitCell shortens a value to width runes, marking anything dropped.
-//
-// An ellipsis rather than a hard cut, because a column cut mid-word looks like a
-// rendering fault while one cut with an ellipsis looks like a column that ran out
-// of room, which is what happened.
+// fitCell shortens a value to width runes, marking anything dropped. An ellipsis
+// rather than a hard cut, which reads as a rendering fault.
 func fitCell(text string, width int) string {
 	if width <= 0 {
 		return ""
@@ -230,17 +199,12 @@ func fitCell(text string, width int) string {
 	return string(runes[:width-1]) + "…"
 }
 
-// rowsForHeight returns the rows a terminal of this many lines can show, and
-// how many it cannot.
-//
-// The header and the closing note each take a line of their own, so a complete
-// table of N rows needs N+2 lines. A terminal too small for that shows what it
-// can; there is no size at which showing nothing is the better answer, so the
-// count is floored at one row rather than at zero.
+// rowsForHeight returns the rows a terminal of this many lines can show, and how
+// many it cannot. The header and the closing note take a line each, and the
+// count is floored at one row.
 func rowsForHeight(rows [][]string, height int) ([][]string, int) {
-	// One line for the header and one for the note. A table that needs no note
-	// still loses the line reserved for one, which is a line of caution in
-	// exchange for the note never being the reason a row went missing.
+	// One line for the header and one for the note: a table needing no note still
+	// loses the reserved line, which is caution bought with a note never losing a row.
 	room := height - 2
 	if room < 1 {
 		room = 1
@@ -253,12 +217,9 @@ func rowsForHeight(rows [][]string, height int) ([][]string, int) {
 	return rows[:room], len(rows) - room
 }
 
-// elidedNote is the line that says how many rows a terminal was too short for.
-//
-// It is a line of its own rather than a change to the last row shown, so that
-// nothing on screen is mistakable for data, and it does not suggest a way to see
-// the rest: which answer is right depends on the command, and a hint that is
-// wrong for the command you ran sends you somewhere useless.
+// elidedNote is the line saying how many rows the terminal was too short for. It
+// is a line of its own rather than an edit to the last row shown, so nothing on
+// screen is mistakable for data.
 func elidedNote(count int) string {
 	word := "rows"
 	if count == 1 {
@@ -274,18 +235,10 @@ type terminalGrid struct {
 	height int
 }
 
-// gridOf returns the grid w is written into, and whether w is a terminal.
-//
-// Every false answer means the same thing — nobody is looking at a fixed-width
-// screen — and the table is then rendered at its natural size. That is what keeps
-// output a contract: a pipe, a file and a test's buffer all get every row in
-// full, whatever terminal this process happens to be attached to. A table that
-// quietly wrapped itself to the width of the window it happened to open in would
-// be a different document to every reader of the same command.
-//
-// The writer is narrowed to an *os.File because that is the only thing a
-// descriptor can be got from. Anything else is a buffer or a writer somebody
-// supplied, and a buffer has no width to honour.
+// gridOf returns the grid w is written into, and whether w is a terminal. Every
+// false answer means the same thing — nobody is looking at a fixed-width screen —
+// and the table is rendered at its natural size, which is what keeps output a
+// contract across pipes, files and tests.
 func gridOf(w io.Writer) (terminalGrid, bool) {
 	file, ok := w.(*os.File)
 	if !ok {
@@ -305,14 +258,10 @@ func gridOf(w io.Writer) (terminalGrid, bool) {
 	return terminalGrid{width: width, height: height}, true
 }
 
-// sanitizeCell makes a value safe to put in a table: control characters go, and
-// a tab or newline would otherwise break the column alignment of every row
-// after it. A mod description scraped from a source regularly contains both.
-//
-// Surrounding whitespace is trimmed in every case, not only when something was
-// replaced. A value that reaches here padded with spaces shifts its own column,
-// and trimming only the values that happened to contain a control character
-// would make the misalignment depend on the content of an unrelated field.
+// sanitizeCell makes a value safe to put in a table: control characters go, since
+// a tab or newline would break the alignment of every row after it. Surrounding
+// whitespace is trimmed in every case, or the misalignment would depend on the
+// content of an unrelated field.
 func sanitizeCell(cell string) string {
 	if !strings.ContainsFunc(cell, needsReplacing) {
 		return strings.TrimSpace(cell)
@@ -348,10 +297,9 @@ func needsReplacing(r rune) bool {
 	return r < 0x20 || r == 0x7f
 }
 
-// maxCellWidth bounds the columns that hold prose. A description is the one
-// field with no natural length, and a table that wraps is a table nobody can
-// read in a terminal. A source description longer than this is truncated with
-// an ellipsis so it is visibly shortened rather than silently cut.
+// maxCellWidth bounds the columns that hold prose. A description is the one field
+// with no natural length, and a table that wraps is unreadable in a terminal; a
+// longer one is cut with an ellipsis so the shortening is visible.
 const maxCellWidth = 48
 
 // Clip shortens a value to maxCellWidth runes, marking anything dropped.
@@ -371,11 +319,8 @@ func Clip(text string) string {
 }
 
 // Fields is an aligned key/value block, the shape a "show one thing in detail"
-// command prints.
-//
-// It is a block rather than a two-column table because the second column holds
-// prose: a table of one very long cell wraps, and a wrapped table cannot be
-// read down the left edge.
+// command prints. A block rather than a two-column table because the second column
+// holds prose, and a wrapped table cannot be read down the left edge.
 type Fields struct {
 	keys   []string
 	values []string
@@ -421,12 +366,9 @@ func (f *Fields) Render(w io.Writer) error {
 	return err
 }
 
-// writeJSON prints a value as indented JSON followed by a newline.
-//
-// A trailing newline matters: without it, two JSON documents printed in a row
-// run together and the combined stream is not parseable. Encoding failures are
-// wrapped with the value's type, because "json: unsupported type" on its own
-// does not say which command produced it.
+// writeJSON prints a value as indented JSON followed by a newline. The newline
+// matters: without it two documents printed in a row are not parseable. Encoding
+// failures are wrapped with the value's type.
 func writeJSON(w io.Writer, value any) error {
 	encoded, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -441,12 +383,9 @@ func writeJSON(w io.Writer, value any) error {
 	return nil
 }
 
-// writeJSONOrTable is the one place the --json decision is made.
-//
-// It is a single function on purpose: a command that decides for itself can
-// forget to check the flag, and the failure mode is JSON on a terminal or a
-// table in a script, which is exactly the kind of thing that gets piped into
-// jq and fails three months later.
+// writeJSONOrTable is the one place the --json decision is made. A single function
+// on purpose: a command that decides for itself can forget to check the flag, and
+// the failure mode is JSON on a terminal or a table in a script.
 func (s *session) writeJSONOrTable(w io.Writer, value any, table *Table, nothing string) error {
 	if s.opts.asJSON {
 		return writeJSON(w, value)
@@ -465,9 +404,8 @@ func (s *session) writeJSONOrTable(w io.Writer, value any, table *Table, nothing
 	return err
 }
 
-// yesNo renders a boolean the way a person reads it in a table: "yes"/"no"
-// rather than "true"/"false", because the column header is usually about
-// state, not about a Go value.
+// yesNo renders a boolean the way a person reads it in a table, because the column
+// header is usually about state rather than about a Go value.
 func yesNo(value bool) string {
 	if value {
 		return "yes"
@@ -476,9 +414,8 @@ func yesNo(value bool) string {
 	return "no"
 }
 
-// humanSize renders a byte count with a binary unit. Cache sizes span four
-// orders of magnitude between an empty cache and a full one, and a raw byte
-// count is unreadable at both ends of that range.
+// humanSize renders a byte count with a binary unit: cache sizes span four orders
+// of magnitude and a raw byte count is unreadable at both ends of that range.
 func humanSize(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
@@ -494,11 +431,8 @@ func humanSize(bytes int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTP"[exp])
 }
 
-// orDash renders an absent value as a dash.
-//
-// A dash rather than an empty cell: an empty column in a table is ambiguous
-// between "nothing" and "the value was blank and we trimmed it", and a person
-// scanning a cache listing should not have to tell those apart.
+// orDash renders an absent value as a dash. An empty cell is ambiguous between
+// "nothing" and "the value was blank and we trimmed it".
 func orDash(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return "-"
@@ -516,14 +450,10 @@ func joinNames(names []string) string {
 	return Clip(strings.Join(names, ", "))
 }
 
-// describeError renders an already-single-lined error for a table cell,
-// keeping the manager's error code: the code is what tells a person whether a
-// missing credential and an unreachable source are the same problem, and a
-// table of results has no other column for it.
-//
-// It takes the message rather than the error because the callers that have a
-// table also have a JSON view of the same result, and the JSON keeps the
-// unclipped text.
+// describeError renders an already-single-lined error for a table cell, keeping
+// the manager's error code: the code tells a person whether a missing credential
+// and an unreachable source are the same problem. It takes the message rather
+// than the error because callers with a table also have a JSON view.
 func describeError(text string) string {
 	if strings.TrimSpace(text) == "" {
 		return "-"
@@ -532,10 +462,9 @@ func describeError(text string) string {
 	return Clip(text)
 }
 
-// fatalf builds a user-facing argument error. The argument validation in this
-// package goes through here so every "you passed the wrong thing" message
-// reaches the terminal as INVALID_ARGUMENT rather than as a bare string that a
-// caller cannot branch on.
+// fatalf builds a user-facing argument error. Argument validation goes through here
+// so every "you passed the wrong thing" message arrives as INVALID_ARGUMENT rather
+// than as a string a caller cannot branch on.
 func fatalf(format string, args ...any) error {
 	return appErrors.New(appErrors.ErrCodeInvalidArgument, format, args...)
 }

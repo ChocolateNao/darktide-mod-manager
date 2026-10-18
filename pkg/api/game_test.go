@@ -22,10 +22,10 @@ func builtinsRegistered(t *testing.T) {
 	require.NoError(t, games.EnsureBuiltins(), "register builtins")
 }
 
-// registerSecondGame puts a second game in the process-wide registry for the
-// duration of one test and restores the builtins afterwards, so the default id
-// never moves between tests. The builtins are registered first: the first
-// game registered owns the default.
+// registerSecondGame puts a second game in the process-wide registry for one test
+// and restores the builtins afterwards, so the default id never moves between
+// tests. The builtins are registered first: the first game registered owns the
+// default.
 func registerSecondGame(t *testing.T, id string) {
 	t.Helper()
 
@@ -160,7 +160,7 @@ func TestTheGamePathSurvivesSwitchingAwayAndBack(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.makeGame(t)
 	// Deliberately no saveConfig: a brand new installation has no config file
-	// and no active_game, which is the state the report describes.
+	// and no active_game, which is the state under test.
 	registerSecondGame(t, "sietch")
 
 	client, err := NewClient(context.Background(), w.options()...)

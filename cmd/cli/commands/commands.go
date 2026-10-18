@@ -1,34 +1,8 @@
-// Package commands implements the darktide-mod-manager command line
-// interface.
-//
-// # Where the wiring happens
-//
-// Nothing in this package builds a service. The one seam is Env.NewContainer,
-// which the entry point in cmd/cli points at internal/di. That is deliberate:
-// a command is a function of its arguments, its output writer and a container,
-// and a test can therefore run a real command line end to end — a real
-// container over a real SQLite database, a real archive, a real symlink — while
-// still capturing every byte it printed. The alternative, mocking the services
-// behind the commands, would have hidden the wiring bugs that only show up
-// when the real collaborators are the ones disagreeing.
-//
-// # Output is a contract
-//
-// Every command that reads state writes a table, and every one of those tables
-// has a --json form. The tables are for a person at a terminal; the JSON is for
-// a script, and it is a deliberately separate set of types rather than the
-// domain structs, because a domain struct's field names are not a promise
-// anybody can make to a shell script. Nothing here writes colour, progress bars
-// or a spinner: the output has to be diffable in a test and pipeable into
-// another process.
-//
-// # Errors
-//
-// A failing command prints one line to standard error, prefixed with the
-// manager's error code, and exits non-zero. Errors are never swallowed to keep
-// a table tidy: a half-printed list is worse than none. The codes come from
-// pkg/errors and callers can branch on them, so a script can tell "no such
-// mod" from "the source is unreachable" without matching message text.
+// Package commands implements the darktide-mod-manager command line interface.
+// The one seam is Env.NewContainer, which cmd/cli points at internal/di, so a
+// test runs a real command line end to end while capturing every byte it printed.
+// Output is tables or --json, never colour or progress bars, so it stays diffable
+// and pipeable; errors are never swallowed to keep a table tidy.
 package commands
 
 import (
@@ -47,9 +21,8 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Version is the build stamp reported by `dmm version`. It is a variable
-// rather than a constant so the release build can set it with -ldflags; the
-// fallback says "dev" rather than lying about a version.
+// Version is the build stamp reported by `dmm version`. It is a variable so the
+// release build can set it with -ldflags; the fallback says "dev" rather than lying.
 var Version = "dev"
 
 // Exit codes. Only three, because a caller should not have to read the source
@@ -60,35 +33,28 @@ const (
 	// ExitError is any failure.
 	ExitError = 1
 	// ExitCanceled is an operation the user interrupted, following the shell
-	// convention for SIGINT (128 + 2). It is distinct from ExitError because
-	// "I pressed ctrl-c" is not the same event as "this failed", and a retrying
-	// script wants to know the difference.
+	// convention for SIGINT (128 + 2). It is separate from ExitError so a retrying
+	// script can tell an interrupt from a failure.
 	ExitCanceled = 130
 )
 
-// Env is everything a command needs from the outside world.
-//
-// The writers exist so a test can capture output instead of printing it, and
-// the container factory exists so the tests can be handed a real container
-// built over a temporary directory while the production entry point hands in
-// the real di.NewContainer. Neither is a mock: a mock would let a command pass
-// while the thing it calls is broken.
+// Env is everything a command needs from the outside world. The writers let a
+// test capture output instead of printing it; neither is a mock, since a mock
+// would let a command pass while the thing it calls is broken.
 type Env struct {
-	// Out receives command output.
 	Out io.Writer
-	// Err receives error messages and diagnostics.
 	Err io.Writer
 	// In supplies data for commands that read from standard input, such as
 	// sourcing a credential without putting it in the process list.
 	In io.Reader
-	// NewContainer builds the object graph a command works against.
+	// NewContainer builds the object graph a command works against; the entry point
+	// points it at di.NewContainer and a test points it at a container of its own.
 	NewContainer func(ctx context.Context, opts di.Options) (*di.Container, error)
 }
 
-// withDefaults fills in the writers that a caller may leave nil, so a command
-// can write unconditionally instead of checking every time. Discarding is
-// better than panicking: a nil Out is a mistake in a test, and a panic there
-// tells the reader nothing about the command.
+// withDefaults fills in the writers a caller may leave nil, so a command can
+// write unconditionally. Discarding beats panicking: a nil Out is a mistake in a
+// test, and a panic there says nothing about the command.
 func (e Env) withDefaults() Env {
 	if e.Out == nil {
 		e.Out = io.Discard
@@ -120,14 +86,9 @@ type globalFlags struct {
 	verbose     bool
 }
 
-// session is the per-invocation state shared by every command in one run: the
-// flags, the writers, and the container.
-//
-// The container is built at most once and closed exactly once. Building it
-// eagerly would pay for opening a database and running start-up diagnostics
-// even for `dmm --help` or `dmm version`; building it per command would open
-// and close the same database several times in one invocation, and a container
-// that is rebuilt mid-run could disagree with itself.
+// session is the per-invocation state shared by every command in one run. The
+// container is built at most once and closed exactly once — eagerly would pay for
+// a database even for `dmm --help`.
 type session struct {
 	env       Env
 	buildErr  error
@@ -199,11 +160,9 @@ func (s *session) close() error {
 	return container.Close()
 }
 
-// diOptions turns the global flags into the options the container takes.
-//
-// An unset path is passed through as the empty string rather than as a
-// guess: di treats a blank path as "the user has no opinion", and inventing a
-// default here would override the configuration file behind the user's back.
+// diOptions turns the global flags into the options the container takes. An
+// unset path is passed through empty rather than guessed: di treats a blank as
+// "the user has no opinion", and a default here would override the config file.
 func (s *session) diOptions() di.Options {
 	return di.Options{
 		ConfigPath:  s.opts.configPath,
@@ -218,13 +177,9 @@ func (s *session) diOptions() di.Options {
 	}
 }
 
-// logLevel resolves the effective level for this run.
-//
-// --verbose is a shortcut for --log-level debug, and it is also what turns the
-// console sink on: someone who asked for debug output is watching a terminal,
-// and sending it only to a file they have not opened would be a strange reading
-// of the request. The explicit flag wins over the shortcut so `dmm --verbose
-// --log-level error mods list` means what it says.
+// logLevel resolves the effective level for this run. --verbose is a shortcut for
+// --log-level debug and also turns the console sink on; the explicit flag wins
+// over the shortcut.
 func (s *session) logLevel() string {
 	if level := strings.TrimSpace(s.opts.logLevel); level != "" {
 		return level
@@ -237,11 +192,9 @@ func (s *session) logLevel() string {
 	return ""
 }
 
-// addLoggingFlags registers the global logging flags.
-//
-// They live on the root command so a script can put them anywhere on the line,
-// which is the point of a global flag: `dmm --verbose mods list` and `dmm mods
-// list --verbose` should not be different invocations.
+// addLoggingFlags registers the global logging flags on the root command, so a
+// script can put them anywhere on the line: `dmm --verbose mods list` and `dmm
+// mods list --verbose` are the same invocation.
 func (s *session) addLoggingFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&s.opts.verbose, "verbose", false, "log at debug level and print to the console")
 	flags.StringVar(
@@ -271,8 +224,8 @@ func (s *session) addLoggingFlags(flags *pflag.FlagSet) {
 }
 
 // logger sends the container's start-up diagnostics to standard error, so they
-// cannot be mistaken for a command's own output — which is what a script
-// parses. --quiet silences it.
+// cannot be mistaken for a command's own output — which is what a script parses.
+// --quiet silences it.
 func (s *session) logger() api.Logger {
 	if s.opts.quiet {
 		return api.LoggerFunc(func(string, ...any) {})
@@ -285,13 +238,9 @@ func (s *session) logger() api.Logger {
 	})
 }
 
-// newCommand builds the command tree and the session that goes with it.
-//
-// The tree is assembled here rather than in a package-level variable because a
-// cobra command holds flags and state: a shared one would carry the first
-// invocation's flags into the second, which matters the moment a test runs two
-// command lines in one process. The session comes back alongside so the caller
-// that owns a process — rather than a single command — can close it.
+// newCommand builds the command tree and the session that goes with it. The tree
+// is assembled here rather than held in a package-level variable because a cobra
+// command carries flags and state, which would leak into the next invocation.
 func newCommand(env Env) (*cobra.Command, *session) {
 	env = env.withDefaults()
 	s := &session{env: env}
@@ -303,9 +252,8 @@ func newCommand(env Env) (*cobra.Command, *session) {
 			"and from the sources configured in its settings file.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		// A bare `dmm` prints help rather than doing something. Running an
-		// unrequested operation because someone pressed enter at a prompt is
-		// never the right default.
+		// A bare `dmm` prints help rather than doing something: running an
+		// unrequested operation because someone pressed enter is never right.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -352,8 +300,8 @@ func newCommand(env Env) (*cobra.Command, *session) {
 	return root, s
 }
 
-// NewRootCommand builds the whole command tree for a caller that wants to run
-// it itself — the Wails process does not, but a test or an embedder might.
+// NewRootCommand builds the whole command tree for a caller that wants to run it
+// itself — the Wails process does not, but a test or an embedder might.
 func NewRootCommand(env Env) *cobra.Command {
 	root, _ := newCommand(env)
 	return root
@@ -366,20 +314,9 @@ func Run(env Env, args []string) int {
 }
 
 // RunContext executes the command line under ctx and returns the process exit
-// code.
-//
-// The context is given to the container as well as to the commands. That is
-// deliberate and slightly unusual: the container is built once for the whole
-// invocation, so a context that dies with the first command would leave a
-// container that is already cancelled for the rest of the run. Each command
-// therefore derives its own cancellable context from ctx — see base.ready in
-// internal/commands for the same arrangement on the GUI side.
-//
-// The error, if there is one, is reported to standard error here so a caller
-// sees it exactly once and in one place. A failure to close the container is
-// reported too, and separately: it is a different problem from the command's
-// own failure, and folding the two into one message would hide whichever is
-// more interesting.
+// code. The context goes to the container as well as to the commands, because a
+// context that died with the first command would leave it cancelled for the rest
+// of the run; each command derives its own cancellable context from ctx instead.
 func RunContext(ctx context.Context, env Env, args []string) int {
 	env = env.withDefaults()
 	root, s := newCommand(env)
@@ -408,10 +345,8 @@ func RunContext(ctx context.Context, env Env, args []string) int {
 	return exitCode(runErr)
 }
 
-// oneLine renders an error as a single line, because an error message with a
-// newline in it turns one failure into a paragraph of output a caller has to
-// parse. The cause is included: "NOT_FOUND: mod "x" is not installed: sql:
-// no rows" is one line and still says everything.
+// oneLine renders an error as a single line, because a newline in the message
+// turns one failure into a paragraph. The cause is kept.
 func oneLine(err error) string {
 	text := strings.TrimSpace(err.Error())
 	text = strings.ReplaceAll(text, "\r\n", " ")
@@ -439,12 +374,8 @@ func exitCode(err error) int {
 }
 
 // newVersionCommand reports the build. It deliberately builds no container: a
-// version query is the one command that must work when the configuration file
-// is unreadable, the disk is full, or the manager is misconfigured.
-//
-// The program name is printed as well as the version, because `dmm version` is
-// what someone pastes into a bug report and a bare "dev" in the middle of a
-// pasted block says nothing about which program produced it.
+// version query must work when the configuration is unreadable. The program name
+// is printed too, because `dmm version` is what someone pastes into a bug report.
 func newVersionCommand(s *session) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -478,12 +409,8 @@ func modLabelOf(id string) string {
 	return id
 }
 
-// plural renders a count with a noun that agrees with it.
-//
-// A CLI is read more often than it is written, and "1 mods" is the kind of
-// small wrongness that makes a person distrust everything else on the screen.
-// "1 of 4 mods" is deliberately not handled here: the noun in that sentence
-// agrees with the second number and is plural whatever the first is.
+// plural renders a count with a noun that agrees with it: "1 mods" makes a person
+// distrust everything else on the screen.
 func plural(count int, singular, many string) string {
 	if count == 1 {
 		return fmt.Sprintf("%d %s", count, singular)
@@ -492,9 +419,8 @@ func plural(count int, singular, many string) string {
 	return fmt.Sprintf("%d %s", count, many)
 }
 
-// sortedKeys is used where a stable order matters and the input is a map. Go
-// randomises map iteration, so anything a user reads has to be sorted before it
-// is printed or it will differ between two runs over identical state.
+// sortedKeys returns a map's keys in order, because Go randomises map iteration
+// and anything a user reads has to be identical across two runs over one state.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for key := range m {

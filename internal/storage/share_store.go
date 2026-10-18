@@ -10,9 +10,8 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// ShareStore persists share metadata. It is a view over the shared database
-// handle, not an owner: the bundle closes the handle, so this store has no
-// Close of its own and outlives nothing.
+// ShareStore persists share metadata. It is a view over the shared database handle,
+// not an owner: the bundle closes the handle, so this store has no Close of its own.
 type ShareStore struct {
 	db *sql.DB
 }
@@ -129,9 +128,9 @@ type shareScanner interface {
 	Scan(dest ...any) error
 }
 
-// notFound turns a missing row into the typed error. A raw sql.ErrNoRows that
-// escapes the store would force every caller to match on a database package's
-// sentinel instead of the domain's.
+// notFound turns a missing row into the typed error. A raw sql.ErrNoRows escaping
+// the store would force every caller to match on a database package's sentinel
+// instead of the domain's.
 func notFound(err, notFoundErr error) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return notFoundErr
@@ -164,9 +163,9 @@ func (s *ShareStore) scanShare(row shareScanner) (*domain.ShareRecord, error) {
 		return nil, fmt.Errorf("unmarshal links: %w", err)
 	}
 
-	// parseTime never reports an error: an unreadable timestamp yields the
-	// zero time rather than failing the whole read. A share with a garbled
-	// created_at is still a share the user can look at and revoke.
+	// parseTime never reports an error: an unreadable timestamp yields the zero time
+	// rather than failing the whole read, because a share with a garbled created_at
+	// is still a share the user can look at and revoke.
 	createdAt := parseTime(createdAtStr)
 	updatedAt := parseTime(updatedAtStr)
 

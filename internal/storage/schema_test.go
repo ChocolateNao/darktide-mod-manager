@@ -117,17 +117,15 @@ func TestOpenEnforcesForeignKeys(t *testing.T) {
 	)
 }
 
-// An in-memory database lives inside one connection. If the pool ever handed out
-// a second connection it would see a brand-new empty database, so this test
-// writes and then reads on separate statements, which is exactly the pattern
-// that would expose it.
 func TestInMemoryDatabaseSurvivesSeparateStatements(t *testing.T) {
 	db := openMemory(t)
 	ctx := context.Background()
 
+	// An in-memory database lives inside one connection; a second pooled one
+	// would see a brand-new empty database, hence the write-then-read below.
 	_, err := db.ExecContext(ctx, "INSERT INTO config(key, value) VALUES('k', 'v')")
 	require.NoError(t, err, "insert: %v", err)
-	// A second, independent connection from the pool.
+
 	var value string
 
 	err = db.QueryRowContext(ctx, "SELECT value FROM config WHERE key = 'k'").Scan(&value)
@@ -161,9 +159,8 @@ func TestApplySchemaIsIdempotent(t *testing.T) {
 	require.NoError(t, err, "insert after re-applying schema: %v", err)
 }
 
-// A fresh database carries the game_id column and its index: the column is
-// part of the CREATE TABLE, and the index is what game-scoped queries filter
-// on.
+// A fresh database carries the game_id column and the index game-scoped
+// queries filter on.
 func TestOpenCreatesGameIDColumnAndIndex(t *testing.T) {
 	db := openMemory(t)
 	ctx := context.Background()
@@ -187,10 +184,8 @@ func TestOpenCreatesGameIDColumnAndIndex(t *testing.T) {
 	assert.Contains(t, defs, "mods(game_id)", "index must cover game_id")
 }
 
-// A database written by a pre-multi-game build has a mods table without
-// game_id. ApplySchema upgrades it in place: existing rows survive with the
-// default "", the index appears, and a second apply stays a no-op. The schema
-// version is NOT bumped.
+// A pre-multi-game mods table lacks game_id and its index; ApplySchema upgrades
+// it in place without bumping the schema version.
 func TestApplySchemaUpgradesStaleModsTable(t *testing.T) {
 	ctx := context.Background()
 	db := openMemory(t)
@@ -236,8 +231,7 @@ func TestApplySchemaUpgradesStaleModsTable(t *testing.T) {
 	require.NoError(t, err, "read upgraded row: %v", err)
 	assert.Equal(t, "", gameID, "pre-upgrade rows get the empty default")
 
-	// The source-link columns upgrade the same way, and the row that existed
-	// before the upgrade has to survive it: a migration that loses data is
+	// A pre-existing row has to survive the upgrade: a migration that loses data is
 	// worse than one that cannot run.
 	for _, column := range []string{"source_url", "download_url", "update_url"} {
 		err = db.QueryRowContext(

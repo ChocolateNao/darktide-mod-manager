@@ -7,11 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestParseConflictResolution covers the parser that turns the value back into a
-// resolution. It exists because the value crosses two boundaries as a string —
-// JSON over the Wails bridge, a flag argument on the command line — and a caller
-// typing a hand-written flag is the most likely place for a hyphen to have been
-// typed as an underscore.
+// TestParseConflictResolution covers the parser, including the shapes a
+// hand-typed CLI flag or a JSON payload arrives in.
 func TestParseConflictResolution(t *testing.T) {
 	accepted := []struct {
 		text string
@@ -76,9 +73,8 @@ func TestParseConflictResolution(t *testing.T) {
 	}
 }
 
-// TestParseConflictResolutionRoundTrips: every resolution the type can hold has to
-// survive the trip through its own text, or a caller that renders a report and
-// reads the value back cannot act on it.
+// TestParseConflictResolutionRoundTrips: every resolution has to survive the trip
+// through its own text, or a caller that reads a report back cannot act on it.
 func TestParseConflictResolutionRoundTrips(t *testing.T) {
 	all := []ConflictResolution{
 		ResolutionKeepBoth,
@@ -105,8 +101,7 @@ func TestParseConflictResolutionRoundTrips(t *testing.T) {
 }
 
 // TestResolveConflictRefusesAnUnparsableResolution pins the whole path: a
-// resolution that never reaches the service, so nothing is changed and the caller
-// is told what it could have said instead.
+// resolution that never reaches the service changes nothing.
 func TestResolveConflictRefusesAnUnparsableResolution(t *testing.T) {
 	svc := &ModService{}
 	{
@@ -116,7 +111,7 @@ func TestResolveConflictRefusesAnUnparsableResolution(t *testing.T) {
 }
 
 // TestConflictResolutionStringIsStable: the CLI prints these and the GUI sends
-// them back, so changing one is a breaking change and it should be pinned.
+// them back, so a change here is a breaking change.
 func TestConflictResolutionStringIsStable(t *testing.T) {
 	want := map[ConflictResolution]string{
 		ResolutionUnset:         "unset",

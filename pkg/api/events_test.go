@@ -119,9 +119,8 @@ func TestEventBusUnsubscribeStopsDelivery(t *testing.T) {
 }
 
 func TestEventBusUnsubscribeIsIdempotent(t *testing.T) {
-	// The natural mistake is an explicit unsubscribe on the error path plus a
-	// deferred one. The second call must not remove somebody else's handler or
-	// panic on a deleted map key.
+	// The natural mistake is an explicit unsubscribe plus a deferred one. The
+	// second call must not remove somebody else's handler or panic.
 	bus := newTestBus()
 	sub := &collector{}
 	bus.Subscribe(sub.handle)
@@ -158,9 +157,8 @@ func TestEventBusRefusesANilHandler(t *testing.T) {
 }
 
 func TestEventBusSurvivesANilReceiver(t *testing.T) {
-	// A nil bus reaches a caller when a constructor returned an error and the
-	// error was thrown away. Every method has to tolerate it rather than panic
-	// deep inside.
+	// A nil bus reaches a caller when a constructor's error was thrown away. Every
+	// method has to tolerate it rather than panic.
 	var bus *EventBus
 
 	unsubscribe := bus.Subscribe(func(Event) {})
@@ -175,9 +173,8 @@ func TestEventBusSurvivesANilReceiver(t *testing.T) {
 }
 
 func TestEventBusContainsAPanickingHandler(t *testing.T) {
-	// A subscriber's bug must not take down the operation that published, and it
-	// must not stop the other subscribers either: an install that is halfway
-	// through is not the place to lose a third-party handler.
+	// One subscriber's bug must not take down the publishing operation or stop the other
+	// subscribers.
 	bus := newTestBus()
 	before := &collector{}
 	after := &collector{}
@@ -313,9 +310,7 @@ func TestEventTypesIsACopy(t *testing.T) {
 
 func TestEventBusIsSafeUnderConcurrentPublishAndSubscribe(t *testing.T) {
 	// The bus is shared by every goroutine running a mod operation, and the GUI
-	// subscribes and unsubscribes while installs are in flight. Run it under the
-	// race detector: a missing lock here is a crash in production, not a wrong
-	// answer.
+	// subscribes while installs are in flight. Run it under the race detector.
 	bus := newTestBus()
 
 	var wg sync.WaitGroup
@@ -357,8 +352,7 @@ func TestEventBusIsSafeUnderConcurrentPublishAndSubscribe(t *testing.T) {
 
 func TestClientSubscribesHandlersBeforeAnythingIsWired(t *testing.T) {
 	// The point of subscribing during construction is that a caller's very first
-	// event arrives. This checks the wiring end of that: NewClientFromServices
-	// subscribes the handler onto the bus it was given.
+	// event arrives. This checks the wiring end of that.
 	bus := newTestBus()
 	sub := &collector{}
 
@@ -420,8 +414,8 @@ func TestEventBusUsesTheServicesClockWhenOneIsSupplied(t *testing.T) {
 }
 
 // A context that is already done must stop an operation before it touches the
-// services. The registry's own Get has no context, so this is checked where the
-// adapter that does is.
+// services. The registry's own Get has no context, so this is checked in the
+// adapter.
 func TestRegistryProviderHonoursACancelledContext(t *testing.T) {
 	registry := services.NewSourceRegistry()
 	require.NoError(t, registry.Register(&stubSource{id: "stub"}), "Register")
@@ -442,8 +436,7 @@ func TestRegistryProviderHonoursACancelledContext(t *testing.T) {
 		err,
 	)
 
-	// A nil context is tolerated: it is a caller's slip, not a reason for the
-	// wiring to fail.
+	// A nil context is a caller's slip, not a reason for the wiring to fail.
 	//nolint:staticcheck // the nil context is exactly what is under test.
 	_, err = provider.Get(nil, "stub")
 	assert.NoError(t, err, "Get with a nil context")

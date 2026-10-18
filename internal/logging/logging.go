@@ -1,26 +1,14 @@
 // Package logging owns the process-wide log fan-out.
 //
-// A single zerolog logger is shared by every layer. It is deliberately created
-// at TraceLevel and carries no filter of its own: each destination receives a
-// LevelWriter that does the filtering, so raising or lowering the level at
-// runtime is a single atomic store instead of a rebuild of the writer graph.
-// The fan-out has three destinations:
+// One zerolog logger at TraceLevel, unfiltered itself: each destination is a
+// LevelWriter that filters, so raising the level at run time is one atomic store
+// instead of a rebuild. The fan-out is the file at the configured level, the GUI
+// event stream at debug and the console at info, wrapped in a SyncWriter so Close
+// flushes.
 //
-//	file    configured level  -> redactingWriter -> lumberjack (dmm.log)
-//	events  debug and above   -> redactingWriter -> in-process EventLog emitter
-//	console info or more severe -> redactingWriter -> os.Stderr (when enabled)
-//
-// The whole fan-out is wrapped in a zerolog.SyncWriter so Close flushes.
-//
-// Two rules shape the code here:
-//
-//   - Logging must never fail the application. If the log file cannot be
-//     opened (read-only home, quota, bad directory) the service degrades to a
-//     console-only stack instead of returning an error, because a broken log
-//     destination must not stop the mod manager from starting.
-//   - Secrets never reach a sink. Every destination is wrapped in a
-//     redactingWriter (see redact.go) which masks sensitive fields before the
-//     bytes are handed on.
+// Two rules shape the code: logging never fails the application (an unusable file
+// degrades to console-only), and secrets never reach a sink (every destination is
+// wrapped in a redactingWriter, see redact.go).
 package logging
 
 import (
@@ -44,8 +32,8 @@ const appName = "darktide-mod-manager"
 
 // Format values accepted by Config.Format.
 const (
-	// FormatJSON writes newline-delimited JSON. It is the default because the
-	// file sink is read back by Tail/Follow and by the GUI.
+	// FormatJSON writes newline-delimited JSON. It is the default because the file
+	// sink is read back by Tail/Follow and by the GUI.
 	FormatJSON = "json"
 	// FormatText writes human-readable console output.
 	FormatText = "text"
@@ -68,8 +56,8 @@ type Config struct {
 	NoFile     bool     `json:"-"`
 }
 
-// DefaultConfig returns the documented defaults: 10 MB per file, five backups
-// (a 60 MB ceiling across the set), 30 day retention and gzip on rotation.
+// DefaultConfig returns the documented defaults: 10 MB per file, five backups, 30
+// day retention and gzip on rotation.
 func DefaultConfig() Config {
 	return Config{
 		Level:      zerolog.InfoLevel.String(),
@@ -83,9 +71,7 @@ func DefaultConfig() Config {
 
 // Normalize fills unset fields with the defaults.
 //
-// Compress follows the same convention as domain.CacheConfig.VerifyHashes: a
-// false value means "unset", so compression cannot be switched off from a
-// partially filled config block.
+// Compress follows domain.CacheConfig.VerifyHashes: false means "unset".
 func (c Config) Normalize() Config {
 	out := c
 
@@ -118,11 +104,8 @@ func (c Config) Normalize() Config {
 	return out
 }
 
-// TraceLevel is the least severe level.
-//
-// A reader given no filter wants everything, so "no filter" is spelled out here
-// rather than left to the reader to reach for a package it should not have to
-// know about.
+// TraceLevel is the least severe level, spelled out here so a reader given no
+// filter does not have to reach for a package it should not know about.
 const TraceLevel = zerolog.TraceLevel
 
 // ParseLevel converts a configured level name into a zerolog level, falling
@@ -174,16 +157,15 @@ func (a *atomicLevel) Set(lvl zerolog.Level) {
 // gate is a zerolog.LevelWriter that drops events outside a dynamic band.
 //
 // It replaces zerolog.FilteredLevelWriter, whose threshold is fixed at
-// construction time; here the lower bound is read from the shared atomicLevel on
-// every event so `dmm logs level debug` takes effect immediately.
+// construction time; here the bound is read from the shared atomicLevel on every
+// event so `dmm logs level debug` takes effect immediately. floor raises that
+// bound for a sink that should stay readable — the console never mirrors the
+// file's debug chatter.
 //
-// floor raises the lower bound for a sink that should stay readable: the console
-// mirror never prints debug chatter just because the file does.
-//
-// floored is set explicitly rather than inferred from floor's zero value, because
-// zerolog.NoLevel is 6 and DebugLevel is 0: a gate that declared "no floor" by
-// leaving the field unset would quietly install a debug floor, and the file sink
-// would then lose every trace record it was configured to keep.
+// floored is set explicitly rather than inferred from floor's zero value,
+// because zerolog.NoLevel is 6 and DebugLevel is 0: a gate that declared "no
+// floor" by leaving the field unset would quietly install a debug floor and the
+// file sink would lose every trace record it was configured to keep.
 type gate struct {
 	next    io.Writer
 	level   *atomicLevel
@@ -274,11 +256,8 @@ func (c *consoleSink) Write(p []byte) (int, error) {
 
 // Sync flushes the destination when it can be flushed.
 //
-// A failure to fsync a terminal or a pipe is not reported. Nothing is buffered on
-// the way to a character device — a write is the write — so EINVAL and ENOTTY
-// here mean "there is no file to sync", not "data was lost". Reporting them
-// would make every `--verbose` run print a close warning on exit, and a warning
-// on every run is a warning nobody reads.
+// fsync on a terminal or pipe is not reported: EINVAL and ENOTTY mean "nothing
+// is buffered here", and reporting them would warn on every `--verbose` exit.
 func (c *consoleSink) Sync() error {
 	s, ok := c.out.(syncer)
 	if !ok {
@@ -305,9 +284,8 @@ func unflushable(err error) bool {
 
 // Service is the log fan-out plus the rotation policy behind it.
 //
-// One Service is created per process. Handlers receive *zerolog.Logger values
-// copied from Logger(); those copies stay valid for the life of the process
-// because Apply is only meant to run at startup (see Apply).
+// One Service per process; handlers get *zerolog.Logger copies that stay valid
+// because Apply is only meant to run at startup.
 type Service struct {
 	root   zerolog.Logger
 	events EventSink
@@ -353,9 +331,8 @@ func (s *Service) SetEvents(sink EventSink) {
 	s.rebuild()
 }
 
-// Logger returns the shared logger. The pointer stays valid for the life of
-// the process; callers should copy the value (`lg := *s.Logger()`) rather than
-// swap the writer.
+// Logger returns the shared logger. The pointer stays valid for the life of the
+// process; callers should copy the value (`lg := *s.Logger()`).
 func (s *Service) Logger() *zerolog.Logger {
 	if s == nil {
 		return &zlog.Logger
@@ -393,13 +370,10 @@ func (s *Service) Apply(cfg Config) {
 	s.applyConfig(cfg)
 }
 
-// SetRedactFields replaces the extra field names whose values are masked on the
-// way to every sink.
+// SetRedactFields replaces the extra field names whose values are masked.
 //
-// It rebuilds the stack, which is why it is a separate call from Apply: the
-// caller has a persisted list in hand, not a whole Config. A field that is
-// redacted only from the next launch would keep leaking for as long as the user
-// left the app running, which is exactly the window they asked to close.
+// It rebuilds the stack rather than sitting inside Apply: a field redacted only
+// from the next launch would keep leaking while the app ran.
 func (s *Service) SetRedactFields(fields []string) {
 	if s == nil {
 		return
@@ -462,8 +436,7 @@ func (s *Service) stack(cfg Config) []io.Writer {
 
 	if s.events != nil {
 		// The GUI wants debug records even when the file is at info: they are
-		// ephemeral and cost nothing to display, while a quiet log file stays
-		// quiet.
+		// ephemeral and cost nothing to display, while a quiet log file stays quiet.
 		sinks = append(sinks, &zerolog.FilteredLevelWriter{
 			Writer: zerolog.LevelWriterAdapter{
 				Writer: NewRedactingWriter(eventWriter{sink: s.events}, cfg.Redact),
@@ -503,10 +476,8 @@ func (s *Service) applyConfig(cfg Config) {
 	case dir == "" || cfg.NoFile:
 		s.rot = nil
 	case EnsureDirectory(dir) != nil:
-		// An unusable directory degrades to console-only for the same reason a
-		// bad level falls back to info: the app still starts and still says what
-		// happened. The failure is reported by the caller of Directory, which
-		// finds the file sink absent rather than a sink that fails on write.
+		// An unusable directory degrades to console-only as a bad level falls back to
+		// info: the app still starts.
 		s.rot = nil
 		s.dir = ""
 	default:
@@ -519,12 +490,8 @@ func (s *Service) applyConfig(cfg Config) {
 
 // rebuild swaps in a fresh writer stack. The caller holds s.mu.
 func (s *Service) rebuild() {
-	// zerolog's global level starts at debug, and it is consulted when the event
-	// is created — before any writer sees it. Leaving it there would quietly
-	// discard the trace records the file sink is configured to keep, so it is
-	// opened all the way up here. Every path that installs a stack goes through
-	// this function, which is what keeps that promise true however the Service was
-	// built.
+	// zerolog consults the global level before any writer sees the event, so it is
+	// opened all the way up here; every stack-installing path goes through this.
 	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 
 	s.root = newLogger(s.stack(s.cfg))

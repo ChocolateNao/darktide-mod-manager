@@ -1,12 +1,11 @@
-// Package darktide is the Warhammer 40,000: Darktide game definition. The
-// facts that used to be scattered through pkg/domain and internal/platform
-// as constants live here, behind domain.GameDefinition.
+// Package darktide is the Warhammer 40,000: Darktide game definition. The facts
+// about this game live here, behind domain.GameDefinition.
 package darktide
 
 import "github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 
-// The identifiers this game answers to. ID is the registry key used in
-// paths, the database and the configuration.
+// The identifiers this game answers to. ID is the registry key used in paths,
+// the database and the configuration.
 const (
 	// ID is the registry key for Darktide.
 	ID = "darktide"
@@ -94,13 +93,11 @@ func (Definition) InstallModes() []domain.ModInstallMode {
 // wins.
 func (Definition) SourceDefaults() map[string]map[string]string {
 	return map[string]map[string]string{
-		"nexus":  {"game_domain": "warhammer40kdarktide"},
+		"nexus":  {domain.SourceDomainKey: "warhammer40kdarktide"},
 		"github": {"topic": "darktide-mod"},
 	}
 }
 
-// GameActions implements domain.GameDefinition. The actions live in
-// actions.go: a game package is the only place that knows what is special about
-// its game, so the handlers are as much part of the definition as the paths and
-// the app id are.
+// GameActions implements domain.GameDefinition. The actions live in actions.go:
+// a game package is the only place that knows what is special about its game.
 func (Definition) GameActions() []domain.GameAction { return actions() }

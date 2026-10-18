@@ -469,9 +469,8 @@ func RemoveEmptyDir(dir string) error {
 }
 
 // replaceFile renames src over dst. A host that refuses to rename onto an
-// existing file gets the destination cleared and the rename retried once; only
-// then is the original failure reported, so a genuinely broken rename is not
-// masked by the remove step.
+// existing file gets the destination cleared and the rename retried once, so a
+// genuinely broken rename is not masked by the remove step.
 func replaceFile(src, dst string) error {
 	renameErr := os.Rename(src, dst)
 	if renameErr == nil {

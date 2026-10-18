@@ -15,7 +15,7 @@ import (
 )
 
 // prepared builds the PreparedHook an executor would hand us, so the runner is
-// exercised through the same struct production uses instead of a hand-rolled one.
+// exercised through the same struct production uses.
 func prepared(script domain.HookScript) services.PreparedHook {
 	return services.PreparedHook{
 		Script: script,
@@ -145,8 +145,7 @@ func TestRunnerAcceptsNilMod(t *testing.T) {
 func TestRunnerToleratesNilContext(t *testing.T) {
 	hook := prepared(domain.HookScript{Content: `1 + 1`})
 	hook.Context = domain.HookContext{}
-	// A zero context is what an executor produces when no context func is wired;
-	// the script must still run rather than dereference nil.
+	// A zero context is what an executor produces when no context func is wired.
 	err := NewRunner(host.Providers{}).Run(context.Background(), hook, mod())
 	require.NoError(t, err, "Run: %v", err)
 }
@@ -253,9 +252,9 @@ func TestRunnerHasNoNetworkAccess(t *testing.T) {
 	}
 }
 
-// The sandbox boundary that matters most: an inline hook must not be able to
-// read the manager's config or the mod's files. Merely *mentioning* a missing
-// global evaluates to undefined without failing, so each probe has to use it.
+// The sandbox boundary that matters most: an inline hook must not read the
+// manager's config or the mod's files. Merely *mentioning* a missing global
+// evaluates to undefined without failing, so each probe has to use it.
 func TestRunnerHasNoFilesystemAccess(t *testing.T) {
 	for _, content := range []string{
 		`require("node:fs");`,
@@ -272,15 +271,13 @@ func TestRunnerHasNoFilesystemAccess(t *testing.T) {
 			prepared(domain.HookScript{Content: content}),
 			mod(),
 		)
-		// Some of these are legal-but-inert (reading a property off a bare
-		// undefined global throws, calling a host API throws, a missing import
-		// throws); the one thing none of them may do is succeed at touching the
-		// host.
+		// Some of these are legal-but-inert (a bare undefined global throws, a
+		// host API call throws, a missing import throws); none may reach the host.
 		assert.Error(t, err, "%q: the hook reached a host capability", content)
 	}
 }
 
-// The probe above only proves the probes fail; assert the globals really are
+// The probe above only proves the calls fail; assert the globals really are
 // absent so a future goja upgrade that starts providing them is caught.
 func TestRunnerHostGlobalsAreAbsent(t *testing.T) {
 	script := `
@@ -501,8 +498,7 @@ func TestRunnerNewRunnerDiscardsOutput(t *testing.T) {
 }
 
 func TestRunnerNilSinkIsSafe(t *testing.T) {
-	// NewRunnerWithSink(nil) is what DI does when nobody subscribed; logging must
-	// not panic in that configuration.
+	// NewRunnerWithSink(nil) is what DI does when nobody subscribed.
 	if err := NewRunnerWithSink(nil, host.Providers{}).Run(
 		context.Background(),
 		prepared(domain.HookScript{Content: `console.log("x")`}),
@@ -574,8 +570,8 @@ func TestRunnerReportsPreCanceledContext(t *testing.T) {
 	)
 }
 
-// The same must hold for a context that is already past its deadline, and for a
-// nil context, which the runner treats as "no deadline".
+// The same must hold for a context already past its deadline, and for a nil
+// context, which the runner treats as "no deadline".
 func TestRunnerHandlesExpiredAndNilContexts(t *testing.T) {
 	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Hour))
 	defer cancel()
@@ -673,7 +669,6 @@ func TestRunnerSupportsOrdinaryJavaScript(t *testing.T) {
 // The mod folder is the working directory for hooks, so relative file-ish reads
 // through the exposed context have to resolve the way the docs promise.
 func TestRunnerExposesWorkingDirThroughContextOnly(t *testing.T) {
-	// The script cannot chdir or list the directory; that is the point.
 	for _, content := range []string{`process.chdir("/")`, `fs.readdirSync(".")`} {
 		err := NewRunner(host.Providers{}).Run(
 			context.Background(),

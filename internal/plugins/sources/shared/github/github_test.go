@@ -469,9 +469,8 @@ func TestSearchDiscoveredDropsInvalidRefsAndHonoursLimit(t *testing.T) {
 }
 
 func TestSearchDiscoveryEndpointMissing(t *testing.T) {
-	// GitHub answers a search that matches nothing with an empty items list, so a
-	// 404 really does mean the endpoint moved. Silently returning "no mods" would
-	// hide a broken API base behind an empty result list, so the error is surfaced.
+	// GitHub answers a search that matches nothing with an empty items list, so a 404
+	// really means the endpoint moved; an empty result list would hide that.
 	st := newStubServer(t) // /search/repositories 404s
 
 	_, err := newSource(t, st).Search(context.Background(), domain.SearchQuery{})
@@ -587,10 +586,8 @@ func TestGetMod(t *testing.T) {
 }
 
 func TestGetModWithoutReleases(t *testing.T) {
-	// GitHub answers "repository exists but has no releases" with an empty array
-	// and "no such repository" with 404. Both mean the same thing to a caller
-	// asking for one specific mod, so both must read as MOD_NOT_FOUND rather than
-	// leaking a raw transport code the registry does not understand.
+	// "exists but has no releases" answers with an empty array and "no such
+	// repository" with 404; both read as MOD_NOT_FOUND rather than a raw code.
 	st := newStubServer(t)
 
 	st.releases = func(w http.ResponseWriter, r *http.Request) { writeJSON(t, w, []release{}) }
@@ -910,17 +907,15 @@ func TestValidateCredentials(t *testing.T) {
 	)
 }
 
-// sha256Of is the hex SHA256 of b. A digest fixture has to match what httpx
-// computes, so the test derives it the same way rather than hard-coding a
-// constant that would silently drift.
+// sha256Of is the hex SHA256 of b, derived the way httpx derives it so a
+// hard-coded constant cannot drift.
 func sha256Of(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
 
 // TestForgetCredentialsStopsSendingTheBearer: signing out of GitHub has to mean
-// the next request is anonymous. A token still riding along in the header would
-// keep acting as the user after they said goodbye.
+// the next request is anonymous, not a token that keeps acting as the user.
 func TestForgetCredentialsStopsSendingTheBearer(t *testing.T) {
 	st := newStubServer(t)
 	st.user = func(w http.ResponseWriter, r *http.Request) {
@@ -955,9 +950,8 @@ func TestForgetCredentialsStopsSendingTheBearer(t *testing.T) {
 
 // ------------------------------------------ game defaults through the factory
 
-// theFactory returns the factory the package registered from init, which is
-// what the registry actually calls: asserting on New alone would leave the
-// game-default wiring untested.
+// theFactory returns the factory the package registered from init: asserting on
+// New alone would leave the game-default wiring untested.
 func theFactory(t *testing.T) services.SourceFactory {
 	t.Helper()
 

@@ -11,12 +11,9 @@ import (
 )
 
 // urlOpeners maps a platform to the command that hands a URL to whatever the
-// user has registered for it.
-//
-// Every desktop has a documented "open this link" entry point, and using it
-// rather than a browser by path matters twice over: the user's default browser
-// is honoured, and a link whose scheme the manager has never heard of is
-// rejected before a process is started rather than after.
+// user has registered for it. Every desktop has a documented "open this link"
+// entry point, which honours the user's default browser and lets an unknown
+// scheme be refused before a process starts.
 var urlOpeners = map[domain.Platform]struct {
 	binary string
 	args   []string
@@ -26,14 +23,10 @@ var urlOpeners = map[domain.Platform]struct {
 	domain.PlatformLinux:   {binary: "xdg-open"},
 }
 
-// allowedURLSchemes are the schemes the manager is willing to hand to the
-// desktop.
-//
-// This is a denylist by omission and deliberately short. A mod page is an
-// http(s) link; a Steam Workshop page is a steam: link; a file on this machine
-// is a file: link. Anything else would mean a source plugin, or a mod
-// manifest, got to choose what the operating system executes, which is not a
-// capability a mod page should have.
+// allowedURLSchemes are the schemes the manager hands to the desktop: http(s) for a mod page,
+// steam for a Workshop page, file for something on this machine. The list is deliberately
+// short — anything else would let a source plugin or a mod manifest choose what the operating
+// system executes.
 var allowedURLSchemes = map[string]bool{
 	"http":   true,
 	"https":  true,
@@ -42,11 +35,9 @@ var allowedURLSchemes = map[string]bool{
 	"mailto": true,
 }
 
-// OpenURL hands rawURL to the host's default handler.
-//
-// It is what "open this mod's page" resolves to: the manager knows where a mod
-// came from but never renders it, so the only way to follow a link is to ask
-// the desktop to do it.
+// OpenURL hands rawURL to the host's default handler: the manager knows where a
+// mod came from but never renders it, so the only way to follow a link is to
+// ask the desktop to do it.
 func OpenURL(ctx context.Context, p domain.Platform, rawURL string) error {
 	return OpenURLWith(ctx, p, rawURL, OSLookPath, execRunner)
 }
@@ -95,15 +86,10 @@ func OpenURLWith(
 	return nil
 }
 
-// ValidateURL checks that rawURL is a link the manager is willing to open and
-// returns its canonical form.
-//
-// It is exported because the same question is asked before a link reaches a
-// frontend or a command line: "would this link open something?" should not be
-// answered differently by the button that calls OpenURL and the command that
-// prints it. file: links are additionally required to name an existing file,
-// since a file link that points at nothing opens an error dialog the user did
-// not ask for.
+// ValidateURL checks that rawURL is a link the manager is willing to open and returns its
+// canonical form. It is exported so the button that calls OpenURL and the command that prints a
+// link answer the same way. A file: link must name an existing file, since one that points at
+// nothing opens an error dialog the user did not ask for.
 func ValidateURL(rawURL string) (string, error) {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {
@@ -139,22 +125,16 @@ func allowedSchemeList() []string {
 	return []string{"http", "https", "steam", "file", "mailto"}
 }
 
-// CanOpenURL reports whether rawURL would be accepted, without opening it.
-//
-// The frontend uses it to decide whether to show an "open in browser" control at
-// all: a mod from a source that published no page should not offer a button
-// that can only fail.
+// CanOpenURL reports whether rawURL would be accepted, without opening it, so a
+// frontend can hide the control rather than offer a button that can only fail.
 func CanOpenURL(rawURL string) bool {
 	_, err := ValidateURL(rawURL)
 
 	return err == nil
 }
 
-// URLLauncher adapts OpenURL to domain.ActionOpener's OpenURL method.
-//
-// It exists so the action runner can offer "open this folder / this page"
-// without importing this package, and so the action layer never gains the
-// ability to launch something the platform layer has not approved.
+// URLLauncher adapts OpenURL to domain.ActionOpener, so the action layer can
+// never launch something the platform layer has not approved.
 type URLLauncher struct {
 	Platform domain.Platform
 }

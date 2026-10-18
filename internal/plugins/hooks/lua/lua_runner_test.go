@@ -79,7 +79,7 @@ func TestRunnerExposesHookContextToScript(t *testing.T) {
 	require.NoError(t, err, "Run: %v", err)
 }
 
-// Sandbox absence: the dangerous globals must not exist at all.
+// The dangerous globals must not exist at all.
 func TestRunnerSandboxHidesDangerousGlobals(t *testing.T) {
 	script := `
 		local banned = {"require", "module", "dofile", "loadfile", "load", "loadstring",
@@ -124,7 +124,7 @@ func TestRunnerCapturesPrintOutput(t *testing.T) {
 	assert.Equal(t, "two", got[1], "second line")
 }
 
-// The §7 risk: a runaway loop must abort via context, not hang the install.
+// A runaway loop must abort via context, not hang the install.
 func TestRunnerStopsInfiniteLoops(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()

@@ -258,9 +258,8 @@ func TestSourceConfigForPrefersTheExactKey(t *testing.T) {
 }
 
 func TestSourceConfigForRejectsABlankSourceID(t *testing.T) {
-	// A blank id has no meaning, so it must report absent rather than falling
-	// through to the loose comparison and matching some key that happens to
-	// normalise to the empty string.
+	// A blank id must report absent rather than falling through to the loose
+	// comparison and matching a key that normalises to the empty string.
 	c := Config{Sources: map[string]SourceConfig{"   ": {Enabled: true}}}
 	for _, id := range []string{"", "   ", "\t"} {
 		_, ok := c.SourceConfigFor(id)
@@ -337,10 +336,8 @@ func TestHookContextJSONTags(t *testing.T) {
 }
 
 func TestSourceKeyFoldsIDsAndSetSourceWritesWhereTheBlockAlreadyIs(t *testing.T) {
-	// Two blocks for one source is not a harmless duplicate: they disagree about
-	// Enabled, and the disabled one wins, so a settings screen that wrote
-	// "Nexus" beside an existing "nexus" would switch the source off while
-	// appearing to configure it.
+	// A duplicate is not harmless: the disabled block wins, so writing "Nexus" beside
+	// an existing "nexus" would switch the source off while appearing to set it up.
 	cfg := DefaultConfig()
 
 	cfg.Sources = map[string]SourceConfig{

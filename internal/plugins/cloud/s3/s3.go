@@ -147,9 +147,8 @@ func (p *Provider) Upload(
 	var refs []domain.FileReference
 
 	for _, f := range files {
-		// The object key is the remote name; the bytes come from the local file
-		// the orchestrator staged. Using one for both put the sharer's path on
-		// the provider and read from a path that may not exist there.
+		// The object key is the remote name; the bytes come from the staged local
+		// file, since one path cannot serve as both on the provider and on disk.
 		if f.Source == "" {
 			return nil, fmt.Errorf("upload %q: no local file to read from", f.Path)
 		}

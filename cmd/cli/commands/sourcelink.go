@@ -9,13 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newSourceLinkCommand builds the commands that answer "where did this come
-// from, and how do I get it again".
-//
-// Not every source can be downloaded on demand. Nexus serves files only to a
-// signed-in client, and plenty of mods are published as a new archive under the
-// same name. For those the link is the interface, so it has to be one command
-// away from the mod list rather than something the user reconstructs by hand.
+// newSourceLinkCommand builds the commands that answer "where did this come from,
+// and how do I get it again". Not every source can be downloaded on demand — Nexus
+// serves files only to a signed-in client — so the link has to be one command away
+// from the mod list rather than something the user reconstructs by hand.
 func newSourceLinkCommand(s *session) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "source",
@@ -37,11 +34,8 @@ func newSourceLinkCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// sourceLinkView is the JSON and text shape of one mod's links.
-//
-// It flattens the fallback into a sentence rather than a code, because the only
-// question a user asks of it is "what do I do now", and a code makes them look
-// that up.
+// sourceLinkView is the JSON and text shape of one mod's links. It flattens the
+// fallback into a sentence rather than a code, because the only question is "what do I do now".
 type sourceLinkView struct {
 	ModID       string `json:"mod_id"`
 	SourceID    string `json:"source_id,omitempty"`
@@ -163,11 +157,8 @@ func newModSourceListCommand(s *session) *cobra.Command {
 	}
 }
 
-// viewOfLink flattens a link into what the CLI prints.
-//
-// Direct is the interesting bit: a mod the manager could have fetched has a
-// download link, and a mod it could not has only a page, which is why a user
-// ends up on a web page with a download button.
+// viewOfLink flattens a link into what the CLI prints. Direct is the interesting
+// bit: a mod the manager could fetch has a download link, and one it could not a page.
 func viewOfLink(modID string, link *domain.ModSourceLink) sourceLinkView {
 	view := sourceLinkView{ModID: modID}
 	if link == nil {
@@ -250,14 +241,10 @@ func bestLink(view sourceLinkView) string {
 	return ""
 }
 
-// newManifestWriteCommand refreshes an installed mod's manifest from the
-// database.
-//
-// This is the other half of the manual-update path. A mod whose author
-// re-releases the same archive gains new metadata in the manager's database; a
-// manifest written at install time is now out of date. Writing it again makes the
-// folder self-describing, which is what lets somebody else install it from disk
-// and get the same hooks and requirements you have.
+// newManifestWriteCommand refreshes an installed mod's manifest from the database,
+// the other half of the manual-update path: a mod whose author re-releases the
+// same archive gains metadata the manager's database now knows, so writing it again
+// makes the folder self-describing for somebody installing it from disk.
 func newManifestWriteCommand(s *session) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "write <mod-id>",

@@ -16,19 +16,10 @@ import (
 
 // FromMod projects an installed mod onto the manifest format.
 //
-// The database knows more about a mod than the manifest can say, and the rest of
-// that knowledge is what this projection deliberately drops. Enabled, priority,
-// install mode, the timestamps, the local path and the content hash describe
-// *this machine's* copy — what the manager did and where it put the files — and
-// writing them into a file that travels inside the mod folder would put one
-// user's installation state into everyone else's mod. Everything that describes
-// the mod itself comes across: identity, version, authorship, requirements,
-// tags, the three source links, the source-specific extras, and the hooks.
-//
-// The result is what `manifest write` puts on disk, so that a mod the manager
-// installed from a source it can no longer reach still documents where it came
-// from — which is exactly what somebody who refuses a peer-to-peer transfer and
-// wants to fetch the mod themselves needs to read.
+// Enabled, priority, install mode, the timestamps, the local path and the content
+// hash describe *this machine's* copy, and writing them into a file that travels
+// inside the mod folder would put one user's installation state into everyone
+// else's mod. Everything that describes the mod itself comes across.
 func FromMod(mod *domain.Mod) *Manifest {
 	if mod == nil {
 		return &Manifest{}
@@ -55,10 +46,9 @@ func FromMod(mod *domain.Mod) *Manifest {
 
 // hooksFromMod converts the stored hook scripts back into manifest entries.
 //
-// Hooks are the one part of the database that a manifest *is*, rather than
-// something it merely documents: the manifest is read on the next install, and
-// dropping the hooks would leave an installed mod that no longer runs its own
-// lifecycle scripts.
+// Hooks are the one part of the database that a manifest *is* rather than merely
+// documents: dropping them would leave an installed mod that no longer runs its
+// own lifecycle scripts.
 func hooksFromMod(hooks domain.ModHooks) Hooks {
 	var out Hooks
 
@@ -78,10 +68,8 @@ func hooksFromMod(hooks domain.ModHooks) Hooks {
 				Timeout:    script.Timeout,
 			}
 
-			// A script with no language cannot be written as a manifest entry and
-			// would not survive Read either. Skipping it keeps Write from emitting
-			// a file that fails to parse; the executor rejects it at run time with
-			// a better message than a parse error would give.
+			// A script with no language cannot be written and would not survive Read either.
+			// Skipping it keeps Write from emitting a file that fails to parse.
 			if strings.TrimSpace(entry.Type) == "" {
 				continue
 			}
@@ -131,14 +119,12 @@ func (h *Hooks) set(phase domain.HookPhase, entries []HookEntry) {
 // SourceDataStrings flattens a mod's source-specific extras into the string map
 // the manifest can hold.
 //
-// The database stores whatever a source plugin put there, which may be numbers,
-// booleans, nested objects or nulls; TOML's `source_data` table is typed as
-// strings because it is read by people and by tools that have no business
-// re-implementing each source's schema. Scalars are therefore rendered in the
-// obvious spelling — `true`, `42`, `1.5` — and anything structured is encoded
-// as JSON, which at least stays valid TOML and still shows what the value was.
-// nil becomes an empty string rather than being dropped: the key is part of what
-// the source told us, and a manifest is the record of that.
+// The database stores whatever a source plugin put there — numbers, booleans,
+// nested objects, nulls — while TOML's `source_data` table is typed as strings
+// because it is read by people and by tools that have no business re-implementing
+// each source's schema. Scalars take their obvious spelling and anything
+// structured becomes JSON; nil becomes an empty string rather than being dropped,
+// because the key is part of what the source told us.
 func SourceDataStrings(in map[string]any) map[string]string {
 	if len(in) == 0 {
 		return nil
@@ -172,9 +158,8 @@ func SourceDataValue(value any) string {
 	default:
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			// A value that cannot even be marshalled (a channel, a function) has
-			// no meaningful spelling. Writing a placeholder beats failing the
-			// whole write: the rest of the record is still worth having.
+			// A value that cannot even be marshalled has no meaningful spelling, and
+			// failing the whole write would lose the rest of the record.
 			return fmt.Sprintf("%v", value)
 		}
 
@@ -201,14 +186,9 @@ func Encode(m *Manifest) ([]byte, error) {
 // wrote.
 //
 // Unlike Init this overwrites an existing manifest, because its whole purpose is
-// to refresh one from the database. The caller asked for the mod's record to be
-// rewritten; refusing would make the command useless the second time. The file
-// is written in one call so a failure cannot leave a half-written manifest for
-// the game — or for the next install — to read.
-//
-// Which file it writes follows the same priority order as Read: an existing
-// manifest keeps its name, so a mod that ships metadata.toml does not gain a
-// second, competing mod.toml.
+// to refresh one from the database; refusing would make the command useless the
+// second time. Which file it writes follows Read's priority order, so a mod that
+// ships metadata.toml does not gain a second, competing mod.toml.
 func Write(dir string, m *Manifest) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument, "a mod folder is required")

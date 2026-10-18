@@ -7,31 +7,24 @@
 // bytes. Everything else in the manager treats that as a file transfer that
 // happens to be peer-to-peer.
 //
-// # The three phases
-//
-//  1. Link exchange. The offer link carries the offerer's SDP, the inventory of
-//     mods and the passphrase. The answer link carries the answerer's SDP and
-//     the same passphrase. Neither passes through a server, which is what makes
-//     the transfer work on networks where a relay would be needed and none is
-//     available.
-//  2. Handshake. Before a single byte of mod data moves, each side proves it
-//     holds the passphrase by sending a tagged MAC over a value the other side
-//     chose. DTLS already authenticates the peer connection, but it
-//     authenticates it to whoever answered the SDP — and the answer came
-//     through a chat window, not a trusted channel. The handshake is what binds
-//     the data channel to the link the user chose to open.
-//  3. Transfer. The sender announces each archive with its size and SHA-256,
-//     streams it in chunks, and repeats the digest at the end. The receiver
-//     hashes what it wrote and compares before the archive is allowed anywhere
-//     near the mods folder.
-//
-// # Framing
+// A session has three phases. In link exchange the offer link carries the
+// offerer's SDP, the inventory of mods and the passphrase, and the answer link
+// carries the answerer's SDP and the same passphrase; neither passes through a
+// server, which is what makes the transfer work on a network where a relay
+// would be needed and none is available. In the handshake each side proves it
+// holds the passphrase with a tagged MAC over a value the other side chose:
+// DTLS already authenticates the peer connection, but only to whoever answered
+// the SDP, and the answer came through a chat window, so the handshake is what
+// binds the data channel to the link the user chose to open. In the transfer the
+// sender announces each archive with its size and SHA-256, streams it in chunks
+// and repeats the digest at the end, and the receiver hashes what it wrote and
+// compares before the archive goes anywhere near the mods folder.
 //
 // Every data channel message is one frame: a type byte followed by big-endian
 // fields. There is no length prefix on the frame itself, because the channel
-// already preserves message boundaries; what a reader has to bounds-check is
-// each variable-length field inside a frame. See SHARE_PROTOCOL.md for the
-// byte-level specification.
+// already preserves message boundaries; the layout is fixed-width where the size
+// is known from the frame type and length-prefixed where it is not, so a reader
+// bounds-checks each variable-length field as it goes.
 package p2p
 
 import (
@@ -45,11 +38,10 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/crypto"
 )
 
-// ProtocolVersion is the version both peers must agree on.
-//
-// It travels in the handshake rather than being implied by the link format, so
-// that a manager which predates a framing change can refuse the session with a
-// clear message instead of misreading the first frame it is sent.
+// ProtocolVersion is the version both peers must agree on. It travels in the
+// handshake rather than being implied by the link format, so a manager which
+// predates a framing change can refuse the session with a clear message instead
+// of misreading the first frame it is sent.
 const ProtocolVersion = 1
 
 // Fixed field widths, in bytes.
@@ -60,21 +52,17 @@ const (
 )
 
 // maxFieldBytes bounds the manifest payload, the only field whose length prefix
-// is 4 bytes wide.
-//
-// The largest legitimate value is a manifest for a large share, still tens of
-// kilobytes. A megabyte is comfortably above that and far below the point
-// where a single frame could exhaust memory, so a peer that announces a larger
+// is 4 bytes wide. The largest legitimate value is a manifest for a large share,
+// still tens of kilobytes, so a megabyte is comfortably above that and far below
+// the point where one frame could exhaust memory; a peer announcing a larger
 // field is treated as hostile rather than accommodated. Fields with a 2-byte
-// prefix — file ids, reasons, offer ids — are bounded by that prefix instead.
+// prefix are bounded by that prefix instead.
 const maxFieldBytes = 1 << 20
 
-// maxChunkBytes bounds one CHUNK payload.
-//
-// A share moves in 256 KiB slices, so this is roughly eight times what the
-// sender produces. The headroom absorbs a sender running with a different
-// chunk size without letting a peer use a "chunk" to allocate whatever it
-// likes.
+// maxChunkBytes bounds one CHUNK payload. A share moves in 256 KiB slices, so
+// this is roughly eight times what the sender produces: the headroom absorbs a
+// sender running a different chunk size without letting a peer use a "chunk" to
+// allocate whatever it likes.
 const maxChunkBytes = 4 << 20
 
 // MAC label prefixes. Each authenticated value gets its own label so that a tag
@@ -95,16 +83,16 @@ var (
 	// It is fatal because the stream is not seekable: there is no way to find
 	// where the next frame starts.
 	ErrUnknownFrame = errors.New("p2p: unknown frame type")
-	// ErrBadMAC means a handshake tag did not verify, which is the only
-	// evidence available that the other end does not hold the passphrase.
+	// ErrBadMAC means a handshake tag did not verify, the only evidence
+	// available that the other end does not hold the passphrase.
 	ErrBadMAC = errors.New("p2p: handshake authentication failed")
 	// ErrBadRole means the peer claimed a role this side cannot be.
 	ErrBadRole = errors.New("p2p: peer claimed an unusable role")
 )
 
 // Role names which side of the transfer a peer is. It is carried in the
-// handshake so that a peer which somehow reached the data channel without
-// answering the right SDP is refused before it can claim to be the sender.
+// handshake so a peer that somehow reached the data channel without answering
+// the right SDP is refused before it can claim to be the sender.
 type Role byte
 
 const (
@@ -129,9 +117,9 @@ func (r Role) String() string {
 // FrameType identifies the first byte of a frame.
 type FrameType byte
 
-// The frame types. They are listed in the order a session produces them, and
-// the numeric values are fixed: they appear on the wire between two builds of
-// the manager, so reordering them would silently reinterpret a session.
+// The frame types. The numeric values are fixed: they appear on the wire between
+// two builds of the manager, so reordering them would silently reinterpret a
+// session.
 const (
 	// FrameHello opens a session. Sender only.
 	FrameHello FrameType = 0x01
@@ -154,15 +142,13 @@ const (
 	// sender could not open and wants to skip.
 	FrameError FrameType = 0x09
 	// FrameTransferComplete is the receiver's answer to FrameComplete: it says
-	// every archive arrived and every digest matched. Receiver only.
-	//
-	// It exists because the sender cannot simply hang up afterwards. A sender
-	// writes the last chunk and then closes its half of the connection, and a
-	// close discards whatever the other side has not read out of its socket
-	// buffer — so a transfer that genuinely succeeded would be reported as a
-	// truncated one on exactly the shares that move the most bytes. Waiting for
-	// this frame makes the sender's teardown mean "the receiver is done", which
-	// is the only condition under which a teardown is safe.
+	// every archive arrived and every digest matched. Receiver only. It exists
+	// because the sender cannot simply hang up afterwards — a close discards
+	// whatever the other side has not read out of its socket buffer, so a
+	// genuinely successful transfer would be reported as truncated on exactly
+	// the shares that move the most bytes. Waiting for this frame makes the
+	// sender's teardown mean "the receiver is done", the only condition under
+	// which a teardown is safe.
 	FrameTransferComplete FrameType = 0x0A
 )
 
@@ -195,12 +181,10 @@ func (t FrameType) String() string {
 	}
 }
 
-// HelloFrame proves the sender holds the session key.
-//
-// It carries the offer id rather than relying on the channel being the one that
-// was negotiated: the offer id is what the user pasted, so binding the
-// handshake to it means a data channel reached by any other route cannot be
-// mistaken for this share.
+// HelloFrame proves the sender holds the session key. It carries the offer id
+// rather than relying on the channel being the one that was negotiated: the offer
+// id is what the user pasted, so binding the handshake to it means a data channel
+// reached by any other route cannot be mistaken for this share.
 type HelloFrame struct {
 	OfferID string
 	Nonce   []byte
@@ -284,9 +268,8 @@ func DecodeHello(payload []byte) (*HelloFrame, error) {
 		MAC:     mac,
 	}
 
-	// The role is checked here rather than being left to the switch below: a
-	// peer that claims a role this build does not define is not a peer worth
-	// interpreting further.
+	// The role is checked before the caller's switch: a peer claiming a role this
+	// build does not define is not a peer worth interpreting further.
 	if frame.Role != RoleSender && frame.Role != RoleReceiver {
 		return nil, ErrBadRole
 	}
@@ -314,13 +297,11 @@ func (h *HelloFrame) Verify(key []byte) error {
 	return nil
 }
 
-// BuildHello produces a HELLO frame with a fresh nonce.
-//
-// The nonce is what makes the tag worth having. Without it a tag captured from
-// one session could be replayed into another, because every other input is the
-// same for both; with it, a replayed frame fails against a key derivation that
-// is not the one it was made for, and fails the version check when the peer
-// sends a different one.
+// BuildHello produces a HELLO frame with a fresh nonce. The nonce is what makes
+// the tag worth having: without it a tag captured from one session could be
+// replayed into another, because every other input is the same for both; with it,
+// a replayed frame fails against a key derivation that is not the one it was made
+// for, and fails the version check when the peer sends a different one.
 func BuildHello(key []byte, role Role, offerID string) (*HelloFrame, error) {
 	nonce := make([]byte, nonceSize)
 
@@ -340,12 +321,11 @@ func BuildHello(key []byte, role Role, offerID string) (*HelloFrame, error) {
 	return frame, nil
 }
 
-// HelloAckFrame proves the receiver holds the session key.
-//
-// It echoes the sender's nonce and adds one of its own. Echoing alone would
-// authenticate the sender but leave the receiver anonymous — anyone who could
-// observe the sender's frame could answer it — so the second nonce makes the
-// acknowledgement a response rather than a replay.
+// HelloAckFrame proves the receiver holds the session key. It echoes the sender's
+// nonce and adds one of its own: echoing alone would authenticate the sender but
+// leave the receiver anonymous, since anyone who could observe the sender's frame
+// could answer it, and the second nonce makes the acknowledgement a response
+// rather than a replay.
 type HelloAckFrame struct {
 	OfferID     string
 	SenderNonce []byte
@@ -439,11 +419,9 @@ func (a *HelloAckFrame) tag(key []byte) []byte {
 }
 
 // Verify reports whether the frame was produced by a holder of the session key.
-//
-// senderNonce is the nonce from the HELLO this answers. Passing it in rather
-// than reading it from the frame is what makes the check a response: a
-// captured HELLO_ACK replayed into a later session carries the old nonce and
-// fails here.
+// senderNonce is the nonce from the HELLO this answers; passing it in rather than
+// reading it from the frame is what makes the check a response, because a captured
+// HELLO_ACK replayed into a later session carries the old nonce and fails here.
 func (a *HelloAckFrame) Verify(key []byte, offerID string, senderNonce []byte) error {
 	if a.OfferID != offerID {
 		return fmt.Errorf(
@@ -484,13 +462,11 @@ func BuildHelloAck(key []byte, offerID string, senderNonce []byte) (*HelloAckFra
 	return frame, nil
 }
 
-// ManifestFrame restates the inventory for the session.
-//
-// Both ends already hold it: the sender built it, the receiver read it out of
-// the link. Sending it again is what turns "two managers happen to be talking"
-// into "these two managers are talking about the same share" — a data channel
-// reached some other way would have to reproduce the offer id and every
-// archive's digest to get past this.
+// ManifestFrame restates the inventory for the session. Both ends already hold
+// it: the sender built it, the receiver read it out of the link. Sending it again
+// is what turns "two managers happen to be talking" into "these two managers are
+// talking about the same share" — a data channel reached some other way would have
+// to reproduce the offer id and every archive's digest to get past this.
 type ManifestFrame struct {
 	OfferID string
 	Payload []byte
@@ -541,13 +517,11 @@ func DecodeManifest(payload []byte) (*ManifestFrame, error) {
 	return &ManifestFrame{OfferID: string(offerID), Payload: body}, nil
 }
 
-// putSize and takeSize move a byte count across the wire.
-//
-// The wire carries sizes as unsigned 64-bit values because that is what the
-// framing needs; the filesystem and Go's own APIs want a signed count. A peer
-// that claims a negative size, or one above what this platform can address, is
-// either broken or hostile — and neither answer belongs anywhere near a file —
-// so both directions are checked rather than assumed.
+// putSize and takeSize move a byte count across the wire. The wire carries sizes
+// as unsigned 64-bit values because that is what the framing needs; the filesystem
+// and Go's own APIs want a signed count. A peer claiming a negative size, or one
+// above what this platform can address, is either broken or hostile — and neither
+// answer belongs anywhere near a file — so both directions are checked.
 func putSize(size int64) (uint64, error) {
 	if size < 0 {
 		return 0, fmt.Errorf("p2p: size %d is negative", size)
@@ -556,12 +530,10 @@ func putSize(size int64) (uint64, error) {
 	return uint64(size), nil
 }
 
-// putCount converts a file count for the wire.
-//
-// A count always comes from a manifest, and a manifest is itself length-bounded
-// by the frame that carried it, so the conversion cannot overflow in practice.
-// It is checked anyway so that a future limit change fails loudly here rather
-// than as a silently wrapped count on the far side.
+// putCount converts a file count for the wire. A count always comes from a
+// manifest, and a manifest is itself length-bounded by the frame that carried it,
+// so the conversion cannot overflow in practice; it is checked anyway so that a
+// future limit change fails loudly here rather than as a silently wrapped count.
 func putCount(count int) (uint32, error) {
 	if count < 0 || count > math.MaxUint32 {
 		return 0, fmt.Errorf("p2p: %d is not a usable file count", count)
@@ -650,12 +622,10 @@ func DecodeFileStart(payload []byte) (*FileStartFrame, error) {
 	return &FileStartFrame{FileID: string(fileID), Size: decoded, SHA256: sum}, nil
 }
 
-// ChunkFrame carries part of an archive.
-//
-// The offset is explicit rather than implied by the running total so that a
-// receiver can tell a reordered or duplicated chunk from a correct one, which
-// is the difference between detecting corruption and silently writing a
-// mangled archive.
+// ChunkFrame carries part of an archive. The offset is explicit rather than
+// implied by the running total so a receiver can tell a reordered or duplicated
+// chunk from a correct one, which is the difference between detecting corruption
+// and silently writing a mangled archive.
 type ChunkFrame struct {
 	Payload []byte
 	Offset  uint64
@@ -690,9 +660,9 @@ func DecodeChunk(payload []byte) (*ChunkFrame, error) {
 		return nil, err
 	}
 
-	// The payload is taken before done is consulted. done reports bytes left
-	// over, and on a CHUNK frame those bytes are the payload — so checking it
-	// first would reject every frame that carried any data at all.
+	// The payload is taken before done is consulted: done reports bytes left over, and on
+	// a CHUNK frame those bytes are the payload, so checking it first rejects every
+	// frame that carried any data at all.
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -705,11 +675,10 @@ func DecodeChunk(payload []byte) (*ChunkFrame, error) {
 	return &ChunkFrame{Offset: offset, Payload: r.rest()}, nil
 }
 
-// FileDoneFrame closes one archive by repeating what it should hash to.
-//
-// Repeating the digest is what catches a sender whose bufferedAmount bookkeeping
-// dropped a chunk on the way out: the byte count says the file is complete, but
-// only the digest says it is the right complete.
+// FileDoneFrame closes one archive by repeating what it should hash to. Repeating
+// the digest is what catches a sender whose send bookkeeping dropped a chunk on
+// the way out: the byte count says the file is complete, but only the digest says
+// it is the right complete.
 type FileDoneFrame struct {
 	FileID string
 	SHA256 []byte
@@ -834,11 +803,10 @@ func DecodeComplete(payload []byte) (*CompleteFrame, error) {
 }
 
 // TransferCompleteFrame is the receiver's confirmation that a transfer landed.
-//
-// It deliberately repeats the same two numbers COMPLETE carried. The receiver is
-// not merely saying "I got something"; it is saying "I got exactly the files and
-// the bytes that were promised", which lets the sender treat a mismatch as a
-// failure rather than as a transfer that quietly differed from the offer.
+// It deliberately repeats the same two numbers COMPLETE carried: the receiver is
+// not merely saying "I got something" but "I got exactly the files and the bytes
+// that were promised", which lets the sender treat a mismatch as a failure rather
+// than as a transfer that quietly differed from the offer.
 type TransferCompleteFrame struct {
 	FileCount  uint32
 	TotalBytes int64
@@ -923,8 +891,7 @@ func (s *StatusFrame) Encode(typ FrameType) ([]byte, error) {
 }
 
 // DecodeStatus parses an ABORT or ERROR frame. The expected type is passed in
-// rather than returned so that a caller which is waiting for one cannot
-// accidentally accept the other.
+// rather than returned so a caller waiting for one cannot accept the other.
 func DecodeStatus(payload []byte, want FrameType) (*StatusFrame, error) {
 	r := &reader{buf: payload}
 
@@ -1130,8 +1097,8 @@ func (r *reader) remaining() int {
 
 // done reports the first failure the reader hit, plus whether the frame ended
 // exactly where it should. Trailing bytes are as suspicious as a short frame:
-// they mean the sender's writer and the reader's decoder disagree about the
-// layout, and continuing would interpret one field as two.
+// they mean the sender's writer and this decoder disagree about the layout, and
+// continuing would interpret one field as two.
 func (r *reader) done() error {
 	if r.err != nil {
 		return r.err

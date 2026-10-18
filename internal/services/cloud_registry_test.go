@@ -31,8 +31,8 @@ func TestCloudRegistryGetUnknown(t *testing.T) {
 }
 
 func TestCloudRegistryRegisterOverwrites(t *testing.T) {
-	// A provider registered twice replaces the first: a re-authenticated
-	// provider must not leave the stale credentials behind.
+	// A second registration replaces the first, so a re-authenticated provider
+	// does not leave the stale credentials behind.
 	registry := NewCloudRegistry()
 
 	first := &fakeProvider{id: "s3", needsAuth: true}
@@ -82,9 +82,8 @@ func TestCloudRegistryNilReceiverIsSafe(t *testing.T) {
 }
 
 func TestCloudRegistryConcurrentAccess(t *testing.T) {
-	// The registry is read by every share operation and written when a
-	// provider authenticates, so it has to be safe for concurrent readers and
-	// one writer.
+	// The registry is read by every share operation and written when a provider
+	// authenticates, so it must be safe for concurrent readers and one writer.
 	registry := NewCloudRegistry()
 	require.NoError(t, registry.Register(&fakeProvider{id: "s3"}))
 
@@ -117,8 +116,8 @@ func TestCloudRegistryConcurrentAccess(t *testing.T) {
 }
 
 func TestShareStoreInterfaceIsSatisfiedByMemStore(t *testing.T) {
-	// The fake must be a drop-in for the real store, or the orchestrator tests
-	// would pass against an interface it does not actually exercise.
+	// The fake must be a drop-in for the real store, or these tests would pass
+	// against an interface they do not actually exercise.
 	var store ShareStore = newMemShareStore()
 
 	require.NotNil(t, store)

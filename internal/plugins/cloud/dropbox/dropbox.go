@@ -1,8 +1,8 @@
 // Package dropbox is the Dropbox adapter.
 //
 // Dropbox addresses a file by its full path, so the id the payload carries is
-// the path the archive was uploaded to. There is no second lookup: the same
-// string that names the upload downloads it again, and deleting it.
+// the path the archive was uploaded to; the same string names the upload,
+// downloads it again, and deletes it.
 package dropbox
 
 import (
@@ -69,8 +69,8 @@ func (p *Provider) SupportsAuth() bool  { return true }
 func (p *Provider) MaxFileSize() int64  { return 350 * 1024 * 1024 * 1024 }
 func (p *Provider) MaxTotalSize() int64 { return 0 }
 
-// ConsentURL is the page the user approves on. It is exposed because the GUI is
-// what opens it; a provider never opens a browser itself.
+// ConsentURL is the page the user approves on; the GUI opens it, a provider
+// never opens a browser itself.
 func (p *Provider) ConsentURL(redirectURL, state string) string {
 	if p == nil {
 		return ""
@@ -112,11 +112,9 @@ func (p *Provider) ForgetCredentials() {
 	p.session.Forget()
 }
 
-// objectPath is where an archive named by the payload lives.
-//
-// The path is the share folder plus the archive name, so a name that already
-// carries a directory is honoured rather than flattened: two mods that both
-// ship a mod_info.lua would otherwise collide inside one folder.
+// objectPath is where an archive named by the payload lives. A name carrying a
+// directory is honoured rather than flattened, so two mods shipping the same
+// mod_info.lua do not collide inside one folder.
 func (p *Provider) objectPath(name string) string {
 	if name == "" {
 		return p.folder
@@ -149,9 +147,8 @@ func (p *Provider) Upload(
 	for _, f := range files {
 		target := p.objectPath(f.Path)
 
-		// Dropbox API arg header carries the destination as JSON; the bytes go
-		// in the body. Overwriting is deliberate: re-sharing a mod after an edit
-		// has to replace the object, not fail because it exists.
+		// The destination rides in an API-arg header while the bytes go in the body.
+		// Overwriting is deliberate: re-sharing after an edit must not fail on exists.
 		arg, err := json.Marshal(map[string]any{"path": target, "mode": "overwrite"})
 		if err != nil {
 			return nil, err

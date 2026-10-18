@@ -18,14 +18,13 @@ import (
 )
 
 // tailLimit caps how much of a log file Tail will read. Rotation caps the file
-// at MaxSizeMB, so this is comfortably above any file we can be handed while
-// still bounding the memory a CLI tail can use.
+// at MaxSizeMB, so this is above any file we can be handed while still bounding
+// the memory a CLI tail can use.
 const tailLimit = 16 << 20
 
 // followPoll is how often Follow checks for more bytes. Polling is deliberate:
-// inotify, kqueue and ReadDirectoryChangesW have three different APIs and two
-// of them miss the common case (a rotated file being renamed). A 200 ms poll
-// costs nothing next to a disk write.
+// inotify, kqueue and ReadDirectoryChangesW have three different APIs and two of
+// them miss the common case (a rotated file being renamed).
 const followPoll = 200 * time.Millisecond
 
 // LogLine is one decoded log record. It is the payload behind `dmm logs tail`
@@ -119,9 +118,8 @@ func decodeValue(value json.RawMessage) any {
 
 // Tail returns the last n records of the log file at path, oldest first.
 //
-// A missing file is not an error: `dmm logs tail --follow` is expected to work
-// before the first line is ever written. minLevel filters the result; pass
-// zerolog.TraceLevel for "everything".
+// A missing file is not an error: `--follow` must work before the first line is
+// written. Pass zerolog.TraceLevel to keep everything.
 func Tail(path string, n int, minLevel zerolog.Level) ([]LogLine, error) {
 	if n <= 0 {
 		n = 200
@@ -177,12 +175,11 @@ func parseLines(data []byte, minLevel zerolog.Level) []LogLine {
 	return lines
 }
 
-// Follow streams records appended to path until ctx is cancelled, and survives
-// rotation: when the file shrinks (lumberjack renamed it aside) the reader
-// reopens the path and continues with the new file.
+// Follow streams records appended to path until ctx is cancelled, surviving
+// rotation: a shrink means lumberjack renamed the file aside, so the reader
+// reopens the path.
 //
-// The channel is closed when the context ends, so callers range over it and get
-// a clean exit.
+// The channel closes with the context, so callers range over it for a clean exit.
 func Follow(ctx context.Context, path string) (<-chan LogLine, error) {
 	file, err := os.Open(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -258,17 +255,12 @@ func follow(ctx context.Context, path string, file *os.File, offset int64, out c
 
 // rotated reports whether the file at path is no longer the one file holds.
 //
-// The check is on the path rather than on the held handle, and that distinction
-// is the whole reason this function exists. lumberjack rotates by renaming the
-// current file aside and opening a new one, so after a rotation the handle this
-// reader holds is still perfectly readable — of a file nothing is writing to
-// any more. Its size never grows again, so it never looks "shorter" than the
-// offset, and a follower that only watched its own handle would sit on the
-// renamed generation forever. Comparing the two identities catches the moment
-// the path stops naming the file we hold.
-//
-// The size check covers the other kind of change: `dmm logs clean --all`
-// truncates the file in place, leaving the same file with nothing in it.
+// The check is on the path, not the held handle, which is why this exists.
+// lumberjack rotates by renaming the current file aside: the handle stays
+// readable but nothing writes to it again, so its size never grows and never
+// looks shorter than the offset — a follower watching only its handle would sit
+// on the renamed generation forever. The size check covers the other change,
+// `dmm logs clean --all` truncating the same file in place.
 func rotated(path string, file *os.File, offset int64) bool {
 	held, err := file.Stat()
 	if err != nil {

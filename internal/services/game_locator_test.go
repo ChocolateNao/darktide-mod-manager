@@ -20,10 +20,8 @@ import (
 // Fakes
 // ---------------------------------------------------------------------------
 
-// fakeStore is an in-memory ConfigStore. Load hands out a clone for the same
-// reason the real store does: the caller owns what it receives, so a test can
-// tell whether the service under test kept a pointer to the stored config and
-// mutated it behind the store's back.
+// fakeStore is an in-memory ConfigStore whose Load hands out a clone, so a test can
+// tell whether the service under test kept a pointer to the stored config.
 type fakeStore struct {
 	loadErr error
 	saveErr error
@@ -79,9 +77,8 @@ func (s *fakeStore) SaveIfChanged(cfg *domain.Config) (bool, error) {
 	return true, nil
 }
 
-// fakeDetector answers from canned function fields. A nil field answers with
-// the zero value, which keeps individual tests from having to spell out the
-// calls they do not care about.
+// fakeDetector answers from canned function fields; a nil field answers with the
+// zero value, so tests need not spell out calls they do not care about.
 type fakeDetector struct {
 	find      func(context.Context) ([]domain.GameInstallation, error)
 	validate  func(string) (*domain.GameInstallation, error)
@@ -393,8 +390,8 @@ func TestGameLocatorConfiguredPathWinsOverTheProbe(t *testing.T) {
 			return &out, nil
 		},
 		find: func(context.Context) ([]domain.GameInstallation, error) {
-			// Same directory, different spelling and a guessed source. Neither
-			// may overwrite what the user's own path resolved to.
+			// Same directory, different spelling and a guessed source; neither may
+			// overwrite what the user's own path resolved to.
 			probed := install("/GAMES/Darktide/")
 			probed.Source = domain.GameSourceEpic
 			probed.Version = "0.0.0"
@@ -653,8 +650,8 @@ func TestGameLocatorValidateRejectsABlankPath(t *testing.T) {
 }
 
 func TestGameLocatorValidateRejectsANilInstallation(t *testing.T) {
-	// A detector returning (nil, nil) must not sail through as a nil
-	// installation the caller dereferences later.
+	// A detector returning (nil, nil) must not sail through as an installation
+	// the caller later dereferences.
 	det := &fakeDetector{validate: func(string) (*domain.GameInstallation, error) {
 		return nil, nil
 	}}
@@ -699,8 +696,7 @@ func TestGameLocatorCurrentPrefersTheConfiguredPath(t *testing.T) {
 			return &out, nil
 		},
 		find: func(context.Context) ([]domain.GameInstallation, error) {
-			// Sorts before the configured path, so picking "the first hit" would
-			// be wrong here.
+			// Sorts before the configured path, so "the first hit" would be wrong.
 			return []domain.GameInstallation{install("/games/aaa")}, nil
 		},
 	}
@@ -842,8 +838,8 @@ func TestGameLocatorSetGamePathPersistsTheValidatedPath(t *testing.T) {
 		"persisted path = %q, want the cleaned one",
 		store.saved.ActiveSettings().Path,
 	)
-	// Source is a *filter* on auto-detection, not a record of the last install,
-	// so pointing the manager at a directory must not silently narrow detection.
+	// Source filters auto-detection, so pointing the manager at a directory must
+	// not silently narrow it.
 	assert.Equal(
 		t,
 		domain.GameSourceSteam,
@@ -945,8 +941,7 @@ func TestGameLocatorSetGamePathToleratesANilContext(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGameLocatorRebuildsTheDetectorForEveryLookup(t *testing.T) {
-	// The user can repoint the game from the UI; a cached detector would keep
-	// folding the old path in as an extra candidate.
+	// A cached detector would keep folding the old path in as an extra candidate.
 	store := newFakeStore(nil)
 	loc, seen := locatorWith(store, &fakeDetector{
 		validate: func(string) (*domain.GameInstallation, error) {
@@ -983,9 +978,8 @@ func TestGameLocatorRebuildsTheDetectorForEveryLookup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGameLocatorDefaultFactoryProbesTheConfiguredPath(t *testing.T) {
-	// Exercises platformDetectorFactory end to end: the configured path has to
-	// reach the real probe as an extra candidate, or a user with a game outside
-	// every known launcher directory can never be helped.
+	// The configured path has to reach the real probe as an extra candidate, or a
+	// user with a game outside every known launcher directory can never be helped.
 	dir := t.TempDir()
 
 	for _, sub := range []string{"data", domain.ModsDirName} {
@@ -1072,8 +1066,8 @@ func TestGameLocatorNilFactoryFailsEveryProbeCleanly(t *testing.T) {
 // Active game registry
 // ---------------------------------------------------------------------------
 
-// restoreGames re-registers the built-ins after a test that mutated the
-// process-wide registry, so later tests resolve the default game again.
+// restoreGames re-registers the built-ins after a test mutated the process-wide
+// registry, so later tests resolve the default game again.
 func restoreGames(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {

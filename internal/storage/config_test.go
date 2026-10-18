@@ -417,11 +417,8 @@ func TestConfigStoreSaveIfChangedComparesEffectiveConfigs(t *testing.T) {
 
 	assert.False(t, changed, "expected an identical effective config not to be rewritten")
 
-	// A candidate that only spells out the values it cares about, leaving every
-	// zero field zero, has the same effective configuration after defaults are
-	// applied — except for booleans, which JSON cannot tell apart from an
-	// absent key. Those are compared as written, which is why this candidate
-	// does count as a change.
+	// Booleans are compared as written because JSON cannot tell them from an absent key,
+	// which is why this candidate does count as a change.
 	candidate := domain.Config{
 		Games: map[string]domain.GameSettings{
 			"": {Source: "steam"},

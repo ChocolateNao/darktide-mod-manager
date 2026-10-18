@@ -132,8 +132,8 @@ func TestDomainHooksDropsBlankScripts(t *testing.T) {
 	assert.Equal(t, "ok", hooks.PreEnable[0].Content, "wrong script survived")
 }
 
-// An unknown or blank type is a hard manifest error: silently guessing a
-// language would run the wrong interpreter against untrusted content.
+// An unknown or blank type is a hard manifest error: guessing a language would
+// run the wrong interpreter against untrusted content.
 func TestScriptRejectsUnknownLanguage(t *testing.T) {
 	for _, typ := range []string{"", "  ", "powershell", "bogus", "inline", "file", "command", "go"} {
 		_, err := HookEntry{Type: typ, Content: "x"}.Script()
@@ -182,8 +182,7 @@ func TestInitWritesAManifestTheManagerCanRead(t *testing.T) {
 	require.NoError(t, err, "the commented-out hooks must not parse as scripts")
 	assert.Equal(t, 0, hooks.Count(), "a blank manifest has no hooks")
 
-	// Read already round-trips the file through the TOML parser, so parsing is
-	// the assertion: a starter file that no longer parses fails here rather
+	// Parsing is the assertion: a starter file that no longer parses fails here rather
 	// than at the author's first install.
 }
 

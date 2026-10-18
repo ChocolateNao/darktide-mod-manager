@@ -9,9 +9,8 @@ import (
 // CacheCommands is the download cache as a frontend sees it: how much space it
 // uses, and the two ways to reclaim some.
 type CacheCommands struct {
-	// base is embedded rather than held as a named field so the lifecycle
-	// methods reach a set directly: a caller holding a single set needs to be
-	// able to shut it down without knowing the shape of the aggregate.
+	// Embedded so the lifecycle methods reach a set directly: a caller holding
+	// one set must be able to shut it down without knowing the aggregate.
 	*base
 }
 
@@ -58,17 +57,12 @@ func (c *CacheCommands) ClearCache() error {
 // PruneCache drops the least recently used blobs until the cache fits, and
 // removes anything older than maxAgeDays.
 //
-// The two numbers are limits rather than targets, and the contract is:
-//
-//   - both zero means "apply the configured limits". A settings screen with a
-//     single prune button has no fields to fill in, and guessing a budget there
-//     would delete more than the user asked for.
-//   - a negative value means "no limit on that axis", which is also what a single
-//     zero means once the other axis carries a real limit. This is the service's
-//     own convention and it is passed through untouched rather than translated
-//     here, so there is exactly one place that decides what a number means.
-//
-// Anything else is used as given.
+// The numbers are limits, not targets. Both zero means "apply the configured
+// limits": the settings screen has a prune button but no fields, and guessing a
+// budget there would delete more than the user asked for. A negative means no
+// limit on that axis, which is also what one zero means once the other axis
+// carries a real limit. The service owns that convention and it is passed through
+// rather than translated, so exactly one place decides what a number means.
 func (c *CacheCommands) PruneCache(maxSizeGB, maxAgeDays int) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {

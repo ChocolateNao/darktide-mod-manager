@@ -20,8 +20,7 @@ import (
 )
 
 // stubSource is a domain.ModSource with an id the test chooses. Only ID and the
-// capability flags matter to RegisterAll, so the search and download methods
-// refuse rather than pretend: if a test ever needs them it should say so.
+// capability flags matter to RegisterAll, so search and download refuse.
 type stubSource struct {
 	id string
 }
@@ -56,9 +55,7 @@ func (s *stubSource) Authenticate(context.Context, domain.AuthCredentials) error
 func (s *stubSource) ValidateCredentials(context.Context) error { return nil }
 
 // registerFactory adds a factory under a fresh id and removes it afterwards. The
-// factory registry is process-wide and shared with every other test in this
-// binary, so a test that left its factory behind would change the answer of a
-// later RegisterAll that counts registered ids.
+// factory registry is process-wide, so one left behind would skew a later count.
 func registerFactory(t *testing.T, id string, factory services.SourceFactory) {
 	t.Helper()
 
@@ -89,12 +86,8 @@ func constantFactory(source domain.ModSource) services.SourceFactory {
 }
 
 // factoryCounter records how often a factory ran and with what configuration.
-//
-// It exists because "was this source registered?" cannot be answered through the
-// registry: SourceRegistry.IDs reports every id the factory registry knows and
-// SourceRegistry.List resolves each one, building whatever it has not built yet.
-// Both would say yes for a source RegisterAll deliberately skipped. Counting the
-// factory calls is the only way to see that a source was left alone.
+// Counting is the only way to see that a source was left alone: SourceRegistry.IDs
+// reports every id the factory registry knows and List resolves each one.
 type factoryCounter struct {
 	calls []domain.SourceConfig
 	mu    sync.Mutex
@@ -131,11 +124,8 @@ func newRegistry(t *testing.T) *services.SourceRegistry {
 }
 
 // liveIDs lists the sources that were actually built and registered.
-//
-// It cannot use SourceRegistry.IDs, which deliberately reports every id the
-// factory registry knows about — including ones that were skipped, so a caller
-// can see a source exists but was not built. Asking it "was this source
-// registered?" therefore always says yes.
+// SourceRegistry.IDs reports every id the factory registry knows, skipped ones
+// included, so it cannot answer "was this source registered?".
 func liveIDs(t *testing.T, registry *services.SourceRegistry) []string {
 	t.Helper()
 
@@ -161,9 +151,8 @@ func TestIDsListsEveryBundledSource(t *testing.T) {
 }
 
 func TestIDsIsSortedAndStable(t *testing.T) {
-	// Registration order must not depend on init order, so the ids come back
-	// sorted. Two calls have to agree as well, or the source list in the UI
-	// would reshuffle itself between refreshes.
+	// Registration order must not depend on init order, and two calls have to
+	// agree, or the source list in the UI reshuffles itself between refreshes.
 	first := IDs()
 	for i := 1; i < len(first); i++ {
 		require.False(t, first[i-1] > first[i], "IDs() = %v, not sorted at index %d", first, i)
@@ -180,10 +169,8 @@ func TestIDsIsSortedAndStable(t *testing.T) {
 	)
 }
 
-// TestRegisterAllBuildsEveryBundledSource is the guard against the imports in
-// this file being trimmed. Each source package registers from init, so dropping
-// an import removes a source from the manager without anything else failing to
-// compile.
+// TestRegisterAllBuildsEveryBundledSource guards this file's imports being
+// trimmed: each source registers from init, so a dropped import removes a source.
 func TestRegisterAllBuildsEveryBundledSource(t *testing.T) {
 	registry := newRegistry(t)
 	err := RegisterAll(registry, nil, nil)
@@ -208,7 +195,6 @@ func TestRegisterAllBuildsEveryBundledSource(t *testing.T) {
 }
 
 // TestRegisterAllIgnoresUnknownConfigurationBlocks guards the other direction: a
-// config naming a source that is not compiled in must not be an error, because a
 // config file survives an upgrade that removed a plugin.
 func TestRegisterAllIgnoresUnknownConfigurationBlocks(t *testing.T) {
 	registry := newRegistry(t)
@@ -224,9 +210,8 @@ func TestRegisterAllIgnoresUnknownConfigurationBlocks(t *testing.T) {
 }
 
 func TestRegisterAllRejectsANilRegistry(t *testing.T) {
-	// A nil registry is a wiring bug in the caller, not a user error. Failing
-	// here means the container reports it at start-up rather than a later call
-	// dereferencing nil.
+	// A nil registry is a wiring bug in the caller, not a user error: failing here
+	// reports it at start-up rather than as a nil dereference in a later call.
 	err := RegisterAll(nil, nil, nil)
 	require.True(
 		t,
@@ -266,9 +251,8 @@ func TestRegisterAllSkipsAnExplicitlyDisabledSource(t *testing.T) {
 	)
 }
 
-// TestRegisterAllTreatsAMissingBlockAsEnabled is the fresh-install case. A
-// manager that started with an empty source list would look broken, and there is
-// nothing in a default config to opt in.
+// TestRegisterAllTreatsAMissingBlockAsEnabled is the fresh-install case: a
+// manager started with an empty source list would look broken, and nothing opts in.
 func TestRegisterAllTreatsAMissingBlockAsEnabled(t *testing.T) {
 	for i, cfg := range []map[string]domain.SourceConfig{
 		nil,
@@ -296,9 +280,7 @@ func TestRegisterAllTreatsAMissingBlockAsEnabled(t *testing.T) {
 }
 
 // TestRegisterAllAcceptsAMixedCaseConfigurationKey covers a hand-edited config
-// naming "Registry-Test-Mixed" instead of the registry's own key. Ignoring it
-// would leave the user with settings they can see in their file that the manager
-// silently drops.
+// naming "Registry-Test-Mixed": ignoring it drops settings the user can see.
 func TestRegisterAllAcceptsAMixedCaseConfigurationKey(t *testing.T) {
 	const id = "registry-test-mixed-case"
 	registerFactory(t, id, func(ctx services.SourceBuildContext) (domain.ModSource, error) {
@@ -323,9 +305,8 @@ func TestRegisterAllAcceptsAMixedCaseConfigurationKey(t *testing.T) {
 	assert.Contains(t, liveIDs(t, registry), id, "registered %v, want %q", liveIDs(t, registry), id)
 }
 
-// TestRegisterAllReportsAFailingSourceAndKeepsTheRest is the reason RegisterAll
-// returns an error at all: one source the user has not configured must not stop
-// the manager from managing the mods it already has.
+// TestRegisterAllReportsAFailingSourceAndKeepsTheRest is why RegisterAll returns
+// an error at all: one unconfigured source must not stop the manager.
 func TestRegisterAllReportsAFailingSourceAndKeepsTheRest(t *testing.T) {
 	const broken = "registry-test-broken"
 	registerFactory(t, broken, func(services.SourceBuildContext) (domain.ModSource, error) {
@@ -365,9 +346,8 @@ func TestRegisterAllReportsAFailingSourceAndKeepsTheRest(t *testing.T) {
 	}
 }
 
-// TestRegisterAllNamesEveryBrokenSource covers the multi-failure path: one error
-// naming only the first problem sends the user round the loop fixing one source
-// at a time.
+// TestRegisterAllNamesEveryBrokenSource covers the multi-failure path: an error
+// naming only the first sends the user round the loop one source at a time.
 func TestRegisterAllNamesEveryBrokenSource(t *testing.T) {
 	const (
 		first  = "registry-test-broken-a"
@@ -391,8 +371,7 @@ func TestRegisterAllNamesEveryBrokenSource(t *testing.T) {
 }
 
 // TestRegisterAllReportsAFactoryThatReturnsNothing covers a plugin that reports
-// success and hands back a nil source. Registering it would make every later
-// lookup panic.
+// success and hands back nil; registering it would make every later lookup panic.
 func TestRegisterAllReportsAFactoryThatReturnsNothing(t *testing.T) {
 	const empty = "registry-test-nil-source"
 	registerFactory(t, empty, func(services.SourceBuildContext) (domain.ModSource, error) {
@@ -412,9 +391,7 @@ func TestRegisterAllReportsAFactoryThatReturnsNothing(t *testing.T) {
 }
 
 // TestRegisterAllReportsASourceItCannotRegister covers a factory returning a
-// source the registry refuses — a blank id, here. It has to be reported: a
-// source the user configured that never appears is exactly the silent failure
-// this function exists to prevent.
+// source the registry refuses: a configured source that never appears is silent.
 func TestRegisterAllReportsASourceItCannotRegister(t *testing.T) {
 	const bad = "registry-test-blank-id"
 	registerFactory(t, bad, func(services.SourceBuildContext) (domain.ModSource, error) {
@@ -433,9 +410,8 @@ func TestRegisterAllReportsASourceItCannotRegister(t *testing.T) {
 	assert.Contains(t, err.Error(), bad, "error %q does not name %q", err, bad)
 }
 
-// TestRegisterAllIsQuietWhenASourceIsAlreadyRegistered covers the second
-// container in one process, or a test that registers first. The outcome is what
-// the caller wanted, so it is not a failure.
+// TestRegisterAllIsQuietWhenASourceIsAlreadyRegistered covers the second container
+// in one process; the outcome is what the caller wanted, so it is not a failure.
 func TestRegisterAllIsQuietWhenASourceIsAlreadyRegistered(t *testing.T) {
 	const id = "registry-test-already-there"
 	registerFactory(t, id, constantFactory(&stubSource{id: id}))
@@ -500,10 +476,8 @@ func TestEnabled(t *testing.T) {
 	}
 }
 
-// TestEnabledNormalizesConfigurationKeys is the same hand-edited-config hazard
-// as TestRegisterAllAcceptsAMixedCaseConfigurationKey, on the other function. If
-// only one of the two normalises, the UI can show a source as enabled while
-// RegisterAll skips it.
+// TestEnabledNormalizesConfigurationKeys is the same hand-edited-config hazard on
+// the other function: if only one normalises, the UI and RegisterAll disagree.
 func TestEnabledNormalizesConfigurationKeys(t *testing.T) {
 	cfg := map[string]domain.SourceConfig{"GitHub": {Enabled: false}}
 	assert.False(
@@ -511,9 +485,8 @@ func TestEnabledNormalizesConfigurationKeys(t *testing.T) {
 		Enabled(cfg, "github"),
 		"Enabled = true, want false; the configuration key must be matched case-insensitively",
 	)
-	// A padded id still has to reach the same block — matching it proves the
-	// lookup found "GitHub", because the fallback for a source with no block is
-	// true.
+	// A padded id has to reach the same block, since the fallback for a source with
+	// no block is true — so a match is the only proof the lookup found "GitHub".
 	if Enabled(cfg, " GITHUB ") {
 		assert.Fail(t, "Enabled = true, want false; a padded id must still match the block")
 	}
@@ -543,10 +516,8 @@ func TestNormalizeBlocks(t *testing.T) {
 		_, ok := got[key]
 		assert.False(t, ok, "normalizeBlocks kept the blank key %q", key)
 	}
-	// Two spellings of one id is a mistake in the file. Sorted order decides the
-	// winner, and "DUP" sorts before "dup", so it is the one that has to survive
-	// — otherwise the answer would be whichever spelling map iteration reached
-	// first, and could change between starts.
+	// Two spellings of one id is a mistake in the file, and sorted order decides the
+	// winner: otherwise the answer is whichever spelling map iteration reached first.
 	assert.Equal(
 		t,
 		"upper-case-spelling",
@@ -568,8 +539,7 @@ func TestNormalizeBlocks(t *testing.T) {
 }
 
 func TestNormalizeBlocksIsStableAcrossRuns(t *testing.T) {
-	// The sorted-key walk is what makes a duplicated id deterministic; a test
-	// that ran once would not catch a regression back to map iteration. The
+	// The sorted-key walk is what makes a duplicated id deterministic, and the
 	// comparison has to sort too, since the keys come out of a map.
 	cfg := map[string]domain.SourceConfig{
 		"Zeta": {APIKey: "z"}, "alpha": {APIKey: "a"}, "MID": {APIKey: "m"},
@@ -583,9 +553,8 @@ func TestNormalizeBlocksIsStableAcrossRuns(t *testing.T) {
 	}
 }
 
-// TestRegisterAllIsSafeUnderConcurrentUse is about the container, not the
-// sources: two entry points may each build a container in the same process, and
-// both will walk the factory registry at once.
+// TestRegisterAllIsSafeUnderConcurrentUse is about the container: two entry
+// points may each build one in the same process and walk the registry at once.
 func TestRegisterAllIsSafeUnderConcurrentUse(t *testing.T) {
 	const shared = "registry-test-concurrent"
 	registerFactory(t, shared, constantFactory(&stubSource{id: shared}))
@@ -658,9 +627,8 @@ func TestRegisterAllHandsTheActiveGameToEveryFactory(t *testing.T) {
 		"RegisterAll must hand the active game to each factory")
 }
 
-// registerGameFactory installs a game-scoped factory for the duration of one
-// test. The factory registry is process-wide, so without the cleanup a later
-// RegisterAll would build a source this test invented.
+// registerGameFactory installs a game-scoped factory for the duration of one test;
+// without the cleanup a later RegisterAll would build a source this test invented.
 func registerGameFactory(t *testing.T, gameID, id string, factory services.SourceFactory) {
 	t.Helper()
 

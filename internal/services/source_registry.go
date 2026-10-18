@@ -13,19 +13,15 @@ import (
 )
 
 // SourceBuildContext is handed to every source factory instead of the bare
-// configuration block. Game carries the active game definition so a source can
-// read its per-game defaults — Nexus's game domain, GitHub's search topic —
-// without the plugin knowing which game is active; Config is that source's own
-// configuration block, unchanged.
+// configuration block. Game lets a source read its per-game defaults without
+// knowing which game is active; Config is that source's own config block.
 type SourceBuildContext struct {
 	Game   domain.GameDefinition
 	Config domain.SourceConfig
 }
 
-// SourceFactory builds a mod source from its build context. Plugins register
-// one of these at init time so the core never has to know a concrete source
-// type: adding Nexus or a private tracker means writing one function and
-// calling RegisterSourceFactory, with no change here.
+// SourceFactory builds a mod source from its build context. Plugins register one
+// of these at init time so the core never has to know a concrete source type.
 type SourceFactory func(SourceBuildContext) (domain.ModSource, error)
 
 var (
@@ -38,9 +34,8 @@ var (
 )
 
 // SourceKey builds the lookup key for a game-scoped source factory, e.g.
-// "darktide:racemenu-tool". Both halves are normalised the same way every
-// other id lookup in this file normalises them, so a caller that writes
-// "Darktide" and a plugin that registers "darktide" meet.
+// "darktide:racemenu-tool". Both halves are normalised the way every other id
+// lookup in this file normalises them, so "Darktide" and "darktide" meet.
 func SourceKey(gameID, id string) string {
 	return normalizeGameID(gameID) + ":" + normalizeSourceID(id)
 }
@@ -51,10 +46,8 @@ func normalizeGameID(gameID string) string {
 }
 
 // RegisterSourceFactory records the constructor for a generic source id — one
-// that is available to every game. It is called from plugin init functions, so
-// a duplicate id is a programming error rather than something a user can
-// trigger — the last registration silently losing would produce a source that
-// never gets used.
+// available to every game. It is called from plugin init functions, so a
+// duplicate id is a programming error and is reported rather than overwritten.
 func RegisterSourceFactory(id string, factory SourceFactory) error {
 	key := strings.TrimSpace(id)
 	if key == "" {
@@ -67,11 +60,8 @@ func RegisterSourceFactory(id string, factory SourceFactory) error {
 
 	factoryMu.Lock()
 	defer factoryMu.Unlock()
-	// The id is normalised the same way Get normalises it before looking a source
-	// up. Storing "GitHub" under its literal spelling and looking it up as
-	// "github" would make a plugin that registered a capitalised id silently
-	// unreachable, which is exactly the kind of failure that only shows up as a
-	// source that is listed but never appears.
+	// Normalised exactly as Get normalises it, so a plugin that registers a
+	// capitalised id stays reachable.
 	key = normalizeSourceID(key)
 	if _, exists := factories[key]; exists {
 		return appErrors.New(
@@ -88,8 +78,8 @@ func RegisterSourceFactory(id string, factory SourceFactory) error {
 
 // RegisterGameSourceFactory records a constructor that only exists for one
 // game. The registry prefers it over the generic factory of the same id when
-// that game is active, so a game-unique source (or a game-specific build of a
-// shared one) never has to compete with, or replace, the generic plugin.
+// that game is active, so a game-unique source never competes with the generic
+// plugin.
 func RegisterGameSourceFactory(gameID, id string, factory SourceFactory) error {
 	game := normalizeGameID(gameID)
 	if game == "" {
@@ -183,14 +173,10 @@ func RegisteredGameFactoryIDs(gameID string) []string {
 }
 
 // SourceFactoryFor returns the constructor registered for a source id without
-// building anything. The registry uses it to tell "this source is not installed"
-// from "this source is installed but misconfigured"; the plugin wiring in
-// internal/plugins/sources uses it to build every registered source eagerly at
-// start-up, which is what makes a misconfigured source visible in the UI instead
-// of only when the user first clicks it.
-//
-// The id is matched case-insensitively and with surrounding space ignored, the
-// same way every other lookup on the registry behaves.
+// building anything. The registry uses it to tell "not installed" from
+// "installed but misconfigured"; internal/plugins/sources uses it to build every
+// registered source eagerly at start-up, so a misconfigured source shows in the
+// UI rather than only when the user first clicks it. Ids match case-insensitively.
 func SourceFactoryFor(id string) (SourceFactory, bool) {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -205,10 +191,8 @@ func SourceFactoryFor(id string) (SourceFactory, bool) {
 	return factory, ok
 }
 
-// SourceFactoryForGame returns the constructor registered for one game's
-// source id, without building anything. It is the game-scoped counterpart of
-// SourceFactoryFor and the first place the registry looks when a game is
-// active.
+// SourceFactoryForGame returns the constructor registered for one game's source
+// id, without building anything.
 func SourceFactoryForGame(gameID, id string) (SourceFactory, bool) {
 	game := normalizeGameID(gameID)
 
@@ -226,10 +210,8 @@ func SourceFactoryForGame(gameID, id string) (SourceFactory, bool) {
 }
 
 // UnregisterSourceFactory removes a registered factory and reports whether one
-// was there. No production code needs it — a source stays available for the life
-// of the process — but tests share one process-wide registry, so without a way
-// to undo a registration every test would have to invent a fresh id and the set
-// of ids would grow without bound.
+// was there. Only tests need it — a source otherwise stays available for the
+// life of the process — but tests share one process-wide registry.
 func UnregisterSourceFactory(id string) bool {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -274,11 +256,9 @@ func UnregisterGameSourceFactory(gameID, id string) bool {
 // SourceRegistry holds the live mod sources. It is the only place the rest of
 // the program resolves a source id to something it can search or download from.
 //
-// Two kinds of member coexist. Directly registered sources (Register) are live
-// objects — the unit tests use this path, and so does any plugin that builds
-// its source eagerly. Factory-registered sources are configured but lazy: the
-// factory runs the first time the source is actually used, so a source whose
-// credentials are missing does not break construction of the whole registry.
+// Directly registered sources (Register) are live objects; factory-registered
+// ones are configured but lazy, running the factory the first time the source is
+// used, so a source with missing credentials does not break construction.
 type SourceRegistry struct {
 	store         ConfigStore
 	sources       map[string]domain.ModSource
@@ -309,14 +289,10 @@ func NewSourceRegistryWithStore(store ConfigStore) *SourceRegistry {
 type ConfigProvider func() *domain.Config
 
 // WithConfig makes the registry read one configuration in memory instead of
-// reloading the file.
-//
-// It exists because the composition root merges the caller's overrides into the
-// file's configuration and deliberately does not write that back — a token typed
-// on a command line should not end up in a file — while RegisterAll is handed the
-// merged value. Without this the registry would report a source the caller had
-// switched off as enabled, having correctly declined to build it: the settings
-// screen would show a green tick beside something the manager never uses.
+// reloading the file. The composition root merges caller overrides into the
+// file's configuration without writing it back — a token typed on a command line
+// must not end up in a file — so without this the registry would report a source
+// the caller switched off as enabled.
 func (r *SourceRegistry) WithConfig(provider ConfigProvider) *SourceRegistry {
 	if r == nil {
 		return r
@@ -330,10 +306,9 @@ func (r *SourceRegistry) WithConfig(provider ConfigProvider) *SourceRegistry {
 	return r
 }
 
-// WithLogger attaches a logger for the source lifecycle. Like WithConfig it is a
-// fluent setter rather than a constructor argument: the registry is built in
-// several places and the log service is assembled after the event bus, which the
-// registry never sees.
+// WithLogger attaches a logger for the source lifecycle. It is a fluent setter
+// because the registry is built in several places and assembled after the event
+// bus, which the registry never sees.
 func (r *SourceRegistry) WithLogger(logger *zerolog.Logger) *SourceRegistry {
 	if r == nil {
 		return r
@@ -347,13 +322,10 @@ func (r *SourceRegistry) WithLogger(logger *zerolog.Logger) *SourceRegistry {
 	return r
 }
 
-// WithGame sets the game whose factories this registry resolves first and
-// whose definition every factory is handed in its SourceBuildContext.
-//
-// One registry serves one active game: switching games means rebuilding the
-// registry (the composition root drops the old one and wires a new one), so
-// cached instances of the previous game's sources are never handed out under
-// the new game's identity.
+// WithGame sets the game whose factories this registry resolves first and whose
+// definition every factory is handed. One registry serves one active game:
+// switching games means rebuilding the registry, so cached instances of the
+// previous game's sources are never handed out under the new game's identity.
 func (r *SourceRegistry) WithGame(def domain.GameDefinition) *SourceRegistry {
 	if r == nil {
 		return r
@@ -368,14 +340,10 @@ func (r *SourceRegistry) WithGame(def domain.GameDefinition) *SourceRegistry {
 }
 
 // RebuildForGame switches the active game and drops every cached instance and
-// recorded failure so the next Get builds against the new definition. It is
-// the in-place form of "drop the registry and wire a new one": callers that
-// hold the registry pointer (the mod service, the cache downloader, the
-// registry provider) keep working without a graph rebuild.
-//
-// Directly registered sources and remembered credentials survive — neither
-// depends on which game is active. The caller is expected to re-register the
-// game-scoped factories afterwards (sources.RegisterAll with the new def).
+// recorded failure so the next Get builds against the new definition. It is the
+// in-place form of "drop the registry and wire a new one". Directly registered
+// sources and remembered credentials survive; the caller is expected to
+// re-register the game-scoped factories afterwards.
 func (r *SourceRegistry) RebuildForGame(def domain.GameDefinition) {
 	if r == nil {
 		return
@@ -413,12 +381,10 @@ func newSourceRegistry(store ConfigStore) *SourceRegistry {
 	}
 }
 
-// Register adds an already-built source.
-//
-// Ids are matched case-insensitively: config files are hand-edited and the UI
-// lowercases ids, so "Vortex" and "vortex" must not end up as two entries. The
-// first registration of an id wins and the id is normalised to lower case, so a
-// later duplicate is reported instead of silently replacing a working source.
+// Register adds an already-built source. Ids are matched case-insensitively
+// because config files are hand-edited and the UI lowercases them. The first
+// registration of an id wins, so a later duplicate is reported instead of
+// silently replacing a working source.
 func (r *SourceRegistry) Register(source domain.ModSource) error {
 	if source == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "cannot register a nil source")
@@ -448,9 +414,8 @@ func (r *SourceRegistry) Register(source domain.ModSource) error {
 	return nil
 }
 
-// Unregister removes a live source. It is what config changes and tests use to
-// model "the user turned this source off". Factories are untouched, so the
-// source can be built again later.
+// Unregister removes a live source. Factories are untouched, so the source can
+// be built again later.
 func (r *SourceRegistry) Unregister(id string) bool {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -465,19 +430,17 @@ func (r *SourceRegistry) Unregister(id string) bool {
 	delete(r.instantiated, key)
 	delete(r.failures, key)
 	// Authentication state is kept: the credentials did not change just because
-	// the source object was dropped, and forcing a re-login on every reload
-	// would be a regression for a source that authenticated successfully.
+	// the source object was dropped, and forcing a re-login would be a regression.
 	return live
 }
 
 // Get resolves a source id to a usable source.
 //
-// Lookup order is: a directly registered source, then an already-instantiated
+// Lookup order is a directly registered source, then an already-instantiated
 // factory source, then the factory — the active game's game-scoped factory
 // first, the generic one after it. A factory failure is cached and replayed,
-// because a factory that fails because an API key is missing will fail again
-// on the next call and re-running it would turn one clear error into a stream
-// of confusing ones.
+// because a factory that fails for a missing API key will fail again and
+// re-running it would turn one clear error into a stream of confusing ones.
 func (r *SourceRegistry) Get(id string) (domain.ModSource, error) {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -506,12 +469,37 @@ func (r *SourceRegistry) Get(id string) (domain.ModSource, error) {
 	return r.build(key)
 }
 
-// build runs the factory for key, at most once across all callers.
-//
-// The double-check inside buildMu is what makes "exactly once" hold: without it
-// two goroutines that both missed the fast path would both call the factory and
-// the registry would have to pick a winner, leaving one half-built source
-// discarded and the loser holding a stale session.
+// InspectPath asks every registered source that can read the filesystem what it
+// sees at path. Sources are asked in registration order and the first recognition
+// wins, so the answer is deterministic. A source that is not a PathInspector is
+// skipped rather than asked and refused.
+func (r *SourceRegistry) InspectPath(
+	ctx context.Context,
+	path string,
+) (*domain.Mod, bool, error) {
+	for _, source := range r.List() {
+		inspector, ok := source.(domain.PathInspector)
+		if !ok {
+			continue
+		}
+
+		mod, recognised, err := inspector.InspectPath(ctx, path)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if recognised {
+			return mod, true, nil
+		}
+	}
+
+	return nil, false, nil
+}
+
+// build runs the factory for key, at most once across all callers. The
+// double-check inside buildMu is what makes that hold: without it two goroutines
+// that both missed the fast path would both call the factory and one half-built
+// source would be discarded, leaving the loser holding a stale session.
 func (r *SourceRegistry) build(key string) (domain.ModSource, error) {
 	r.buildMu.Lock()
 	defer r.buildMu.Unlock()
@@ -542,9 +530,7 @@ func (r *SourceRegistry) build(key string) (domain.ModSource, error) {
 	})
 	if err != nil {
 		// Warn, not error: a misconfigured optional source is a state the user
-		// fixes in the settings screen, and the failure is reported to them
-		// there and through the error return. Every later lookup re-reports it,
-		// so an error line here would repeat itself for the life of the process.
+		// fixes in the settings screen, and every later lookup re-reports it.
 		r.logger().Warn().
 			Err(err).
 			Str("op", "source-build").
@@ -556,16 +542,15 @@ func (r *SourceRegistry) build(key string) (domain.ModSource, error) {
 	}
 
 	if source == nil {
-		// A factory returning (nil, nil) is a bug in the plugin. Treat it as a
-		// failure rather than handing a nil interface to the caller, which
-		// would panic somewhere far away from the actual mistake.
+		// A factory returning (nil, nil) is a plugin bug; handing the caller a
+		// nil interface would panic somewhere far from the actual mistake.
 		return nil, r.rememberFailure(key, appErrors.New(appErrors.ErrCodeSourceUnavailable,
 			"mod source %q factory returned no source", key))
 	}
 
 	if got := normalizeSourceID(source.ID()); got != key {
-		// A factory that builds the wrong id would make every later lookup miss
-		// and the source unreachable through its own id.
+		// A factory that builds the wrong id would make every later lookup miss and
+		// the source unreachable through its own id.
 		return nil, r.rememberFailure(key, appErrors.New(appErrors.ErrCodeSourceUnavailable,
 			"mod source factory for %q returned a source with id %q", key, got))
 	}
@@ -621,8 +606,7 @@ func (r *SourceRegistry) rememberFailure(key string, err error) error {
 // List returns every source that can currently be resolved, sorted by id.
 //
 // Sources whose factory fails are skipped rather than aborting the list: a
-// broken Nexus key must not stop the UI from showing Steam and Local. The
-// caller that cares about a specific source uses Get and gets the error.
+// broken Nexus key must not stop the UI from showing Steam and Local.
 func (r *SourceRegistry) List() []domain.ModSource {
 	ids := r.IDs()
 
@@ -664,8 +648,7 @@ func (r *SourceRegistry) IDs() []string {
 	}
 
 	// Game-scoped factories are visible under their plain id too: a source that
-	// only exists for the active game still has to appear in the list the UI
-	// renders.
+	// only exists for the active game still has to appear in the UI's list.
 	if def := r.activeGame(); def != nil {
 		for _, id := range RegisteredGameFactoryIDs(def.ID()) {
 			seen[id] = struct{}{}
@@ -686,9 +669,8 @@ func (r *SourceRegistry) IDs() []string {
 // still listed, with Enabled false, so the settings screen can show why.
 func (r *SourceRegistry) Infos() []domain.ModSourceInfo {
 	ids := r.IDs()
-	// One snapshot of the configuration for the whole list. Reading it per source
-	// would mean a settings file that cannot be loaded is parsed once per entry,
-	// and a file edited mid-loop could report half the list from before the edit.
+	// One snapshot for the whole list: reading it per source would parse the file once
+	// per entry and could report half the list from before an edit.
 	cfg := r.configSnapshot()
 
 	out := make([]domain.ModSourceInfo, 0, len(ids))
@@ -700,14 +682,10 @@ func (r *SourceRegistry) Infos() []domain.ModSourceInfo {
 }
 
 // Has reports whether id names a source this registry knows about, whether or not
-// it can be built.
-//
-// It is the non-building counterpart of Get, and it exists because describing a
-// list of sources must not build any of them — a source switched off has to stay
-// unbuilt — while a caller asking about a single id still needs to be able to tell
-// "this source is switched off" from "there is no such source". Without it the
-// two are the same empty description, and a frontend holding a stale row shows an
-// empty settings page with no complaint.
+// it can be built. It is the non-building counterpart of Get, and it exists
+// because describing a list of sources must not build any of them while a caller
+// asking about a single id still needs to tell "switched off" from "no such
+// source" — without it both are the same empty description.
 func (r *SourceRegistry) Has(id string) bool {
 	key := normalizeSourceID(id)
 	if r == nil || key == "" {
@@ -752,9 +730,8 @@ func enabledByConfig(cfg domain.Config, id string) bool {
 // infoWith describes one source against an already-loaded configuration.
 //
 // Enabled comes from the configuration rather than from whether a source object
-// could be produced. A source the user switched off is deliberately never built
-// (see the sources registry), so reporting it as enabled would show a green tick
-// next to a source the manager will not use.
+// could be produced: a switched-off source is deliberately never built, so
+// reporting it as enabled would show a green tick next to something unused.
 func (r *SourceRegistry) infoWith(id string, cfg domain.Config) domain.ModSourceInfo {
 	key := normalizeSourceID(id)
 
@@ -764,19 +741,16 @@ func (r *SourceRegistry) infoWith(id string, cfg domain.Config) domain.ModSource
 	}
 
 	info.Enabled = enabledByConfig(cfg, key)
-	// Read from the configuration rather than from the source object: "is a key
-	// stored" is a question about the settings file, and answering it from memory
-	// would report the key of this process only, so the same installation would
-	// show a stored key to the CLI and none to the GUI.
+	// "Is a key stored" is a question about the settings file, so answering it
+	// from memory would show a stored key to the CLI and none to the GUI.
 	if block, ok := cfg.SourceConfigFor(key); ok {
 		info.HasAPIKey = strings.TrimSpace(block.APIKey) != ""
 	}
 
 	source, err := r.Get(key)
 	if err != nil {
-		// The configuration switches a source on, but a source the manager cannot
-		// produce is not enabled in any sense that matters — and reporting it as
-		// enabled would show a green tick beside a source that cannot be used.
+		// A source the manager cannot produce is not enabled in any sense that
+		// matters, whatever the configuration says.
 		info.Enabled = false
 		return info
 	}
@@ -824,8 +798,8 @@ func (r *SourceRegistry) Authenticated(id string) bool {
 //
 // A source that fails is skipped and the remaining results are still returned:
 // one unreachable launcher must not hide the mods another one has. Only when
-// *every* source failed does the call return an error, because then the
-// problem is the network or the configuration, not one bad source.
+// every source failed does the call return an error, because then the problem
+// is the network or the configuration, not one bad source.
 func (r *SourceRegistry) SearchAll(
 	ctx context.Context,
 	query domain.SearchQuery,
@@ -849,10 +823,8 @@ func (r *SourceRegistry) SearchAll(
 
 	searchable := make([]domain.ModSource, 0, len(sources))
 	for _, source := range sources {
-		// A source the configuration switched off is not asked. That is the whole
-		// point of the switch: a user who turned a launcher off because its
-		// anonymous quota is spent should not have it queried by a search box, and
-		// a source that needs no credential should not send one.
+		// A source switched off is never asked, which is the whole point of the
+		// switch.
 		if !enabled[source.ID()] {
 			continue
 		}
@@ -868,9 +840,8 @@ func (r *SourceRegistry) SearchAll(
 			"no available mod source supports search",
 		)
 	}
-	// domain.SearchAll owns the concurrency, the partial-failure tolerance and
-	// the "every provider failed" rule; the registry only decides which sources
-	// take part.
+	// domain.SearchAll owns the concurrency and the "every provider failed" rule;
+	// the registry only decides which sources take part.
 	return domain.SearchAll(ctx, searchable, query)
 }
 
@@ -900,9 +871,8 @@ func (r *SourceRegistry) Authenticate(
 
 	if err := source.Authenticate(ctx, creds); err != nil {
 		r.SetAuthenticated(id, false)
-		// The cause is carried by Wrap and rendered by AppError.Error, so it must
-		// not also be interpolated into the message: doing so prints it twice,
-		// once inside the message and once after the colon.
+		// Wrap already carries the cause and AppError.Error renders it, so
+		// interpolating it into the message would print it twice.
 		return appErrors.Wrap(err, appErrors.ErrCodeAuthFailed,
 			"authenticate mod source %q", normalizeSourceID(id))
 	}
@@ -913,16 +883,14 @@ func (r *SourceRegistry) Authenticate(
 }
 
 // ForgetCredentials drops the credential a source is holding, without
-// contacting it, and forgets that it was ever authenticated.
+// contacting it, and forgets that it was ever authenticated. Deleting a key takes
+// two operations and both are needed: the caller removes it from the settings
+// file, which is what stops it coming back on the next launch, and this is what
+// stops the already-built source from sending it until then.
 //
-// Deleting a key is two operations and both are needed. The caller removes it
-// from the settings file, which is what stops it coming back on the next launch;
-// this is what stops the already-built source from sending it until then.
-//
-// A source that takes no credential has nothing to forget and says so. So does a
-// plugin that supports authentication but cannot drop what it was given: telling
-// the user the key is gone when the process is still using it is the one outcome
-// worse than not offering the operation at all.
+// A source that supports authentication but cannot drop what it was given says
+// so: telling the user the key is gone while the process still uses it is worse
+// than not offering the operation.
 func (r *SourceRegistry) ForgetCredentials(id string) error {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -1010,13 +978,8 @@ func (r *SourceRegistry) configFor(id string) domain.SourceConfig {
 }
 
 func (r *SourceRegistry) configSnapshot() domain.Config {
-	// The supplied configuration wins over the file. The composition root builds
-	// one configuration in memory — the file with whatever the caller passed on a
-	// command line merged over it — and the registry has to judge "is this source
-	// switched on?" against the same values RegisterAll was given. Reading the
-	// file instead meant a source the caller had disabled was never built and then
-	// reported as enabled, which is the one thing a settings screen must not get
-	// wrong.
+	// The supplied configuration wins over the file: the composition root hands
+	// RegisterAll the merged value, so that is what "switched on" is judged against.
 	if r.config != nil {
 		if cfg := r.config(); cfg != nil {
 			return *cfg
@@ -1042,12 +1005,9 @@ func normalizeSourceID(id string) string {
 	return strings.ToLower(strings.TrimSpace(id))
 }
 
-// sameSource reports whether two registrations are the same object.
-//
-// Comparing interface values panics when the dynamic type is not comparable,
-// and a source implemented as a struct containing a map or a func would be such
-// a value. Comparable is checked first so an exotic plugin type is merely
-// treated as a distinct source rather than crashing the registry.
+// sameSource reports whether two registrations are the same object. Comparing
+// interface values panics when the dynamic type is not comparable, so Comparable
+// is checked first and an exotic plugin type is merely a distinct source.
 func sameSource(a, b domain.ModSource) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil

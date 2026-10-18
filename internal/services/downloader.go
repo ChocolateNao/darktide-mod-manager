@@ -10,11 +10,9 @@ import (
 // RegistryDownloader is the cache manager's downloader when the mod being
 // fetched comes from a registered source.
 //
-// The cache manager holds one downloader, but a mod's bytes come from whichever
-// source owns it, and every bundled source both lists and downloads its own mods.
-// Without this adapter the cache can only ever be a reader, and every install
-// would stop at "no downloader is configured" — a failure that reads as a missing
-// plugin rather than a missing wire.
+// The cache manager holds one downloader but a mod's bytes come from whichever
+// source owns it; without this adapter every install stops at "no downloader is
+// configured".
 type RegistryDownloader struct {
 	registry *SourceRegistry
 }
@@ -25,10 +23,8 @@ func NewRegistryDownloader(registry *SourceRegistry) *RegistryDownloader {
 	return &RegistryDownloader{registry: registry}
 }
 
-// sourceFor resolves the source that owns a mod.
-//
-// The registry builds sources without a context because that work is local, so
-// the cancellation check is made here rather than dropped.
+// sourceFor resolves the source that owns a mod. The registry builds sources
+// without a context because that work is local, so cancellation is checked here.
 func (d *RegistryDownloader) sourceFor(
 	ctx context.Context,
 	mod *domain.Mod,
@@ -62,9 +58,8 @@ func (d *RegistryDownloader) Download(
 
 	downloader, ok := source.(Downloader)
 	if !ok {
-		// An unknown source and a source that cannot download are different
-		// problems, and only the latter is the user's configuration to fix, so
-		// the message has to name the source it is about.
+		// Only a source that cannot download is the user's configuration to fix,
+		// so the message names the source it is about.
 		return "", appErrors.New(appErrors.ErrCodeSourceUnavailable,
 			"source %q cannot download files itself", source.ID())
 	}
@@ -72,11 +67,9 @@ func (d *RegistryDownloader) Download(
 	return downloader.Download(ctx, mod, destPath)
 }
 
-// Verify checks a downloaded file through the source that owns the mod.
-//
-// A source that cannot download claims no digest, so there is nothing to verify
-// against and reporting a failure would reject every mod it lists. Returning nil
-// is therefore the only honest answer for one.
+// Verify checks a downloaded file through the source that owns the mod. A source
+// that cannot download claims no digest, so returning nil is the only honest
+// answer for one.
 func (d *RegistryDownloader) Verify(ctx context.Context, mod *domain.Mod, path string) error {
 	if mod == nil {
 		return nil

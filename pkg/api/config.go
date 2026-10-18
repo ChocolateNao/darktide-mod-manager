@@ -26,12 +26,9 @@ func (c *Client) configStore() (services.ConfigStore, error) {
 	return c.deps.Config, nil
 }
 
-// GetConfig returns a copy of the manager's configuration.
-//
-// The copy matters: the store's Load returns a fresh value each call, and handing
-// that out directly would let a caller mutate what the next caller sees. A
-// missing file yields defaults rather than an error, so first run needs no
-// special case.
+// GetConfig returns a copy of the manager's configuration. The copy matters: Load
+// returns a fresh value each call, and handing that out would let a caller mutate
+// what the next caller sees. A missing file yields defaults, not an error.
 func (c *Client) GetConfig(ctx context.Context) (*Config, error) {
 	store, err := c.configStore()
 	if err != nil {
@@ -53,14 +50,10 @@ func (c *Client) GetConfig(ctx context.Context) (*Config, error) {
 	return cfg.Clone(), nil
 }
 
-// UpdateConfig replaces the manager's configuration.
-//
-// Defaults are applied first, so a caller can hand over a partial configuration
-// without having to fill in every block, and a zero that would disable integrity
-// checking cannot reach disk. The write is atomic and only happens when the value
-// actually differs, so calling this on a timer does not rewrite the file — which
-// matters because a rewritten config file has a new modification time, and tools
-// that back up on change would back up on nothing.
+// UpdateConfig replaces the manager's configuration. Defaults are applied first so
+// a partial configuration is completed and a zero that would disable integrity
+// checking cannot reach disk. The write is skipped when unchanged, so a
+// timer-driven call does not rewrite the file and trigger backup tools.
 func (c *Client) UpdateConfig(ctx context.Context, cfg *Config) error {
 	store, err := c.configStore()
 	if err != nil {
@@ -93,8 +86,8 @@ func (c *Client) ConfigPath() (string, error) {
 }
 
 // SourceConfig returns one source's configuration block. A source with no block
-// yields defaults and true, matching how the registry treats an absent block: a
-// fresh install has no blocks and should still show its bundled sources.
+// yields defaults and true, matching the registry: a fresh install has no blocks
+// and should still show its bundled sources.
 func (c *Client) SourceConfig(
 	ctx context.Context,
 	sourceID string,
@@ -109,14 +102,9 @@ func (c *Client) SourceConfig(
 	return block, ok, nil
 }
 
-// GetConfigValue reads one setting by dotted key, for example
-// "cache.max_size_gb" or "sources.vortex.api_key". A key naming an absent value
-// reports ErrCodeNotFound rather than an empty string, so a caller can tell a
-// setting that is unset from one that is set to nothing.
-//
-// Source blocks are addressable as "sources.<id>.enabled", "sources.<id>.api_key"
-// and "sources.<id>.paths". An api_key is deliberately not readable through this
-// function — see SetConfigValue for why the write side is different.
+// GetConfigValue reads one setting by dotted key. An absent key reports
+// ErrCodeNotFound rather than an empty string, so unset is distinguishable from
+// set-to-nothing. An api_key is deliberately not readable — see SetConfigValue.
 func (c *Client) GetConfigValue(ctx context.Context, key string) (string, error) {
 	cfg, err := c.GetConfig(ctx)
 	if err != nil {
@@ -126,16 +114,10 @@ func (c *Client) GetConfigValue(ctx context.Context, key string) (string, error)
 	return ConfigValue(cfg, key)
 }
 
-// SetConfigValue changes one setting by dotted key and saves the result.
-//
-// An api_key may be written but not read back: a credential a caller cannot read
-// is a credential a caller cannot accidentally log, and the configuration file is
-// already the plaintext home of the key. Reading it back through GetConfigValue
-// reports ErrCodeNotFound so a UI cannot render it into a page it will later
-// serialise into a bug report.
-//
-// The value is parsed as the destination type, so a caller cannot store the
-// string "banana" in a boolean and discover it at start-up.
+// SetConfigValue changes one setting by dotted key and saves. An api_key may be
+// written but not read back: a credential a caller cannot read cannot be
+// accidentally logged. The value is parsed as the destination type, so "banana"
+// cannot be stored in a boolean.
 func (c *Client) SetConfigValue(ctx context.Context, key, value string) error {
 	store, err := c.configStore()
 	if err != nil {
@@ -343,10 +325,8 @@ var configFields = []configField{
 		set:  boolSetter(func(c *Config) *bool { return &c.UI.CompactMode }),
 	},
 
-	// The logging block is listed before advanced.log_level, which stays
-	// settable so an existing script does not break — it is read only as a
-	// fallback for a config that predates this block (see migrateLevel), and
-	// writing both would leave two settings that disagree.
+	// The logging block is listed before advanced.log_level, which stays settable so
+	// an existing script does not break — it is read only as a fallback (see migrateLevel).
 	{
 		key:  "logging.level",
 		help: "verbosity: trace, debug, info, warn or error",
@@ -417,8 +397,8 @@ var configFields = []configField{
 }
 
 // ConfigKeys returns every key GetConfigValue and SetConfigValue understand, with
-// a one-line description each. Source blocks are not listed because their keys
-// depend on the source ids; the pattern is "sources.<id>.enabled".
+// a one-line description each. Source block keys are not listed because their ids
+// vary; the pattern is "sources.<id>.enabled".
 func ConfigKeys() []string {
 	out := make([]string, 0, len(configFields)+3)
 	for _, f := range configFields {
@@ -435,6 +415,7 @@ func ConfigKeys() []string {
 		"games.<id>.mods_folder_override",
 		"games.<id>.auto_detect",
 		"games.<id>.install_method",
+		"games.<id>.icon",
 		"hooks.permissions.default.<capability>",
 		"hooks.permissions.games.<id>.<capability>",
 		"hooks.permissions.mods.<id>.<capability>",
@@ -445,8 +426,7 @@ func ConfigKeys() []string {
 
 // boolSetter builds a setter that parses a boolean, refusing anything else.
 // strconv.ParseBool is deliberately not used: it accepts "1", "t" and "TRUE",
-// which is fine for a flag and wrong for a value a user typed into a settings
-// field.
+// which is fine for a flag and wrong for a value a user typed into a settings field.
 func boolSetter(target func(*Config) *bool) func(*Config, string) error {
 	return func(cfg *Config, value string) error {
 		parsed, err := parseConfigBool(value)
@@ -461,8 +441,8 @@ func boolSetter(target func(*Config) *bool) func(*Config, string) error {
 }
 
 // intSetter builds a setter that parses an integer within bounds. The bounds
-// matter: a cache limit of -1 would be read as "no limit" by the cache manager,
-// which is not what someone typing -1 into a size field meant.
+// matter: a cache limit of -1 would read as "no limit" to the cache manager, which
+// is not what someone typing -1 into a size field meant.
 func intSetter(target func(*Config) *int, min, max int) func(*Config, string) error {
 	return func(cfg *Config, value string) error {
 		parsed, err := strconv.Atoi(strings.TrimSpace(value))
@@ -482,11 +462,10 @@ func intSetter(target func(*Config) *int, min, max int) func(*Config, string) er
 	}
 }
 
-// durationSetter builds a setter for hook timeouts. The value is either a Go
-// duration string ("10s", "1m30s") or a bare number of seconds — the second
-// spelling because "30" is what every previous release accepted, and breaking
-// it would punish the only users this app has (its developers) for no gain.
-// The parsed duration is clamped to [minSeconds, maxSeconds].
+// durationSetter builds a setter for hook timeouts, clamped to
+// [minSeconds, maxSeconds]. The value is a Go duration string ("10s") or a bare
+// number of seconds — the second spelling because "30" is what every previous
+// release accepted.
 func durationSetter(
 	target func(*Config) *domain.Duration,
 	minSeconds, maxSeconds int,
@@ -541,10 +520,8 @@ var secretConfigKeys = map[string]bool{
 }
 
 // ConfigValue reads one setting by dotted key. It is the free-function form of
-// Client.GetConfigValue, for a caller that already holds a configuration.
-//
-// See Client.GetConfigValue for the key syntax and the refusal to read back a
-// credential.
+// Client.GetConfigValue, for a caller that already holds a configuration; see it
+// for the key syntax and the refusal to read back a credential.
 func ConfigValue(cfg *Config, key string) (string, error) {
 	if cfg == nil {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -634,11 +611,9 @@ func SetConfigValue(cfg *Config, key, value string) error {
 		"no such configuration key: %q", strings.TrimSpace(key))
 }
 
-// setField applies one field's setter and, on failure, says which field failed.
-//
-// The key is added here rather than in every setter: a settings form has to tell
-// the user which box they got wrong, and twenty-odd setters each repeating the
-// key would be twenty-odd chances to forget one.
+// setField applies one field's setter and, on failure, says which field failed. The
+// key is added here rather than in every setter: twenty-odd setters each repeating
+// it would be twenty-odd chances to forget one.
 func setField(field configField, cfg *Config, value string) error {
 	if err := field.set(cfg, value); err != nil {
 		return nameKeyError(err, field.key)
@@ -647,19 +622,15 @@ func setField(field configField, cfg *Config, value string) error {
 	return nil
 }
 
-// nameKeyError restates a parse failure with the key it belongs to.
-//
-// The cause is deliberately dropped rather than wrapped: these errors are created
-// on the spot with no sentinel to match against, and wrapping would render as
-// "INVALID_ARGUMENT: cannot set cache.max_size_gb: INVALID_ARGUMENT: ..." — the
-// code twice, with the useful half buried.
+// nameKeyError restates a parse failure with the key it belongs to. The cause is
+// deliberately dropped rather than wrapped: there is no sentinel to match against,
+// and wrapping would render the code twice with the useful half buried.
 func nameKeyError(err error, key string) error {
 	return appErrors.New(appErrors.CodeOf(err), "cannot set %s: %s", key, appErrors.Message(err))
 }
 
 // normalizeConfigKey folds a key so "Game.Path", "game.path" and " game.path "
-// are the same key. A settings screen should not have to care how a caller
-// spelled it.
+// are the same key: a settings screen should not have to care how it was spelled.
 func normalizeConfigKey(key string) string {
 	return strings.ToLower(strings.TrimSpace(key))
 }
@@ -670,13 +641,9 @@ func secretReadError(key string) error {
 		"%s holds a credential and is not readable through the configuration API", key)
 }
 
-// splitSourceKey breaks "sources.<id>.<field>" apart. It reports false for
-// anything that is not three or four segments starting with "sources", which
-// leaves the caller to report an unknown key.
-//
-// The id is passed on as the user spelled it; folding its case is the writer's
-// job, not the parser's. A read has to find a block however it is capitalised, and
-// a write has to land in the block that already exists — see setSourceValue.
+// splitSourceKey breaks "sources.<id>.<field>" apart. The id is passed on as the
+// user spelled it; folding its case is the writer's job — a read must find a block
+// however it is capitalised.
 func splitSourceKey(key string) (sourceID, field string, ok bool) {
 	parts := strings.Split(key, ".")
 	switch len(parts) {
@@ -710,8 +677,8 @@ func splitSourceKey(key string) (sourceID, field string, ok bool) {
 }
 
 // sourceValue reads one field of one source block. An unknown source id is an
-// error rather than a default: the caller asked about a source that does not
-// exist, and answering "enabled: true" for a typo would be worse than failing.
+// error rather than a default: answering "enabled: true" for a typo would be worse
+// than failing.
 func sourceValue(cfg *Config, sourceID, field string) (string, error) {
 	block, ok := cfg.SourceConfigFor(sourceID)
 	if !ok {
@@ -743,16 +710,9 @@ func sourceValue(cfg *Config, sourceID, field string) (string, error) {
 }
 
 // setSourceValue writes one field of one source block, creating the block if it
-// does not exist yet — writing a setting for a source with no block is how a
-// block appears in the first place.
-//
-// The block is addressed by the key it already has, so a settings screen that
-// sends "sources.Nexus.api_key" updates the "nexus" block instead of creating a
-// second one beside it. Two blocks for one source is not a harmless duplicate:
-// they disagree about Enabled, and a settings screen saving the one it read while
-// the manager used the other would look like the switch was ignored.
-//
-// A block that has to be created is created enabled; see below.
+// does not exist. The block is addressed by the key it already has, so
+// "sources.Nexus.api_key" updates the "nexus" block instead of creating a second
+// one: two blocks for one source disagree about Enabled.
 func setSourceValue(cfg *Config, sourceID, field, value string) error {
 	if cfg.Sources == nil {
 		cfg.Sources = make(map[string]domain.SourceConfig)
@@ -769,11 +729,8 @@ func setSourceValue(cfg *Config, sourceID, field, value string) error {
 
 	block, exists := cfg.Sources[key]
 	if !exists {
-		// A block that is being created is enabled, because a source with no block
-		// at all is enabled: sources.RegisterAll treats "no block" as "use the
-		// source" and only honours an explicit false. Writing a setting for the
-		// first time — the usual way an API key arrives — would otherwise store
-		// the block that says the opposite and silently switch the source off.
+		// Enabled, because sources.RegisterAll treats "no block" as "use the source"
+		// and only honours an explicit false — and a first-time write is an API key.
 		block = domain.SourceConfig{Enabled: true}
 	}
 
@@ -817,12 +774,9 @@ func setSourceValue(cfg *Config, sourceID, field, value string) error {
 	return nil
 }
 
-// splitGameKey breaks "games.<id>.<field>" apart. It reports false for
-// anything that is not three segments starting with "games", which leaves the
-// caller to report an unknown key.
-//
-// The id is already folded by normalizeConfigKey, matching the registry's own
-// normalisation: game ids are lowercase everywhere they are addressed.
+// splitGameKey breaks "games.<id>.<field>" apart, reporting false for anything that
+// is not three segments starting with "games". The id is already folded by
+// normalizeConfigKey, matching the registry: game ids are lowercase everywhere.
 func splitGameKey(key string) (gameID, field string, ok bool) {
 	parts := strings.Split(key, ".")
 	if len(parts) != 3 || parts[0] != "games" {
@@ -837,11 +791,9 @@ func splitGameKey(key string) (gameID, field string, ok bool) {
 	return id, parts[2], true
 }
 
-// registeredGame looks up a game's definition by config id, answering nil when
-// the id names a game this build does not have. Callers treat nil as "no
-// preference to report" rather than as an error: reading settings must work
-// for a game that was removed from the registry but is still described in the
-// configuration.
+// registeredGame looks up a game's definition by config id, answering nil when the
+// id names a game this build does not have. Callers treat nil as "no preference to
+// report" rather than an error, since a configuration may describe a removed game.
 func registeredGame(gameID string) domain.GameDefinition {
 	def, ok := games.Get(strings.TrimSpace(gameID))
 	if !ok {
@@ -851,10 +803,9 @@ func registeredGame(gameID string) domain.GameDefinition {
 	return def
 }
 
-// gameValue reads one field of one game's settings. A game with no entry yet
-// answers with the defaults rather than an error: asking for a setting of a
-// game that has simply never been pointed at a path is a normal question, and
-// the defaults are the truthful answer.
+// gameValue reads one field of one game's settings. A game with no entry yet answers
+// with the defaults rather than an error: asking about a game never pointed at a path
+// is a normal question, and the defaults are truthful.
 func gameValue(cfg *Config, gameID, field string) (string, error) {
 	settings, ok := cfg.GameSettingsFor(gameID)
 	if !ok {
@@ -871,28 +822,24 @@ func gameValue(cfg *Config, gameID, field string) (string, error) {
 	case "auto_detect":
 		return strconv.FormatBool(settings.AutoDetect), nil
 	case "install_method":
-		// An unset override reads as the game's own preference rather than as
-		// an empty string: "what happens if I never touch this?" is the question
-		// a settings screen asks first, and blank would answer nothing.
+		// An unset override reads as the game's own preference, not an empty string:
+		// blank would answer "what happens if I never touch this?" with nothing.
 		if method := settings.InstallMethodOrDefault(registeredGame(gameID)); method != "" {
 			return method, nil
 		}
 
 		return "", nil
+	case "icon":
+		return settings.Icon, nil
 	}
 
 	return "", appErrors.New(appErrors.ErrCodeNotFound,
 		"game %q has no setting %q", gameID, field)
 }
 
-// setGameValue writes one field of one game's settings, creating the entry if
-// it does not exist yet — writing a setting for a game with no block is how a
-// block appears in the first place.
-//
-// The game id is not checked against the registry: a configuration is allowed
-// to describe a game before the process has one to switch to, and a typo is
-// caught by UseGame, which is where switching — the operation that would be
-// harmed by a wrong id — actually happens.
+// setGameValue writes one field of one game's settings, creating the entry if it
+// does not exist. The id is not checked against the registry: a configuration may
+// describe a game the process cannot switch to yet; a typo is caught by UseGame.
 func setGameValue(cfg *Config, gameID, field, value string) error {
 	settings, ok := cfg.GameSettingsFor(gameID)
 	if !ok {
@@ -923,6 +870,10 @@ func setGameValue(cfg *Config, gameID, field, value string) error {
 		}
 
 		settings.InstallMethod = value
+	case "icon":
+		// Not a checked-in enum: the values are lucide icon names the frontend may
+		// change, and an unknown one falls back to the generic pad, not an error.
+		settings.Icon = strings.TrimSpace(value)
 	default:
 		return appErrors.New(appErrors.ErrCodeNotFound,
 			"game %q has no setting %q", gameID, field)
@@ -977,9 +928,8 @@ func splitPermissionKey(key string) (permissionScope, bool) {
 	return permissionScope{}, false
 }
 
-// permissionCaps maps each boolean capability name to its field. The
-// timeout_seconds cap is handled separately: it is an integer ceiling, not a
-// switch.
+// permissionCaps maps each boolean capability name to its field. timeout_seconds
+// is handled separately: it is an integer ceiling, not a switch.
 var permissionCaps = map[string]func(*domain.ScriptPermissions) *bool{
 	"config_read":  func(p *domain.ScriptPermissions) *bool { return &p.ConfigRead },
 	"config_write": func(p *domain.ScriptPermissions) *bool { return &p.ConfigWrite },
@@ -989,10 +939,9 @@ var permissionCaps = map[string]func(*domain.ScriptPermissions) *bool{
 	"storage_read": func(p *domain.ScriptPermissions) *bool { return &p.StorageRead },
 }
 
-// resolve returns the scope's current block and the key it lives under in its
-// map (empty for the default scope). A scope with no block of its own answers
-// with the zero permissions — no grant — which is the truth about a mod that
-// has never been given one.
+// resolve returns the scope's current block and the key it lives under in its map
+// (empty for the default scope). A scope with no block of its own answers with the
+// zero permissions — no grant — which is the truth about a mod never given one.
 func (s permissionScope) resolve(cfg *Config) (domain.ScriptPermissions, string) {
 	switch s.kind {
 	case "games":
@@ -1004,9 +953,8 @@ func (s permissionScope) resolve(cfg *Config) (domain.ScriptPermissions, string)
 	return cfg.Hooks.Permissions.Default, ""
 }
 
-// lookupPermission finds a scope's block however it was capitalised, returning
-// the block along with the key it is stored under so a write lands in the
-// existing entry instead of creating a second one beside it.
+// lookupPermission finds a scope's block however it was capitalised, returning the
+// key it is stored under so a write lands in the existing entry, not a second one.
 func lookupPermission(
 	blocks map[string]domain.ScriptPermissions,
 	id string,
@@ -1042,10 +990,9 @@ func (s permissionScope) read(cfg *Config) (string, error) {
 	return strconv.FormatBool(*field(&block)), nil
 }
 
-// write applies one capability to its scope, creating the scope's block if it
-// does not exist yet. A capability of 0 (timeout_seconds) is stored as written:
-// zero means "no cap below the configured ceiling", which is a real setting,
-// not an unset one.
+// write applies one capability to its scope, creating the scope's block if it does
+// not exist yet. A capability of 0 (timeout_seconds) is stored as written: zero
+// means "no cap below the configured ceiling", which is a real setting.
 func (s permissionScope) write(cfg *Config, value string) error {
 	block, key := s.resolve(cfg)
 

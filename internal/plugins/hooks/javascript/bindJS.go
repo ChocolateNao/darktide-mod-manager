@@ -12,11 +12,10 @@ import (
 // print as sugar over dmm.log. Nothing else is added: no require, no fetch, no
 // process, no raw filesystem.
 //
-// The hook context is converted through JSON rather than handed over as a Go
-// struct: goja exposes a struct's *methods* to JavaScript and none of its
-// fields, so a script would see `dmm.context.mod` as undefined. Marshalling
-// also makes the JSON tags on domain.HookContext the single definition of the
-// script-facing shape.
+// The hook context goes through JSON because goja exposes a struct's *methods*
+// to JavaScript and none of its fields, so a script would see `dmm.context.mod`
+// as undefined; it also makes the JSON tags on domain.HookContext the single
+// definition of the script-facing shape.
 func install(vm *goja.Runtime, h *host.Host) error {
 	dmm := vm.NewObject()
 
@@ -306,9 +305,8 @@ func setEnv(vm *goja.Runtime, dmm *goja.Object, h *host.Host) error {
 	return nil
 }
 
-// setSugar keeps console.log/print working: they are the surface existing
-// scripts know, and the Lua binding offers the same print override, so the
-// sugar stays symmetric across languages.
+// setSugar keeps console.log/print working: they are the surface existing scripts
+// know, and the Lua binding offers the same print override.
 func setSugar(vm *goja.Runtime, h *host.Host) error {
 	console := vm.NewObject()
 

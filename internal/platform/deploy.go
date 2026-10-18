@@ -88,16 +88,10 @@ func (d *Deployer) Mode() DeployMode {
 	return DeployCopy
 }
 
-// ModeFor answers the question a deployment actually asks: given the game's
-// preferred install method, what happens here, now.
-//
-// A preference of symlink is honoured when the platform can create links and
-// quietly degrades to copying when it cannot — a user asking for symlinks on a
-// Windows box without Developer Mode is asking for their mods to work, and
-// failing the install would not be honouring that. The reverse never happens:
-// a request for direct copies is copied, because that is the whole point of
-// asking. Anything unrecognised, including the empty string, falls back to the
-// platform default.
+// ModeFor answers what a deployment actually asks: given the preferred install method, what
+// happens here, now. A preference of symlink degrades to copying when the platform cannot
+// link — a user asking for symlinks on a Windows box without Developer Mode is asking for
+// their mods to work. Anything unrecognised, including "", falls back to the platform default.
 func (d *Deployer) ModeFor(preferred string) DeployMode {
 	switch strings.TrimSpace(preferred) {
 	case domain.InstallMethodSymlink:
@@ -228,12 +222,10 @@ func (d *Deployer) copyEntry(src, dst string) error {
 	return CopyFile(src, dst)
 }
 
-// UndeployEntries removes the named entries from dstDir and returns how many
-// were actually removed. Names are validated so a mod can never delete a
-// sibling directory, and missing entries are not an error.
-//
-// The caller passes the rel paths it recorded at install time, because in copy
-// mode a deployed file is indistinguishable from a file the user put there.
+// UndeployEntries removes the named entries from dstDir and returns how many were actually
+// removed. Names are validated so a mod can never delete a sibling directory, and missing
+// entries are not an error. The caller passes the rel paths it recorded at install time,
+// because in copy mode a deployed file is indistinguishable from a file the user put there.
 func (d *Deployer) UndeployEntries(dstDir string, names []string) (int, error) {
 	if dstDir == "" {
 		return 0, nil
@@ -289,10 +281,9 @@ func (s LinkState) NeedsRepair() bool {
 }
 
 // LinkStatus inspects a single managed entry. wantTarget is the storage path the
-// link is expected to point at; pass "" to skip the target comparison.
-//
-// The final readlink goes to the real filesystem on purpose: a target can only
-// be read from an actual symlink, so an injected FS never reaches that branch.
+// link is expected to point at; pass "" to skip the target comparison. The final
+// readlink goes to the real filesystem on purpose: a target can only be read
+// from an actual symlink, so an injected FS never reaches that branch.
 func LinkStatus(fsys FS, path, wantTarget string) LinkState {
 	if fsys == nil {
 		fsys = OSFS{}
@@ -391,8 +382,8 @@ func (d *Deployer) Repair(srcDir, dstDir string) ([]string, error) {
 		}
 
 		if state == LinkBroken && !Exists(d.fs, src) {
-			// The payload is gone too. Re-linking would just recreate a
-			// dangling link, so leave it and let the uninstaller report it.
+			// The payload is gone too, so re-linking would just recreate a
+			// dangling link; leave it and let the uninstaller report it.
 			continue
 		}
 
@@ -448,15 +439,10 @@ func CanCreateSymlinks() bool {
 	return os.Remove(link) == nil
 }
 
-// IsManifestName reports whether name is one of the manager metadata files that
-// must never reach the game folder.
-//
-// It is exported because a service needs the same answer when it builds the file
-// inventory it records in the database: the deployer skips manifests while
-// linking, and the inventory has to agree with that or the manager will try to
-// undeploy a file it never deployed.
-//
-// The comparison is on the base name only, so "pack/mod.toml" is recognised too.
+// IsManifestName reports whether name is one of the manager metadata files that must never
+// reach the game folder. It is exported because the file inventory has to agree with the
+// deployer, or the manager will try to undeploy a file it never deployed. The comparison is
+// on the base name only, so "pack/mod.toml" is recognised too.
 func IsManifestName(name string) bool { return manifestpkg.IsName(filepath.Base(name)) }
 
 // removeEntry deletes a file, symlink or directory, replacing whatever is

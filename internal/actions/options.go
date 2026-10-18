@@ -1,22 +1,3 @@
-// Package actions holds the registry and runner behind game-specific actions.
-//
-// An action is a named operation a game definition publishes: "validate the load
-// order", "open the mods folder", "launch the game". They are declared in Go
-// rather than in configuration because a handler is a function, and the three
-// surfaces that run them — the API, the Wails bindings and the command line —
-// have to agree on one definition of what each one takes.
-//
-// The package is split so that each piece can be reasoned about alone:
-//
-//   - registry.go answers "which actions exist" and refuses a malformed one at
-//     registration rather than at the moment a user presses the button.
-//   - options.go answers "what values were supplied", coercing whatever the
-//     surface produced (a JSON value, a CLI string) into the declared types.
-//   - runner.go answers "run it", assembling the context a handler sees and
-//     dispatching either an in-process handler or an external command line.
-//   - command.go owns the external process: it is the only place in this package
-//     that executes anything, which is what keeps that surface small enough to
-//     reason about and to fake in tests.
 package actions
 
 import (
@@ -31,12 +12,9 @@ import (
 
 // coerceArgs turns caller-supplied values into the types an action declared.
 //
-// Every declared option ends up present in the result — filled from its default,
-// or from the zero value of its type when it has neither a default nor a
-// supplied value — so a handler reads an option without first checking whether it
-// arrived. Options the action never declared are dropped rather than passed
-// through: a handler that reads a key nobody declared would be reading a value
-// whose type nothing promised.
+// Every declared option ends up present — filled from its default, or from its
+// type's zero value — so a handler never has to check whether one arrived.
+// Undeclared options are dropped: nothing promised their type.
 func coerceArgs(declared []domain.ActionOption, supplied map[string]any) (map[string]any, error) {
 	coerced := make(map[string]any, len(declared))
 
@@ -74,9 +52,8 @@ func coerceArgs(declared []domain.ActionOption, supplied map[string]any) (map[st
 
 // zeroValue is what an option nobody answered reads as.
 //
-// Materialising it — rather than omitting the key — is what lets a handler treat
-// its options uniformly, and it gives the frontend a form whose fields all have
-// a value to render.
+// Materialising it rather than omitting the key is what lets a handler treat its
+// options uniformly, and gives the frontend a form whose fields all render.
 func zeroValue(optionType domain.ActionOptionType) any {
 	switch optionType {
 	case domain.ActionOptionBool:
@@ -93,11 +70,8 @@ func zeroValue(optionType domain.ActionOptionType) any {
 }
 
 // lookup finds an option's value, accepting the kebab-case spelling the command
-// line uses as an alias for the declared snake_case name.
-//
-// The alias exists because the CLI's flag name has to be idiomatic on a shell
-// while the handler's map key has to be a Go identifier; letting both spellings
-// through means a caller never has to know which one the runner wants.
+// line uses as an alias for the declared snake_case name, so neither surface has
+// to translate.
 func lookup(supplied map[string]any, name string) (any, bool) {
 	if value, ok := supplied[name]; ok {
 		return value, true
@@ -134,11 +108,9 @@ func coerce(option domain.ActionOption, raw any) (any, error) {
 
 // coerceText accepts anything that is textual once rendered.
 //
-// A path option arriving as a JSON number is nonsense, but a *string* option
-// arriving as one is not: a frontend form that sends a numeric field for an
-// untyped option should not have to care which option it is rendering. Rendering
-// scalars through their literal text is therefore allowed, while containers are
-// refused because there is no honest text for them.
+// A numeric field from a frontend form is not a mistake for an untyped option, so
+// scalars are rendered through their literal text; containers are refused because
+// there is no honest text for them.
 func coerceText(option domain.ActionOption, raw any) (any, error) {
 	switch value := raw.(type) {
 	case string:
@@ -162,9 +134,8 @@ func coerceText(option domain.ActionOption, raw any) (any, error) {
 }
 
 // truthyValues are the spellings a boolean accepts from a command line or a
-// hand-written JSON payload. The list is deliberately explicit: strconv's
-// ParseBool would accept "1"/"t" but not "yes", and silently accepting a value
-// nobody typed is worse than refusing one.
+// hand-written JSON payload. The list is explicit because silently accepting a
+// value nobody typed is worse than refusing one.
 var truthyValues = map[string]struct{}{
 	"1": {}, "t": {}, "true": {}, "yes": {}, "y": {}, "on": {},
 }
@@ -202,11 +173,8 @@ func coerceBool(option domain.ActionOption, raw any) (any, error) {
 }
 
 // coerceNumber produces an int when the value is integral and a float64
-// otherwise.
-//
-// The split is what lets ActionContext.ArgInt work for the overwhelmingly common
-// case — an amount, a port, a count — without every caller having to assert a
-// type, while a genuine fractional option still arrives as a float.
+// otherwise, so ActionContext.ArgInt works for an amount, a port or a count
+// without every caller asserting a type.
 func coerceNumber(option domain.ActionOption, raw any) (any, error) {
 	switch value := raw.(type) {
 	case int:
@@ -265,9 +233,8 @@ func fitFloat(value float64) (any, error) {
 		return value, nil
 	}
 
-	// A whole number too large for an int is a typo — a count, a port or a
-	// timeout that lost a digit — and returning it as a float would hand the
-	// handler a value nothing can index with.
+	// A whole number too large for an int is a typo — a count, a port or a timeout
+	// that lost a digit — and a float would hand the handler an unindexable value.
 	if value < math.MinInt || value > math.MaxInt {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"%v does not fit in an int", value)
@@ -284,9 +251,8 @@ func coerceSelect(option domain.ActionOption, raw any) (any, error) {
 
 	text, _ := value.(string)
 
-	// An empty value is left empty rather than refused: a select whose options
-	// are all optional is a legitimate way to say "use whatever is default",
-	// and the required check below is what makes it mandatory when it is not.
+	// An empty value is left empty rather than refused: an optional select with
+	// nothing chosen means "use whatever is default".
 	for _, choice := range option.Choices {
 		if choice == text {
 			return text, nil

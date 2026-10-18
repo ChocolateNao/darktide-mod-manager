@@ -51,7 +51,7 @@ func LogPath(dir string) string { return filepath.Join(dir, LogFileName) }
 //	--log-dir  >  DMM_LOG_DIR  >  logging.directory  >  platform log directory
 //
 // A relative override is rejected: a log path that depends on the working
-// directory silently scatters logs, which is worse than failing the flag.
+// directory scatters the logs.
 func ResolveDirectory(override, configured string) (string, error) {
 	if override = strings.TrimSpace(override); override != "" {
 		if !filepath.IsAbs(override) {

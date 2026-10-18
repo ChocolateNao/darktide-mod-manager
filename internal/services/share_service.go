@@ -44,9 +44,8 @@ type ModInstaller interface {
 //
 // Deprecated: everything this type produces travels through a third party — the
 // provider holds the archives and could serve them to anyone who guesses the
-// identifier. P2PShareService moves the same bytes straight between two peers
-// and is the path new work should use. This one stays because shares that
-// already exist still have to be resolvable and revocable.
+// identifier. P2PShareService moves the same bytes straight between two peers;
+// this one stays because existing shares must stay resolvable and revocable.
 type ShareService struct {
 	registry     *CloudRegistry
 	store        ShareStore
@@ -144,10 +143,8 @@ func (s *ShareService) CreateShare(
 		return nil, err
 	}
 
-	// A share is for exactly one game. A mixed selection would stamp one game
-	// on the payload and leave the other mod's files pointing at storage the
-	// recipient's manager resolves differently, so it is refused here rather
-	// than resolved by taking the first mod's id.
+	// A share is for exactly one game: a mixed selection would stamp one game on
+	// the payload while the other mod's files point at storage resolved differently.
 	for i := range mods {
 		if id := mods[i].GameID; id != "" && id != gameID {
 			return nil, appErrors.New(
@@ -159,13 +156,10 @@ func (s *ShareService) CreateShare(
 	}
 
 	// Packing writes a full copy of every mod to disk before anything is
-	// uploaded, so it happens in the system temp directory: filling the volume
-	// the manager was installed on would be a surprising side effect of
-	// clicking share.
-	//
-	// The staging folder lives until the uploads are done, not until the mods
-	// are packed: a provider reads the bytes off disk, and deleting them first
-	// would fail every upload with a file it was handed a moment ago.
+	// uploaded, so it happens in the system temp directory: filling the volume the
+	// manager was installed on would be a surprising side effect of clicking share.
+	// The staging folder lives until the uploads are done, not until the mods are
+	// packed, because a provider reads the bytes back off disk.
 	staging, err := os.MkdirTemp("", "dmm-share-pack-*")
 	if err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeCloudUploadFailed,
@@ -191,9 +185,8 @@ func (s *ShareService) CreateShare(
 		expiry = &t
 	}
 
-	// The id is minted before the uploads rather than after, so a partially
-	// failed share can still be traced: the log line for the providers that
-	// worked has to name the same share the recipient's link points at.
+	// The id is minted before the uploads so a partially failed share can still
+	// be traced against the same share the recipient's link points at.
 	shareID := uuid.New().String()
 
 	var (
@@ -236,9 +229,8 @@ func (s *ShareService) CreateShare(
 			continue
 		}
 
-		// The provider reports where the bytes landed; the orchestrator turns
-		// that into the link the recipient actually sees. A provider that
-		// refuses to mint one is fine — the carrier link below is the contract.
+		// The provider's own link is optional; the carrier link below is the
+		// contract the recipient actually resolves.
 		if _, err := provider.CreateShareLink(ctx, uploaded.References, domain.ShareOptions{
 			Expiry: deadlineOrZero(expiry),
 		}); err != nil {
@@ -307,9 +299,8 @@ func (s *ShareService) ResolveShare(
 		return nil, err
 	}
 
-	// A share for a game this manager does not have is refused here rather than
-	// falling back to the active game: installing Darktide mods into another
-	// game's storage would produce a silently broken install.
+	// A share for a game this manager does not have is refused rather than
+	// falling back to the active game: the install would be silently broken.
 	if _, ok := games.Get(payload.GameID); !ok {
 		return nil, appErrors.Wrap(
 			domain.ErrGameNotRegistered,
@@ -369,10 +360,8 @@ func (s *ShareService) buildPreview(
 		Mods:    payload.Mods,
 	}
 
-	// The provider is asked what exists; the payload is asked what it means.
-	// A file the provider reports that the payload also describes keeps the
-	// payload's path and hash, because the sharer wrote those and the provider
-	// only knows it has an object.
+	// The provider is asked what exists, the payload what it means: a file both
+	// describe keeps the payload's path and hash, which the sharer wrote.
 	described := make(map[string]domain.SharedFile, len(payload.Files))
 	for _, f := range payload.Files {
 		described[f.FileID] = f
@@ -415,9 +404,8 @@ func (s *ShareService) InstallShare(
 		return nil, err
 	}
 
-	// The game is stamped from the share, not resolved from the active one.
-	// ResolveShare has already rejected a share whose game this manager does
-	// not have, so this is the id the mods belong to rather than a guess.
+	// The game is stamped from the share, not the active one; ResolveShare has
+	// already rejected a share whose game this manager does not have.
 	gameID := preview.GameID
 	if gameID == "" {
 		if s.gameLocator != nil {
@@ -439,9 +427,8 @@ func (s *ShareService) InstallShare(
 		return nil, err
 	}
 
-	// Every archive a mod needs is staged under one folder that goes away when
-	// the install returns. Leaving them behind would fill the temp directory
-	// with a copy of every mod any share ever installed.
+	// Every archive is staged under one folder that goes away when the install
+	// returns, rather than filling temp with a copy of every shared mod.
 	staging, err := os.MkdirTemp("", "dmm-share-install-*")
 	if err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeCloudDownloadFailed,
@@ -504,11 +491,8 @@ func (s *ShareService) InstallShare(
 }
 
 // shareInstallOptions maps the share's install preferences onto the installer's.
-//
-// AutoInstall is a property of the share, so it is translated into the
-// installer's explicit enable flag rather than left to the installer's own
-// auto-detection: the sharer's choice and the recipient's mods folder are
-// different questions.
+// AutoInstall is a property of the share, so it becomes the installer's explicit
+// enable flag rather than the installer's own auto-detection.
 func shareInstallOptions(opts domain.InstallOptions) InstallOptions {
 	if !opts.AutoInstall {
 		return InstallOptions{}
@@ -520,13 +504,9 @@ func shareInstallOptions(opts domain.InstallOptions) InstallOptions {
 }
 
 // fetchModArchive downloads the archive one shared mod is packed into and
-// verifies it against the hash the payload recorded.
-//
-// The hash is checked here rather than by the install that follows, because at
-// this point the only bytes in hand are the ones the provider just returned.
-// Letting the check happen after the archive had been extracted would mean
-// discovering a truncated download only once its files were already in the
-// mod's storage folder.
+// verifies it against the hash the payload recorded. The check happens here
+// because these are the only bytes in hand; after extraction a truncated
+// download would only be discovered once its files were already in storage.
 func (s *ShareService) fetchModArchive(
 	ctx context.Context,
 	provider domain.CloudProvider,
@@ -760,14 +740,13 @@ func (s *ShareService) UpdateShare(
 	return record, nil
 }
 
-// encodeLink builds the carrier link: a self-describing payload that names the
-// game, the mods and every file, so a recipient sees what they are getting
-// before a single byte is downloaded.
+// encodeLink builds the carrier link: a self-describing payload naming the game,
+// the mods and every file, so a recipient sees what they are getting before a
+// single byte is downloaded.
 //
-// The provider's own link is deliberately not the carrier. A Dropbox URL says
+// The provider's own link is deliberately not the carrier: a Dropbox URL says
 // nothing about which game the mods are for, and a provider that shuts down
-// leaves a recipient with a dead string instead of the metadata they need to
-// find the mod elsewhere.
+// leaves a recipient with a dead string.
 func (s *ShareService) encodeLink(
 	providerID string,
 	gameID string,
@@ -841,11 +820,9 @@ func deadlineOrZero(expiry *time.Time) time.Time {
 	return *expiry
 }
 
-// decodePayload parses the payload out of a carrier link.
-//
-// It is the single place that decides a link is ours: a URL that is not one of
-// the two carrier forms is not a share at all, and is rejected before any
-// provider is contacted.
+// decodePayload parses the payload out of a carrier link. It is the single place
+// that decides a link is ours: a URL in neither carrier form is rejected before
+// any provider is contacted.
 func (s *ShareService) decodePayload(link domain.ShareLink) (domain.SharePayload, error) {
 	providerID, encoded, err := domain.ParseShareURL(link.URL)
 	if err != nil {
@@ -931,17 +908,13 @@ func (s *ShareService) resolveGameID(mods []domain.Mod) (string, error) {
 	return "", appErrors.New(appErrors.ErrCodeInvalidArgument, "cannot resolve game id for share")
 }
 
-// collectShare packs every mod and builds the upload set and the payload's
-// mod list in one pass.
+// collectShare packs every mod and builds the upload set and the payload's mod
+// list in one pass, because the two are tied together: a payload entry names the
+// archive that was packed, and building them separately is how a share ends up
+// promising files it never sent.
 //
-// The two are tied together: a mod that cannot be packed cannot be shared, and
-// its entry in the payload names the archive that was packed rather than the
-// files inside it. Building them separately is how a share ends up promising
-// files it never sent.
-//
-// The archive is named after the mod id, which is unique within a game, so two
-// mods that both contain a shared.zip cannot overwrite each other on the
-// provider. The archives stay in staging until the caller has uploaded them.
+// The archive is named after the mod id, unique within a game, so two mods that
+// both contain a shared.zip cannot overwrite each other on the provider.
 func (s *ShareService) collectShare(
 	ctx context.Context,
 	staging string,
@@ -964,9 +937,8 @@ func (s *ShareService) collectShare(
 			Dependencies: append([]string(nil), mod.Dependencies...),
 		}
 
-		// A mod whose files cannot be read produces no archive, and a payload
-		// that named it anyway would install nothing for the recipient. The
-		// whole share is refused instead.
+		// A mod whose files cannot be read produces no archive, so the whole
+		// share is refused rather than promising the recipient nothing.
 		upload, packed, err := s.packMod(ctx, staging, mod, collectModFiles(s.logger, mod))
 		if err != nil {
 			return nil, nil, err
@@ -982,14 +954,10 @@ func (s *ShareService) collectShare(
 	return files, sharedMod, nil
 }
 
-// packMod writes one mod's files into a single archive and reports it both as
-// an upload candidate and as the payload's description of it.
-//
-// Packing is what makes a mod one object instead of every file it happens to
-// contain: a recipient downloading twenty small files gets twenty chances for
-// the connection to drop, and a provider that charges per request charges per
-// file. It also reduces the sha the recipient has to check from a list to one
-// value that covers the whole mod.
+// packMod writes one mod's files into a single archive and reports it both as an
+// upload candidate and as the payload's description of it. Packing makes a mod
+// one object rather than every file it contains: twenty small files are twenty
+// chances for the connection to drop, and per-request pricing is per file.
 func (s *ShareService) packMod(
 	ctx context.Context,
 	staging string,
@@ -1047,9 +1015,8 @@ func (s *ShareService) packMod(
 		)
 	}
 
-	// The hash the recipient checks is the archive's, so it covers the bytes as
-	// they will be downloaded — not the sum of the parts, which would let a
-	// truncated archive through as long as every file it did contain was whole.
+	// The hash the recipient checks covers the archive's own bytes rather than
+	// the sum of its parts, which would let a truncated archive through.
 	hash, err := fileHash(archivePath)
 	if err != nil {
 		return domain.ShareFile{}, domain.PackedMod{}, appErrors.Wrap(
@@ -1084,15 +1051,11 @@ func (s *ShareService) packMod(
 
 // collectModFiles reads a mod's directory into hash-checked files.
 //
-// The walk is recursive. A Darktide mod is usually a folder of folders — scripts/,
-// assets/, localisation/ — and a top-level-only read would ship a mod missing the
-// files that make it work, while still reporting success: the recipient would get
-// a mod that loads and does nothing.
+// The walk is recursive: a Darktide mod is usually a folder of folders, and a
+// top-level-only read would ship a mod that loads and does nothing.
 //
 // A file that cannot be hashed is logged and skipped rather than failing the
-// share, because one unreadable file in a directory of twenty should not cost the
-// user the other nineteen. An unreadable *directory* is logged too, because it
-// usually means the mod was moved mid-share.
+// share, because one unreadable file should not cost the user the other nineteen.
 func collectModFiles(logger zerolog.Logger, mod domain.Mod) []domain.ShareFile {
 	if mod.LocalPath == "" {
 		return nil

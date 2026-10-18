@@ -16,12 +16,8 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// p2pTestConfig keeps a whole transfer on one machine.
-//
-// The default configuration reaches out to a STUN server, which a test must not
-// do: it would make the suite depend on the network and on a third party's
-// uptime. Loopback candidates plus mDNS and STUN disabled make two peers in one
-// process connect with no outside help.
+// p2pTestConfig keeps a whole transfer on one machine: the default would reach a
+// STUN server, making the suite depend on the network and a third party's uptime.
 func p2pTestConfig() *P2PShareConfig {
 	return &P2PShareConfig{
 		Peer: p2p.Config{
@@ -35,8 +31,7 @@ func p2pTestConfig() *P2PShareConfig {
 	}
 }
 
-// p2pServiceFor builds a service whose locator always reports the built-in game
-// and whose installer records rather than installs.
+// p2pServiceFor builds a service whose installer records rather than installs.
 func p2pServiceFor(t *testing.T) (*P2PShareService, *stubInstaller) {
 	t.Helper()
 
@@ -58,8 +53,7 @@ func p2pServiceFor(t *testing.T) (*P2PShareService, *stubInstaller) {
 	return service, installer
 }
 
-// installedMod writes a folder of files and returns the mod that describes it,
-// which is all CreateShare needs: the archives are packed from LocalPath.
+// installedMod writes a folder of files and describes it with the mod that owns it.
 func installedMod(t *testing.T, id string, files map[string]string) domain.Mod {
 	t.Helper()
 
@@ -92,9 +86,8 @@ func installedMod(t *testing.T, id string, files map[string]string) domain.Mod {
 	}
 }
 
-// TestP2PShareRoundTrip drives the whole conversation in one test because the
-// parts are meaningless apart: a link that is produced but never answered
-// proves nothing, and an answer that is never awaited proves nothing either.
+// TestP2PShareRoundTrip drives the whole conversation at once because the parts
+// are meaningless apart: an unanswered offer proves nothing.
 func TestP2PShareRoundTrip(t *testing.T) {
 	sender, _ := p2pServiceFor(t)
 	recipient, installer := p2pServiceFor(t)
@@ -116,8 +109,8 @@ func TestP2PShareRoundTrip(t *testing.T) {
 		t.Fatalf("link is incomplete: %+v", link)
 	}
 
-	// The preview is what the recipient sees before deciding, and it has to
-	// carry enough to decide with: the size, and where to get the mod otherwise.
+	// The preview must carry enough to decide with: the size, and where to get
+	// the mod otherwise.
 	preview, err := recipient.PreviewOffer(ctx, link.Link)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
@@ -144,8 +137,7 @@ func TestP2PShareRoundTrip(t *testing.T) {
 		t.Fatalf("answer is for %q, offer was %q", answer.OfferID, link.Offer.OfferID)
 	}
 
-	// Both halves run concurrently: the sender streams while the recipient reads,
-	// and neither can finish before the other starts.
+	// Both halves run at once: neither can finish before the other starts.
 	sendErr := make(chan error, 1)
 	recvErr := make(chan error, 1)
 
@@ -192,8 +184,7 @@ func TestP2PShareRoundTrip(t *testing.T) {
 		t.Fatalf("installed mod is for %q, not %q", installed[0].GameID, mod.GameID)
 	}
 
-	// The installed mod keeps the upstream link, so a mod that arrived over the
-	// wire can still be updated by hand — which is the whole fallback story.
+	// The installed mod keeps the upstream link, which is the whole fallback story.
 	if installed[0].SourceURL == "" || installed[0].SourceID == "" {
 		t.Fatalf("installed mod lost its source: %+v", installed[0])
 	}
@@ -203,9 +194,8 @@ func TestP2PShareRoundTrip(t *testing.T) {
 	}
 }
 
-// A refusal is a decision the sender is entitled to know about. This is the case
-// that used to deadlock: the answer link has to come back before anything can be
-// delivered, and nothing may block in the meantime.
+// TestP2PShareRejectReachesTheSender covers the deadlock case: the answer link has
+// to come back before anything can be delivered, and nothing may block meanwhile.
 func TestP2PShareRejectReachesTheSender(t *testing.T) {
 	sender, _ := p2pServiceFor(t)
 	recipient, installer := p2pServiceFor(t)
@@ -229,8 +219,7 @@ func TestP2PShareRejectReachesTheSender(t *testing.T) {
 		t.Fatalf("refusal produced no usable answer: %+v", answer)
 	}
 
-	// The refusal is delivered in the background; the sender has to hand the
-	// answer over before the two can talk at all.
+	// The refusal goes out in the background; the sender has to answer first.
 	sendErr := make(chan error, 1)
 
 	go func() { sendErr <- sender.SendShare(ctx, link.Offer.OfferID, answer.Link) }()
@@ -258,8 +247,7 @@ func TestP2PShareRejectReachesTheSender(t *testing.T) {
 	}
 
 	// The sender has to be told what the recipient said, not merely that the
-	// connection failed — otherwise the person who pressed "decline" is left
-	// wondering whether the mod will ever arrive.
+	// connection failed.
 	if !strings.Contains(session.FailReason, p2p.ReasonUntrusted) {
 		t.Fatalf("the sender was told %q", session.FailReason)
 	}
@@ -269,8 +257,7 @@ func TestP2PShareRejectReachesTheSender(t *testing.T) {
 	}
 }
 
-// A refusal nobody answers is a refusal that cannot be delivered, and the caller
-// has to learn that rather than wait forever.
+// TestP2PShareRejectWithoutASenderFails: an unanswered refusal cannot be delivered.
 func TestP2PShareRejectWithoutASenderFails(t *testing.T) {
 	recipient, _ := p2pServiceFor(t)
 
@@ -286,8 +273,7 @@ func TestP2PShareRejectWithoutASenderFails(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// The sender is not answering: close it so its candidates cannot lead
-	// anywhere, which is the situation a declined share hits in practice.
+	// The sender never answers; closing it leaves its candidates leading nowhere.
 	sender.Close()
 
 	answer, err := recipient.RejectOffer(ctx, offer.Link, "")
@@ -346,8 +332,7 @@ func TestP2PShareRefusesAnExpiredLink(t *testing.T) {
 	}
 }
 
-// A share of mods for a game this build does not know could never be accepted
-// on the far side either, so it is refused where the mistake was made.
+// TestP2PShareRefusesAGameItDoesNotKnow: the far side could not accept it either.
 func TestP2PShareRefusesAGameItDoesNotKnow(t *testing.T) {
 	ctx := context.Background()
 
@@ -448,9 +433,8 @@ func TestP2PShareSessionLookup(t *testing.T) {
 	}
 }
 
-// Closing with sessions open has to close the peers and delete the staging
-// folders, or a quit leaves sockets bound and someone's mod sitting in a
-// temporary directory.
+// TestP2PShareCloseClearsStaging: a quit must not leave sockets bound or someone's
+// mod sitting in a temporary directory.
 func TestP2PShareCloseClearsStaging(t *testing.T) {
 	if err := games.EnsureBuiltins(); err != nil {
 		t.Fatalf("register built-in games: %v", err)
@@ -496,8 +480,7 @@ func TestP2PShareCloseClearsStaging(t *testing.T) {
 	}
 }
 
-// stagingOf reaches into the store for the one thing a test needs: the path a
-// closed service must have deleted.
+// stagingOf reaches into the store for the staging path a closed service deleted.
 func stagingOf(t *testing.T, service *P2PShareService, offerID string) string {
 	t.Helper()
 

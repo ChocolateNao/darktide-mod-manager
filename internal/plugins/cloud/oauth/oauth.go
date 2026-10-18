@@ -1,12 +1,12 @@
 // Package oauth holds the token half of an OAuth2 cloud provider.
 //
-// Google Drive, Dropbox and OneDrive differ in every detail of where a file
-// lives and what a link looks like, and are identical in how they prove who is
-// asking. That half lives here so each adapter only describes its own API.
+// Google Drive, Dropbox and OneDrive differ in where a file lives and what a
+// link looks like, and are identical in how they prove who is asking; that half
+// lives here so each adapter only describes its own API.
 //
-// A token is the one thing in this package that must never be written down: it
-// is read from credentials, held in memory, and never placed in a URL, a share
-// link or a log line. Everything that carries it travels in a header.
+// A token must never be written down: it is read from credentials, held in
+// memory, and never placed in a URL, a share link or a log line. Everything that
+// carries it travels in a header.
 package oauth
 
 import (
@@ -65,11 +65,9 @@ func (t Token) Valid() bool {
 	return t.AccessToken != "" && time.Now().Before(t.Expiry.Add(-refreshMargin))
 }
 
-// Session holds one provider's credentials for the lifetime of the process.
-//
-// The mutex is held across a refresh so two concurrent uploads do not each
-// spend the same refresh token: providers invalidate one of the two, which
-// turns a working second upload into an auth failure.
+// Session holds one provider's credentials for the lifetime of the process. The
+// mutex is held across a refresh so two concurrent uploads do not each spend the
+// same refresh token: providers invalidate one of the two.
 type Session struct {
 	token Token
 	cfg   Config
@@ -107,12 +105,9 @@ func (s *Session) ConsentURL(redirectURL, state, scopes string) string {
 	return s.cfg.Endpoints.ConsentURL + "?" + query.Encode()
 }
 
-// Authenticate accepts credentials from the caller.
-//
-// The usual input is an access token the user obtained through the provider's
-// own consent screen, optionally with the refresh token that came with it. A
-// refresh token is what makes a session survive a restart; without one the
-// user re-authenticates when the access token expires.
+// Authenticate accepts credentials from the caller, usually an access token the
+// user obtained through the provider's own consent screen. A refresh token is
+// what makes a session survive a restart.
 func (s *Session) Authenticate(creds domain.CloudCredentials) error {
 	if s == nil {
 		return domain.ErrCloudAuthRequired
@@ -137,10 +132,9 @@ func (s *Session) Authenticate(creds domain.CloudCredentials) error {
 
 // Authorize exchanges a consent code for a token and stores the result.
 //
-// This is the path the GUI takes: it opens the provider's consent page, the
-// user approves, and the provider redirects to a loopback address carrying a
-// single-use code. No credential appears in a command line or a log; the code
-// is short-lived and tells an attacker nothing on its own.
+// This is the GUI's path: it opens the provider's consent page, the user
+// approves, and the provider redirects to a loopback address carrying a
+// single-use code. No credential appears in a command line or a log.
 func (s *Session) Authorize(ctx context.Context, code, redirectURL string) error {
 	if s == nil {
 		return domain.ErrCloudAuthRequired
@@ -168,10 +162,8 @@ func (s *Session) Authorize(ctx context.Context, code, redirectURL string) error
 }
 
 // ValidateCredentials reports whether the session can still reach the provider.
-//
-// It refreshes when it can and only fails when there is nothing left to try,
-// so a caller asking "is this configured?" is not told no because a token
-// expired an hour ago.
+// It refreshes when it can, so a caller asking "is this configured?" is not told
+// no because a token expired an hour ago.
 func (s *Session) ValidateCredentials(ctx context.Context) error {
 	if s == nil {
 		return domain.ErrCloudAuthRequired
@@ -196,11 +188,8 @@ func (s *Session) Forget() {
 }
 
 // Access returns a usable access token, refreshing it when the current one is
-// close to expiry.
-//
-// The token itself is returned rather than a ready-made header so an adapter
-// can put it wherever its API expects it, and so no caller is handed something
-// it could log by reflex.
+// close to expiry. The token is returned rather than a ready-made header so an
+// adapter can place it where its API expects, not what a caller could log.
 func (s *Session) Access(ctx context.Context) (string, error) {
 	if s == nil {
 		return "", domain.ErrCloudAuthRequired
@@ -321,11 +310,9 @@ func (s *Session) exchange(ctx context.Context, form url.Values) (Token, error) 
 
 // reasonFrom explains a refused token request.
 //
-// The machine-readable code is preferred over the free-text description, and the
-// description is not used at all: it is prose the provider chose, and providers
-// have been known to echo the request back into it — which held the client
-// secret. A status number is a worse message than a good one, but it is one that
-// cannot leak a credential into a log line or a support ticket.
+// The machine-readable code is preferred and the free-text description is never
+// used: providers have been known to echo the request back into it, which held
+// the client secret.
 func reasonFrom(status int, raw []byte) string {
 	var payload struct {
 		Error       string `json:"error"`
@@ -354,11 +341,8 @@ func (e *AuthError) Error() string {
 }
 
 // IsMissing reports whether an error is the provider saying "there is no such
-// object".
-//
-// A revoke asks the provider to remove files it may already have dropped, and
-// being told one is gone is the answer it wanted. Anything else is a real
-// failure and has to be reported as one.
+// object". A revoke asks for the removal of files it may already have dropped,
+// and being told one is gone is the answer it wanted.
 func IsMissing(err error) bool {
 	return appErrors.CodeOf(err) == appErrors.ErrCodeNotFound
 }
@@ -407,11 +391,9 @@ func bodyReader(body []byte) io.Reader {
 	return bytes.NewReader(body)
 }
 
-// Send performs an authenticated request with a caller-built body.
-//
-// Adapters use this for the small metadata calls that make up the rest of a
-// provider's API. File transfers go through Put and Get, which stream instead of
-// buffering.
+// Send performs an authenticated request with a caller-built body. Adapters use
+// this for the small metadata calls that make up the rest of a provider's API;
+// file transfers go through Put and Get, which stream instead of buffering.
 func (s *Session) Send(
 	ctx context.Context,
 	method, rawURL string,
@@ -466,11 +448,9 @@ type Result struct {
 	Body   []byte
 }
 
-// SendJSON performs an authenticated call with a JSON body.
-//
-// Providers with a JSON RPC style — Dropbox among them — need nowhere else to
-// put their arguments, so the body is marshalled here rather than by each
-// adapter.
+// SendJSON performs an authenticated call with a JSON body. Providers with a
+// JSON RPC style — Dropbox among them — have nowhere else to put their
+// arguments, so the body is marshalled here rather than per adapter.
 func (s *Session) SendJSON(
 	ctx context.Context,
 	method, rawURL string,
@@ -505,11 +485,9 @@ func (s *Session) GetWithHeaders(
 	return (&transport{session: s}).getWithHeaders(ctx, rawURL, destPath, header)
 }
 
-// PutRange streams a local file into an open upload session.
-//
-// The session URL is the provider's, not ours: it already carries the grant for
-// that one upload, which is precisely why it is never logged and never put in a
-// share link.
+// PutRange streams a local file into an open upload session. The session URL is
+// the provider's, not ours: it already carries the grant for that one upload,
+// which is why it is never logged or put in a share link.
 func (s *Session) PutRange(
 	ctx context.Context,
 	uploadURL, localPath string,

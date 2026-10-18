@@ -10,11 +10,10 @@ import (
 
 // ActionCommands is the game-specific toolbox as a frontend sees it.
 //
-// The actions a game publishes are chosen by the game, not by this package: a
-// frontend asks what the active game offers and renders whatever comes back. That
-// is why listing takes a game id rather than being hard-wired to Darktide — a
-// frontend that only ever renders what it is told needs no change when a second
-// game arrives.
+// The actions a game publishes are chosen by the game, not by this package:
+// listing takes a game id rather than being hard-wired to Darktide, so a
+// frontend rendering only what it is told needs no change when a second game
+// arrives.
 type ActionCommands struct {
 	*base
 }
@@ -28,12 +27,10 @@ func newActionCommands(b *base) *ActionCommands {
 	return &ActionCommands{base: b}
 }
 
-// ListActions returns the actions a game publishes, or every action when
-// gameID is empty.
-//
-// An unknown game is not an error here. A frontend rendering a menu during
-// startup, before the active game has loaded, needs a list it can show rather
-// than a rejection it can only log.
+// ListActions returns the actions a game publishes, or every action when gameID
+// is empty. An unknown game is not an error here: a frontend rendering a menu
+// during startup, before the active game has loaded, needs a list it can show
+// rather than a rejection it can only log.
 func (c *ActionCommands) ListActions(gameID string) ([]api.GameAction, error) {
 	client, _, cancel, err := c.ready()
 	if err != nil {
@@ -55,11 +52,9 @@ func (c *ActionCommands) ListActions(gameID string) ([]api.GameAction, error) {
 
 // ListAvailableActions returns the actions that could actually run on a
 // platform. A Linux build has no business offering a Windows-only action, and a
-// menu full of entries that fail on click is worse than a shorter menu.
-//
-// The platform defaults to the one this process runs on, which is what a
-// frontend wants in the overwhelming majority of cases; it is a parameter only
-// because a frontend previewing another machine's menu has no other way to ask.
+// menu full of entries that fail on click is worse than a shorter menu. platform
+// defaults to the one this process runs on, and is a parameter only because a
+// frontend previewing another machine's menu has no other way to ask.
 func (c *ActionCommands) ListAvailableActions(gameID, platform string) ([]api.GameAction, error) {
 	client, _, cancel, err := c.ready()
 	if err != nil {
@@ -99,10 +94,9 @@ func (c *ActionCommands) GetGameAction(actionID string) (*api.GameAction, error)
 	return action, nil
 }
 
-// ExecuteGameAction runs one action with the arguments the user supplied.
-//
-// A nil map is a common shape for a form with no fields set, and it is not an
-// error: an action that declares no options must be runnable with no arguments.
+// ExecuteGameAction runs one action with the arguments the user supplied. A nil
+// map is not an error: an action that declares no options must be runnable with
+// no arguments.
 func (c *ActionCommands) ExecuteGameAction(
 	actionID string,
 	args map[string]any,
@@ -125,11 +119,9 @@ func (c *ActionCommands) ExecuteGameAction(
 	return result, nil
 }
 
-// CurrentGameID reports which game the actions in the menu belong to.
-//
-// It returns an empty string rather than an error when no game is active: a
-// frontend has to render an empty menu, and an error there would look like a
-// failure to start.
+// CurrentGameID reports which game the actions in the menu belong to. An empty
+// string rather than an error when no game is active: a frontend has to render
+// an empty menu, and an error there looks like a failure to start.
 func (c *ActionCommands) CurrentGameID() string {
 	client, _, cancel, err := c.ready()
 	if err != nil {
@@ -140,11 +132,10 @@ func (c *ActionCommands) CurrentGameID() string {
 	return client.ActiveGameID()
 }
 
-// Platform reports the platform this build runs on.
-//
-// The name is taken from runtime.GOOS rather than from the action layer's
-// configured platform so that it answers "where am I actually running", which is
-// what a frontend needs to choose between a menu and a warning.
+// Platform reports the platform this build runs on, taken from runtime.GOOS
+// rather than from the action layer's configured platform so it answers "where am
+// I actually running", which is what a frontend needs to pick a menu or a
+// warning.
 func (c *ActionCommands) Platform() string {
 	return runtime.GOOS
 }

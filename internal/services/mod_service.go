@@ -1,27 +1,19 @@
 // ModService is the mod lifecycle orchestrator and the single source of truth
-// for installed mods. The GUI, the CLI and the public API all go through it, so
+// for installed mods: the GUI, the CLI and the public API all go through it, so
 // there is exactly one implementation of "what does enabling a mod do".
 //
-// # Dependency shape
-//
-// ModService depends on narrow interfaces, not on the concrete cache, registry,
-// locator or deployer. That is what lets the whole lifecycle — including the
-// rollback paths — be exercised against fakes without a game install, a network
-// or a real archive.
-//
-// # Where mod files live
+// It depends on narrow interfaces, not on the concrete cache, registry, locator
+// or deployer, which is what lets the whole lifecycle — rollback paths included
+// — be exercised against fakes without a game install, a network or an archive.
 //
 // A mod's payload is extracted into manager storage, never into the game folder:
 // <storage>/<game id>/<mod id>/<version>. The game folder only ever receives
-// symlinks (or copies, where symlinks are unavailable) pointing at that payload.
+// symlinks (or copies) pointing at that payload.
 //
-// # Hook policy
-//
-// A Pre* hook failure is fatal: the operation rolls back and reports the hook
-// error. A Post* hook failure is advisory — it is published as EventHookFailed
-// and otherwise ignored. By the time a Post* hook runs the database row is
-// already committed, so reporting "install failed" for a mod that is in fact
-// installed would be worse than the log noise.
+// A Pre* hook failure is fatal and rolls the operation back; a Post* hook failure
+// is only published as EventHookFailed, because the database row is committed by
+// then and reporting "install failed" for an installed mod would be worse than
+// the log noise.
 package services
 
 import (
@@ -62,9 +54,8 @@ type ModCache interface {
 	Remove(ctx context.Context, hash string) error
 }
 
-// PhaseRunner is the slice of HookExecutor the lifecycle needs. It is not the
-// same thing as HookRunner: a HookRunner executes one script, while this runs a
-// whole phase of a mod's hooks.
+// PhaseRunner is the slice of HookExecutor the lifecycle needs: it runs a whole
+// phase of a mod's hooks, where a HookRunner executes one script.
 type PhaseRunner interface {
 	ExecutePhase(
 		ctx context.Context,
@@ -74,10 +65,10 @@ type PhaseRunner interface {
 	) error
 }
 
-// ModIndex is the persistence contract for installed mods. storage.ModRepository
-// satisfies it; it is restated here so a test can supply a much smaller fake.
-// The *ByGame methods scope a query to one game id; the unscoped ones stay
-// available for cross-game views.
+// ModIndex is the persistence contract for installed mods, restated from
+// storage.ModRepository so a test can supply a much smaller fake. The *ByGame
+// methods scope a query to one game id; the unscoped ones stay available for
+// cross-game views.
 type ModIndex interface {
 	Save(ctx context.Context, m *domain.Mod) error
 	GetByID(ctx context.Context, id string) (*domain.Mod, error)
@@ -151,14 +142,10 @@ type InstallOptions struct {
 }
 
 // mergeSourceData copies entries from extra into a mod's SourceData, leaving
-// values the source already published in place.
-//
-// A source's own record of a mod is the authority on that mod: it is what the
-// platform said, and a caller supplying the same key is either repeating it or
-// contradicting it. The second is not allowed to happen silently, so an
-// existing key is kept. What this is for is the opposite case — a key the
-// platform cannot know, such as the one-time authorization a keyed link
-// carries, which only the caller that parsed the link has.
+// values the source already published in place: the source's record is the
+// authority on the mod, so a caller repeating or contradicting a key is
+// ignored. What it does add is what the platform cannot know, such as the
+// one-time authorization a keyed link carries.
 func mergeSourceData(mod *domain.Mod, extra map[string]any) {
 	if mod == nil || len(extra) == 0 {
 		return
@@ -189,9 +176,9 @@ type UninstallOptions struct {
 
 // ModLinkStatus describes one mod's deployed links in the game folder.
 type ModLinkStatus struct {
-	Entries map[string]platform.LinkState
-	ModID   string
-	Damaged int
+	Entries map[string]platform.LinkState `json:"entries"`
+	ModID   string                        `json:"mod_id"`
+	Damaged int                           `json:"damaged"`
 }
 
 // ConflictResolution says how a caller wants a reported conflict settled.
@@ -229,15 +216,10 @@ func (r ConflictResolution) String() string {
 }
 
 // ParseConflictResolution turns the textual form of a resolution back into the
-// value, reporting false for anything it does not recognise.
-//
-// It exists because the value crosses a boundary as a string: over the Wails
-// bridge it arrives as a JSON string, and on the command line as a flag
-// argument. Both entry points need the same table, so it lives next to the type
-// rather than in one of them. The spellings accepted are the ones String
-// produces, with either a dash or an underscore and any surrounding space or
-// case, because a flag argument typed by hand is the most likely place for a
-// hyphen to have been typed as an underscore.
+// value, reporting false for anything it does not recognise. The value crosses
+// that boundary as a string — JSON over the Wails bridge, a flag argument on the
+// command line — so dashes, underscores, spaces and case are all normalised: a
+// hand-typed flag argument is where a hyphen gets typed as an underscore.
 func ParseConflictResolution(text string) (ConflictResolution, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(text))
 
@@ -254,10 +236,8 @@ func ParseConflictResolution(text string) (ConflictResolution, bool) {
 	case "uninstall-mod-b":
 		return ResolutionUninstallModB, true
 	default:
-		// "unset" and everything unrecognised both land here. ResolutionUnset is
-		// rejected downstream anyway, so accepting it here would only mean
-		// ResolveConflict reported a less specific complaint than "that is not a
-		// resolution I know".
+		// ResolutionUnset is rejected downstream anyway, so accepting it here
+		// would only make ResolveConflict report a vaguer complaint.
 		return ResolutionUnset, false
 	}
 }
@@ -275,8 +255,8 @@ type ModService struct {
 // updateRun tracks an in-flight ApplyUpdate so CancelUpdate has something to
 // cancel.
 type updateRun struct {
-	// ctx is the context the update runs under; it is set by updateContext right
-	// after beginUpdate, so it is nil for the instant between the two.
+	// ctx is set by updateContext right after beginUpdate, so it is nil for the
+	// instant between the two.
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -449,7 +429,7 @@ func (s *ModService) Install(
 	installed.GameID = gameID
 
 	mergeSourceData(installed, opts.SourceData)
-	// Apply install_mode from SourceData if provided.
+	// A source may pin the install mode in the data it published.
 	if modeStr, ok := installed.SourceData["install_mode"].(string); ok {
 		mode := domain.ModInstallMode(strings.TrimSpace(modeStr))
 		if mode.Valid() {
@@ -520,13 +500,9 @@ func (s *ModService) Install(
 
 // place records an unpacked payload: it stamps where the mod lives, writes the
 // inventory, enables the mod when it can, and runs the post-install hooks.
-//
-// Both Install, which fetched an archive from a source, and
-// InstallArchiveFromShare, which was handed one by a recipient, end here. What
-// differs between them is everything upstream of the archive; once the payload
-// is on disk a mod is a mod, and splitting the tail would let the two paths
-// drift apart on the parts that matter most — index order, enable semantics and
-// hook timing.
+// Install and InstallArchiveFromShare differ only in how the archive arrived;
+// sharing this tail keeps index order, enable semantics and hook timing from
+// drifting apart between them.
 func (s *ModService) place(
 	ctx context.Context,
 	installed *domain.Mod,
@@ -535,10 +511,8 @@ func (s *ModService) place(
 	existing *domain.Mod,
 	opts InstallOptions,
 ) error {
-	// Determine the mod's folder name in the mods folder based on its
-	// install mode and the archive structure. Only mods deployed to the
-	// mods folder get a folder name; game root mods do not appear in
-	// mod_load_order.txt.
+	// Only mods deployed to the mods folder get a folder name; game root mods do
+	// not appear in mod_load_order.txt.
 	if installed.InstallMode != domain.InstallModeGameRoot {
 		installed.ModFolderName = primaryModFolderName(files)
 	}
@@ -561,18 +535,14 @@ func (s *ModService) place(
 	if opts.Enable != nil {
 		installed.Enabled = *opts.Enable
 	} else {
-		// Enabled stays false until the deploy below proves the game folder is
-		// there; claiming otherwise would show the user a mod the game cannot
-		// load.
+		// Enabled stays false until the deploy below proves the game folder is there;
+		// claiming otherwise would show the user a mod the game cannot load.
 		installed.Enabled = false
 	}
 
-	// The mod row is written before its files. mod_files.mod_id is a foreign key
-	// onto mods.id and the database enforces it, so recording the inventory first
-	// fails on every install — and a fake index that does not enforce referential
-	// integrity cannot catch it. A record whose file list has not been written yet
-	// is the recoverable state (a reinstall rewrites both); a file list pointing
-	// at a mod that does not exist is not representable at all.
+	// mod_files.mod_id is a foreign key onto mods.id, so the row has to be
+	// written before its files — the other order fails on every install, and a
+	// fake index does not enforce the constraint, so no test would catch it.
 	if err := s.deps.Index.Save(ctx, installed); err != nil {
 		return appErrors.Wrap(
 			err,
@@ -589,7 +559,6 @@ func (s *ModService) place(
 
 	wantEnabled := opts.Enable != nil && *opts.Enable
 	if opts.Enable == nil {
-		// Auto: enable only when a game mods folder actually resolves.
 		if _, err := s.modsPath(ctx); err == nil {
 			wantEnabled = true
 		}
@@ -626,16 +595,9 @@ func (s *ModService) place(
 }
 
 // InstallArchiveFromShare places a mod from a local archive that a share
-// delivered.
-//
-// A normal install is driven by a source: the manager asks the source for the
-// mod, decides its id, and downloads the bytes itself. A shared mod arrives
-// the other way round — the payload has already named it and the archive is
-// already on disk — so this skips the source lookup and the download cache and
-// hands the archive straight to the same unpack-and-place path.
-//
-// The archive's hash is recorded as the mod's hash rather than a cache key,
-// because that is the only provenance the install has.
+// delivered. The payload has already named the mod and put the bytes on disk, so
+// this skips the source lookup and the download cache; the archive's hash is
+// recorded as the mod's hash because it is the only provenance the install has.
 func (s *ModService) InstallArchiveFromShare(
 	ctx context.Context,
 	mod *domain.Mod,
@@ -860,9 +822,8 @@ func (s *ModService) unpack(
 			destDir,
 		)
 	}
-	// The rename moved the directory; removing the (now stale) staging path is
-	// a no-op, but on Windows renaming onto an existing path can leave the
-	// source behind.
+	// On Windows a rename onto an existing path can leave the source behind,
+	// so the (now stale) staging path is removed a second time.
 	defer func() { _ = os.RemoveAll(staging) }()
 
 	files := make([]domain.ModFile, 0, len(result.Files))
@@ -886,10 +847,8 @@ func (s *ModService) unpack(
 }
 
 // EnableMod deploys a mod's files into the game folder and marks it enabled.
-//
 // A mod that is already enabled is still redeployed: that is what heals a
-// deleted or half-created set of links, and an idempotent enable should leave
-// the mod usable rather than merely labelled enabled.
+// deleted or half-created set of links.
 func (s *ModService) EnableMod(ctx context.Context, modID string) error {
 	if s == nil || s.deps.Index == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
@@ -979,8 +938,8 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod) error {
 }
 
 // DisableMod removes a mod's files from the game folder and marks it disabled.
-// The payload stays in manager storage: disabling is reversible and cheap, and
-// deleting a user's files behind their back is not something a toggle should do.
+// The payload stays in manager storage: disabling is cheap and reversible, and a
+// toggle should not delete a user's files behind their back.
 func (s *ModService) DisableMod(ctx context.Context, modID string) error {
 	if s == nil || s.deps.Index == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
@@ -1042,10 +1001,9 @@ func (s *ModService) DisableMod(ctx context.Context, modID string) error {
 	return nil
 }
 
-// uninstallRemovesLinks removes the mod's entries from the game folder. It is
-// best effort in the sense that a missing game folder is not an error, but a
-// deployer that fails is: the mod would otherwise stay in the game while the
-// manager believes it is gone.
+// undeploy removes the mod's entries from the game folder. A missing game folder
+// is not an error, but a deployer that fails is: the mod would otherwise stay in
+// the game while the manager believes it is gone.
 func (s *ModService) undeploy(ctx context.Context, mod *domain.Mod) error {
 	dst, err := s.deploymentPath(ctx, mod)
 	if err != nil {
@@ -1149,11 +1107,10 @@ func (s *ModService) Uninstall(ctx context.Context, modID string, opts Uninstall
 	return nil
 }
 
-// removePayload deletes the mod's version folder and any now-empty parent.
-//
-// The folder is only removed when it really is inside the configured storage
-// root: LocalPath comes from the database, and a database edited by hand (or
-// restored from someone else's backup) could point anywhere.
+// removePayload deletes the mod's version folder and any now-empty parent. The
+// folder is only removed when it is really inside the configured storage root:
+// LocalPath comes from the database, and a database edited by hand could point
+// anywhere.
 func (s *ModService) removePayload(mod *domain.Mod) error {
 	payload := strings.TrimSpace(mod.LocalPath)
 	if payload == "" {
@@ -1192,9 +1149,8 @@ func (s *ModService) removePayload(mod *domain.Mod) error {
 }
 
 // cacheKeyFor recomputes the cache key of a stored mod. The key is derived, not
-// stored, because it is a hash of the download location and the version — both
-// of which the record already has. A mod whose SourceData was stripped cannot
-// yield a key, which is not worth an error on an uninstall.
+// stored, so a mod whose SourceData was stripped yields no key — not worth an
+// error on an uninstall.
 func cacheKeyFor(mod *domain.Mod) string {
 	key, err := CacheKey(mod)
 	if err != nil {
@@ -1205,12 +1161,10 @@ func cacheKeyFor(mod *domain.Mod) string {
 }
 
 // topLevelNames reduces a file inventory to the names that actually appear in
-// the game folder.
-//
-// The deployer creates one entry per top-level entry of the payload folder, so a
-// mod holding "textures/hud.dds" puts a single "textures" entry in the game.
-// Passing the full relative paths to UndeployEntries would match nothing and the
-// mod would silently stay deployed after an uninstall.
+// the game folder. The deployer creates one entry per top-level entry of the
+// payload folder, so "textures/hud.dds" becomes a single "textures" entry;
+// full relative paths would match nothing and leave the mod deployed after an
+// uninstall.
 func topLevelNames(files []domain.ModFile) []string {
 	seen := make(map[string]bool, len(files))
 
@@ -1242,31 +1196,26 @@ func topLevelNames(files []domain.ModFile) []string {
 	return out
 }
 
-// primaryModFolderName returns the primary folder name for a mod deployed to
-// the mods folder. It uses the first top-level directory from the file inventory.
-// Returns empty string if there are no top-level directories (e.g. flat archives).
-// primaryModFolderName returns the primary folder name for a mod deployed to
-// the mods folder. It uses the first top-level directory from the file
-// inventory. Returns empty string if there are no top-level directories
-// (e.g. flat archives with only files at the root).
+// primaryModFolderName returns the top-level directory a mod deployed to the
+// mods folder should be listed under, or "" for a flat archive.
 func primaryModFolderName(files []domain.ModFile) string {
 	names := topLevelNames(files)
 	if len(names) == 0 {
 		return ""
 	}
-	// Build a map of rel path -> file for quick lookup
+	// A name is a directory when the inventory carries an empty entry for it or
+	// when other files' paths start with it.
 	fileMap := make(map[string]domain.ModFile, len(files))
 	for _, f := range files {
 		fileMap[f.RelPath] = f
 	}
-	// Return the first name that corresponds to a directory (SizeBytes == 0)
-	// or has children (other files under it).
+	// The first such name wins, so a mod with a stray root file still names the
+	// folder the game sees.
 	for _, name := range names {
-		// Check if this name is a directory entry
 		if f, ok := fileMap[name]; ok && f.SizeBytes == 0 && f.Checksum == "" {
 			return name
 		}
-		// Check if any file has this name as a prefix (meaning it's a parent folder)
+
 		prefix := name + "/"
 		for _, f := range files {
 			if strings.HasPrefix(f.RelPath, prefix) {
@@ -1274,7 +1223,7 @@ func primaryModFolderName(files []domain.ModFile) string {
 			}
 		}
 	}
-	// No directory found at top level
+
 	return ""
 }
 
@@ -1288,11 +1237,9 @@ func (s *ModService) GetModHooks(ctx context.Context, modID string) (domain.ModH
 	return mod.Hooks.Clone(), nil
 }
 
-// UpdateModHooks replaces the hooks recorded for a mod.
-//
-// The mod's own files are not touched by a hook edit, so this does not take the
-// mod's operation lock: it changes what will run next time, not what is
-// deployed now. Concurrent enable/disable still serialise against each other.
+// UpdateModHooks replaces the hooks recorded for a mod. It does not take the
+// mod's operation lock because the mod's files are untouched: it changes what
+// will run next time, not what is deployed now.
 func (s *ModService) UpdateModHooks(
 	ctx context.Context,
 	modID string,
@@ -1313,7 +1260,7 @@ func (s *ModService) UpdateModHooks(
 
 	for _, phase := range domain.HookPhases() {
 		for i, script := range hooks.For(phase) {
-			// i+1: the position is shown to the user, who counts hooks from one.
+			// i+1: hooks are numbered from one for the user editing the mod.
 			if err := s.validateHook(script, phase, i+1); err != nil {
 				return err
 			}
@@ -1465,11 +1412,9 @@ func (s *ModService) RelinkMod(ctx context.Context, modID string) ([]string, err
 	return repaired, nil
 }
 
-// SymlinkStatus reports the state of every mod's entries in the game folder.
-//
-// A mod whose game folder cannot be resolved still appears in the result with an
-// empty map: the caller wants to know about all its mods, and "no game folder"
-// is different from "no links".
+// SymlinkStatus reports the state of every mod's entries in the game folder. A
+// mod whose game folder cannot be resolved still appears with an empty map: the
+// caller wants all of its mods, and "no game folder" differs from "no links".
 func (s *ModService) SymlinkStatus(ctx context.Context) ([]ModLinkStatus, error) {
 	if err := s.precheck(ctx); err != nil {
 		return nil, err
@@ -1504,7 +1449,8 @@ func (s *ModService) SymlinkStatus(ctx context.Context) ([]ModLinkStatus, error)
 			out = append(out, status)
 			continue
 		}
-		// Determine the correct folder to check based on the mod's install mode.
+		// A game-root mod is deployed beside the mods folder, so that is the
+		// folder its links are checked in.
 		var folder string
 		if mod.InstallMode == domain.InstallModeGameRoot {
 			folder = gameRoot
@@ -1561,11 +1507,9 @@ func (s *ModService) ownedEntries(
 }
 
 // RefreshMods repairs the links of every enabled mod and disables any mod whose
-// payload has disappeared from under it.
-//
-// Disabling rather than deleting is the deliberate choice: a payload the user
-// moved or deleted by hand should not cost them the mod's identity, hooks or
-// load order, and re-installing is one command away.
+// payload has disappeared from under it. Disabling rather than deleting is
+// deliberate: a payload the user moved should not cost them the mod's identity,
+// hooks or load order, and re-installing is one command away.
 func (s *ModService) RefreshMods(ctx context.Context) error {
 	if s == nil || s.deps.Index == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
@@ -1592,9 +1536,8 @@ func (s *ModService) RefreshMods(ctx context.Context) error {
 
 		mod := mods[i]
 		if !platform.IsDir(platform.RealFS(), mod.LocalPath) {
-			// Warn: the mod is still listed, so this is a state the user has to
-			// know about rather than a crash. It is worth a log line even though
-			// an event already reports it, because refresh can run unattended.
+			// The mod is still listed, so this is a state the user has to know about, and
+			// refresh can run unattended — the log line is worth what the event costs.
 			s.log.Warn().
 				Str("op", "refresh").
 				Str("mod", mod.ID).
@@ -1637,10 +1580,9 @@ func (s *ModService) RefreshMods(ctx context.Context) error {
 }
 
 // CheckModUpdates asks every installed mod's source what the latest version is.
-//
-// One source being unreachable or wrong about one mod does not fail the whole
-// sweep: the result then simply says "no update known" for that mod, which is
-// what the UI would have shown anyway had the request never been made.
+// One source being unreachable or wrong about one mod does not fail the sweep:
+// that mod is then simply reported as having no known update, which is what the
+// UI would have shown had the request never been made.
 func (s *ModService) CheckModUpdates(ctx context.Context) ([]domain.ModUpdateInfo, error) {
 	if s == nil || s.deps.Index == nil {
 		return nil, appErrors.New(
@@ -1723,11 +1665,9 @@ func (s *ModService) remoteMod(ctx context.Context, mod domain.Mod) (*domain.Mod
 }
 
 // ApplyUpdate reinstalls a mod from its source and removes the old payload once
-// the new one is in place.
-//
-// The update keeps the mod's installed timestamp and load priority: to a user
-// this is the same mod, updated, not a fresh install that happens to share an id.
-// A failure leaves the old payload and the old record untouched.
+// the new one is in place. The mod keeps its installed timestamp and load
+// priority, because to a user this is the same mod updated, not a fresh install;
+// a failure leaves the old payload and record untouched.
 func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod, error) {
 	if s == nil || s.deps.Index == nil {
 		return nil, appErrors.New(
@@ -1802,21 +1742,18 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 		Data: installEventData{Version: remote.Version},
 	})
 
-	// An update that goes wrong must not leave the mod half-written, so the
-	// enable state is restored from the record rather than assumed: DisableMod
-	// would need the operation lock this goroutine already holds.
+	// The enable state is restored from the record rather than assumed, so a failed
+	// update does not leave the mod half-written; DisableMod would need the
+	// operation lock this goroutine already holds.
 	opts := InstallOptions{Force: true, Enable: &wasEnabled}
 
 	updated, err := s.Install(ctx, mod.SourceID, mod.ID, opts)
 	if err != nil {
 		return nil, err
 	}
-	// Install kept the record's priority because Force reinstalls read the
-	// existing row; InstalledAt is preserved inside Install for the same reason.
-	// The previous payload lives in its own version folder, so retiring it only
-	// when the user asked us not to keep old copies is what makes the retention
-	// setting mean anything; the archive in the cache is a separate decision and
-	// is left alone.
+	// The old payload has its own version folder, so retiring it here is what makes
+	// the retention setting mean anything. The cached archive is a separate
+	// decision and is left alone.
 	if !keepOld && oldPath != "" && !domain.PathsEqual(oldPath, updated.LocalPath) {
 		if err := os.RemoveAll(oldPath); err != nil {
 			s.log.Warn().
@@ -1865,8 +1802,7 @@ func (s *ModService) UpdateMod(ctx context.Context, modID string) error {
 }
 
 // keepOldVersions reports whether the previous version's payload should be kept
-// after an update. A retention of zero days is the user saying "do not keep old
-// copies"; the default (7 days) keeps them.
+// after an update; a retention of zero days is the user saying otherwise.
 func (s *ModService) keepOldVersions(_ context.Context) bool {
 	if s.deps.Config == nil {
 		return true
@@ -2040,14 +1976,11 @@ func (s *ModService) activeGameID() (string, error) {
 	return def.ID(), nil
 }
 
-// installMethod resolves how mods should reach the game folder for the game in
-// use: the per-game configuration override when the user set one, otherwise
-// the game definition's own preference, otherwise whatever this platform
-// defaults to.
-//
-// A missing locator or an unresolvable game is not an error here: a headless
-// service still has to deploy mods, and the platform default is the honest
-// answer when nothing else is known.
+// installMethod resolves how mods should reach the game folder: the per-game
+// setting when the user set one, otherwise the game definition's preference,
+// otherwise the platform default. A missing locator or unresolvable game is not
+// an error — a headless service still has to deploy mods, and the platform
+// default is the honest answer when nothing else is known.
 func (s *ModService) installMethod() platform.DeployMode {
 	preferred := ""
 
@@ -2136,9 +2069,9 @@ func (s *ModService) deploymentPath(ctx context.Context, mod *domain.Mod) (strin
 }
 
 // syncLoadOrderFile writes the active game's load order to the file the game
-// definition asks for. Only mods with InstallModeModsFolder and a non-empty
-// ModFolderName are included. The file is written atomically. A definition
-// that declares no load order file opts out of this step entirely.
+// definition asks for, atomically. Only mods deployed to the mods folder with a
+// non-empty ModFolderName are listed, and a definition that declares no load
+// order file opts out entirely.
 func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 	gameID, err := s.activeGameID()
 	if err != nil {
@@ -2155,9 +2088,8 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 
 	modsFolder, err := s.modsPath(ctx)
 	if err != nil {
-		// If the mods folder cannot be resolved, there's nothing to sync.
-		// This is not an error: a user without a game configured should not
-		// have the operation fail because of a missing load order file.
+		// Nothing to sync without a mods folder, and that is not an error: a user
+		// who never set the game up should not see their operation fail here.
 		return nil
 	}
 
@@ -2176,12 +2108,11 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 		}
 
 		if mod.InstallMode == domain.InstallModeGameRoot {
-			// Game root mods don't appear in the mods folder load order.
+			// Game root mods are not in the mods folder the file describes.
 			continue
 		}
 
 		if mod.ModFolderName == "" {
-			// Mod has no folder name recorded; skip it.
 			continue
 		}
 
@@ -2198,7 +2129,7 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 	for _, id := range loadOrder {
 		explicitSet[id] = true
 	}
-	// Sort enabled mods by priority (descending) then by ID for stability.
+	// By priority, then by id so the order is stable.
 	sort.SliceStable(enabledMods, func(i, j int) bool {
 		if enabledMods[i].Priority != enabledMods[j].Priority {
 			return enabledMods[i].Priority > enabledMods[j].Priority
@@ -2268,9 +2199,9 @@ func (s *ModService) runHooksAdvisory(
 	}
 
 	if err := s.deps.Hooks.ExecutePhase(ctx, phase, mod.Hooks, mod); err != nil {
-		// Warn, not error: the operation itself succeeded, and the user is told
-		// about this through the event. A log line saying "failed" next to an
-		// install that worked would send them looking in the wrong place.
+		// Warn, not error: the operation itself succeeded and the user hears about it
+		// through the event. A "failed" line beside a working install would send
+		// them looking in the wrong place.
 		s.log.Warn().
 			Err(err).
 			Str("op", "hook").
@@ -2285,10 +2216,8 @@ func (s *ModService) runHooksAdvisory(
 }
 
 // validateHook checks one hook script before it is recorded, so a typo is
-// reported at edit time instead of at the next enable.
-//
-// position is the hook's 1-based index within its phase, because that is the
-// numbering the user editing the mod sees.
+// reported at edit time instead of at the next enable. position is the 1-based
+// index within its phase, the numbering the user editing the mod sees.
 func (s *ModService) validateHook(
 	script domain.HookScript,
 	phase domain.HookPhase,
@@ -2347,20 +2276,12 @@ func (s *ModService) publish(e Event) {
 	s.deps.Events.Publish(e)
 }
 
-// opTable serialises operations per mod.
-//
-// Two enables of the same mod racing would each deploy and each write the row;
-// two operations on *different* mods must not block each other, because the
-// common case is a bulk toggle. So the lock is per id, and a waiter can give up
-// on a cancelled context.
-// opTable serialises operations per mod id.
-//
-// A per-mod lock (rather than one service-wide mutex) matters because enabling
-// two different mods is independent work, while enabling and uninstalling the
-// same mod at the same time is not. Each lock is a channel holding a single
-// token: taking the token acquires, returning it releases. A token channel
-// (rather than a closed channel) is what makes "wait, unless the context is
-// done" expressible without leaking a goroutine per waiter.
+// opTable serialises operations per mod id. A per-mod lock rather than one
+// service-wide mutex, because enabling two different mods is independent work
+// while enabling and uninstalling the same mod at once is not. Each lock is a
+// channel holding a single token — taking the token acquires, returning it
+// releases — which is what makes "wait, unless the context is done" expressible
+// without a goroutine per waiter.
 type opTable struct {
 	locks map[string]*opLock
 	mu    sync.Mutex
@@ -2373,17 +2294,13 @@ type opLock struct {
 
 func newOpTable() *opTable { return &opTable{locks: make(map[string]*opLock)} }
 
-// acquire blocks until the mod's lock is free, or until ctx is done. The
-// returned function releases the lock and is safe to call more than once, so a
-// deferred release next to an early return cannot corrupt the table.
-//
-// A nil context means "no way to give up", so it waits on the bare channel.
-//
-// Entries are never removed. A mod id that is touched once costs a map entry
-// and a one-slot channel for the life of the process, and removing them would
-// introduce a race: a waiter that already holds a pointer to the entry must
-// still be woken by the releaser, which cannot know the entry has been
-// unlinked.
+// acquire blocks until the mod's lock is free, or until ctx is done, and returns
+// a release that is safe to call more than once so a deferred release next to an
+// early return cannot corrupt the table. A nil context waits on the bare
+// channel. Entries are never removed: a mod id touched once costs a map entry
+// and a one-slot channel for the life of the process, whereas unlinking would
+// race a waiter that already holds the pointer, which the releaser can no
+// longer wake.
 func (t *opTable) acquire(ctx context.Context, id string) (func(), error) {
 	t.mu.Lock()
 	if t.locks == nil {
@@ -2413,8 +2330,8 @@ func (t *opTable) acquire(ctx context.Context, id string) (func(), error) {
 }
 
 // releaseFunc builds the idempotent release closure handed to the holder. The
-// token goes back into a channel of capacity one, so a release with no waiter
-// simply leaves the lock free for the next acquirer.
+// token goes back into a capacity-one channel, so a release with no waiter just
+// leaves the lock free for the next acquirer.
 func (t *opTable) releaseFunc(lock *opLock) func() {
 	var once sync.Once
 

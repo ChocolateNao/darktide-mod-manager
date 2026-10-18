@@ -5,10 +5,9 @@ import (
 	"strings"
 )
 
-// Version is a dotted numeric version. Darktide mod manifests use semver-ish
-// strings ("1.2.0", "2.0", "1.2.3-beta.1"), so parsing is deliberately lenient:
-// missing components default to zero and a pre-release suffix is retained but
-// ordered below the corresponding release.
+// Version is a dotted numeric version. Manifests use semver-ish strings
+// ("1.2.0", "2.0", "1.2.3-beta.1"), so parsing is lenient: missing components
+// default to zero and a pre-release suffix is kept but ordered below its release.
 type Version struct {
 	PreRelease string
 	Major      int
@@ -83,10 +82,9 @@ func comparePreRelease(a, b string) int {
 	}
 }
 
-// ParseVersion parses a version string. Leading "v" and surrounding whitespace
-// are ignored. Unparseable input yields the zero version and ok=false, which
-// lets callers treat a malformed manifest field as "unknown" instead of failing
-// the whole install.
+// ParseVersion parses a version string, ignoring a leading "v" and surrounding
+// whitespace. Unparseable input yields the zero version and ok=false so a
+// malformed manifest field is "unknown" rather than a failed install.
 func ParseVersion(s string) (Version, bool) {
 	v := Version{}
 
@@ -98,9 +96,8 @@ func ParseVersion(s string) (Version, bool) {
 	s = strings.TrimPrefix(s, "v")
 	s = strings.TrimPrefix(s, "V")
 
-	// Split off the pre-release ("-beta.1") and build metadata ("+sha"). Build
-	// metadata is dropped because semver says it must not affect precedence.
-	// A leading '-' means there is no numeric part at all, which is invalid.
+	// Split off the pre-release and build metadata, which semver says must not
+	// affect precedence. A leading '-' means no numeric part, which is invalid.
 	if strings.HasPrefix(s, "-") {
 		return v, false
 	}
@@ -180,10 +177,9 @@ var emptyConstraint = []VersionConstraint{}
 //	"1.2.3"          → exact match (equivalent to "==1.2.3")
 //	">=1.0.0,<2.0.0" → conjunction, all terms must hold
 //
-// Whitespace is ignored. Disjunctions ("||") are not part of the grammar; a
-// term containing one is rejected so that a malformed manifest field fails
-// loudly instead of silently widening what a mod claims to support.
-// ok is false if any component is malformed.
+// Whitespace is ignored. A term containing "||" is rejected rather than
+// silently widening what a mod claims to support. ok is false if any component
+// is malformed.
 func ParseVersionConstraints(s string) ([]VersionConstraint, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "*" {

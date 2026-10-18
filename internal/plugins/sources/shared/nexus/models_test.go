@@ -10,10 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file exercise the conversions on their own, without a
-// server. The transport tests in nexus_test.go cover the shapes those
-// conversions are fed; between them every field the API sends has a test that
-// asserts what the manager does with it.
+// The tests here exercise the conversions on their own, without a server; the transport
+// tests in nexus_test.go cover the shapes they are fed.
 
 // nexusContext is a fully populated mod context. Using one literal rather than a
 // zero value everywhere keeps the tests about the field under test rather than
@@ -109,10 +107,8 @@ func TestParseModIDReversesModID(t *testing.T) {
 		{"nexus-900", "", "", false},
 		{"nexus-900-", "", "", false},
 		{"nexus--7001", "", "", false},
-		// An id with a trailing segment is refused rather than truncated.
-		// Accepting it would mean "nexus-900-7001-5" installs file 7001, which
-		// is a guess about what the user meant, and ModID can never produce
-		// such an id.
+		// A trailing segment is refused rather than truncated: ModID can never produce
+		// "nexus-900-7001-5", so accepting one would be a guess about what was meant.
 		{"nexus-900-7001-5", "", "", false},
 		{"nexus-900-7001.5", "", "", false},
 		{"nexus-900a-7001", "", "", false},
@@ -293,10 +289,8 @@ func TestClassifyCategory(t *testing.T) {
 		)
 	}
 
-	// old_version is the one category that is refused: it is a superseded
-	// release kept for history, and the newest version of a file is often one of
-	// these. The spelling is the API's exactly — " old-version " with a hyphen is
-	// a different thing, and is unknown.
+	// old_version is the one refused category: a superseded release, and a file's
+	// newest version is often one. The spelling is the API's exact "old_version".
 	for _, category := range []string{"old_version", " OLD_VERSION ", "\told_version\n"} {
 		assert.Equal(
 			t,
@@ -307,10 +301,8 @@ func TestClassifyCategory(t *testing.T) {
 		)
 	}
 
-	// Everything else is unknown rather than refused. Treating an unfamiliar
-	// category as "not installable" emptied the candidate set the first time
-	// Nexus introduced a category, and the mod reported itself as having no
-	// downloadable version while a usable grant sat in the user's hand.
+	// Anything else is unknown rather than refused: treating an unfamiliar category as
+	// "not installable" empties the candidate set the first time Nexus adds one.
 	for _, category := range []string{
 		"", "  ", "archived", "removed", "unknown",
 		"mainfile", "optionals", "main file", "mod", "soundtrack",
@@ -378,9 +370,8 @@ func TestPositionValueReadsTheDecimalString(t *testing.T) {
 		{"", 0, false},
 		{"   ", 0, false},
 		{"latest", 0, false},
-		// strconv.ParseFloat accepts these three, and every comparison against
-		// NaN is false, so accepting one would make pickVersion keep whichever
-		// version it saw first.
+		// strconv.ParseFloat accepts these, and every comparison against NaN is false,
+		// so accepting one would make pickVersion keep whichever version it saw first.
 		{"NaN", 0, false},
 		{"nan", 0, false},
 		{"Inf", 0, false},
@@ -470,11 +461,9 @@ func TestPickVersionFindsNothingInASupersededOnlyList(t *testing.T) {
 	assert.False(t, ok, "pickVersion chose %q from a list with nothing installable", got.ID)
 }
 
-// A category this build has never heard of is offered rather than skipped. This
-// is the behaviour the closed category list got wrong: refusing everything
-// unrecognised emptied the candidate set the first time Nexus introduced a
-// category, and the mod reported itself as having no downloadable version while a
-// usable grant was sitting in the user's hand.
+// A category this build has never heard of is offered rather than skipped: refusing
+// everything unrecognised emptied the candidate set the first time Nexus introduced a
+// category, and the mod reported no downloadable version while a grant sat unused.
 func TestPickVersionOffersAnUnrecognisedCategory(t *testing.T) {
 	for _, category := range []string{"archived", "removed", "unknown", "", "mainfile", "soundtrack"} {
 		versions := []fileVersion{
@@ -498,9 +487,8 @@ func TestPickVersionOffersAnUnrecognisedCategory(t *testing.T) {
 }
 
 func TestPickVersionPrefersAPositionOverAnUploadTime(t *testing.T) {
-	// A re-uploaded old file has the newest timestamp and the oldest position.
-	// The API's own ordering wins, because upload time is a second opinion that
-	// can be wrong.
+	// A re-uploaded old file has the newest timestamp and the oldest position; the
+	// API's own ordering wins because upload time is a second opinion that can be wrong.
 	reUploaded := fileVersion{
 		ID: "8002", Position: "1.0", Category: "main",
 		UploadedAt: "2026-09-09T00:00:00Z",
@@ -554,11 +542,8 @@ func TestPickVersionOnDegenerateInput(t *testing.T) {
 		assert.Fail(t, "pickVersion(empty) = %q, %v; want the zero version and false", got.ID, ok)
 	}
 
-	// Only superseded versions are refused, so "unusable" has to be expressed
-	// with the category that actually means it. A list of categories this build
-	// has never heard of is still offered, and TestPickVersionOffersAnUnrecognisedCategory
-	// covers that; what is left to pin here is that a list with nothing but
-	// superseded versions reports nothing found.
+	// Only superseded versions are refused, so "unusable" means the category that
+	// says so; unrecognised categories are still offered.
 	onlySuperseded := []fileVersion{
 		{ID: "8001", Category: "old_version"},
 		{ID: "8002", Category: "old_version"},
@@ -638,9 +623,8 @@ func TestModForCarriesBothIdHalves(t *testing.T) {
 }
 
 func TestModForNamesFallBack(t *testing.T) {
-	// The file and version responses carry no mod name at all, so the fallbacks
-	// are the only thing that keeps a mod identifiable when the mod fetch was
-	// thin.
+	// The file and version responses carry no mod name, so the fallbacks are what
+	// keep a mod identifiable when the mod fetch was thin.
 	version := nexusVersion()
 	version.Name = "Better UI 1.2.0"
 
@@ -662,9 +646,8 @@ func TestModForNamesFallBack(t *testing.T) {
 }
 
 func TestModForRecordsWhatALaterInstallNeeds(t *testing.T) {
-	// Every one of these is read back by something: version_id by Download,
-	// download_url by the cache key, mod_id and file_id by a shared link, and
-	// game_domain by nothing at all except a reader.
+	// Each is read back later: version_id by Download, download_url by the cache key,
+	// mod_id and file_id by a shared link.
 	mod := modFor(nexusContext(), nexusFile(), nexusVersion())
 	if mod == nil {
 		require.FailNow(t, "modFor returned nil")
@@ -676,7 +659,7 @@ func TestModForRecordsWhatALaterInstallNeeds(t *testing.T) {
 		"version_id":            "8001",
 		"mod_uid":               "1234567890123",
 		"game_id":               "3834",
-		"game_domain":           "darktide",
+		domain.SourceDomainKey:  "darktide",
 		"position":              "2.0",
 		"uploaded_at":           "2026-02-01T09:30:00Z",
 		"category":              "main",
@@ -867,11 +850,8 @@ func dependencyResponseFixture() dependencyResponse {
 }
 
 func TestDependencyModsFlattensAlternatives(t *testing.T) {
-	// The API says the ranges inside one definition are alternatives and
-	// domain.Mod.Dependencies is one flat list the manager treats as "all of
-	// these". Listing every candidate is a superset of the requirement, and a
-	// superset can report a missing file; dropping the alternatives could hide
-	// one that is installed.
+	// The API treats those ranges as alternatives while Dependencies is a flat "all of
+	// these" list, so a superset can hide a file that is installed.
 	got := dependencyMods(dependencyResponseFixture(), "darktide")
 
 	want := []string{"nexus-950-8001", "nexus-951-8101", "nexus-952-8102"}

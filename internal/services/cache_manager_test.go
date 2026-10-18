@@ -24,9 +24,8 @@ import (
 var cacheNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 // newRealCache builds a manager over a real on-disk cache backed by an in-memory
-// index. Using the real storage.Cache everywhere keeps these tests honest about
-// blob paths, atomic renames and the index schema; only the downloader and the
-// clock are faked.
+// index, so these tests stay honest about blob paths, atomic renames and the index
+// schema; only the downloader and the clock are faked.
 func newRealCache(t *testing.T) (*CacheManager, *storage.Cache) {
 	t.Helper()
 
@@ -135,10 +134,8 @@ func (d *scriptDownloader) Verify(ctx context.Context, mod *domain.Mod, path str
 	return nil
 }
 
-// failVerification makes the next n Verify calls fail. Limiting the count is
-// what lets a test model "the cached copy is bad but a fresh download is good" —
-// a verifier that always fails would make the re-download succeed and then be
-// rejected by the same check.
+// failVerification makes the next n Verify calls fail. The count is what lets a
+// test model "the cached copy is bad but a fresh download is good".
 func (d *scriptDownloader) failVerification(n int, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -393,8 +390,7 @@ func TestCacheKeySeparatesVersions(t *testing.T) {
 
 func TestCacheKeyDistinguishesAnEmptyVersionFromAMissingOne(t *testing.T) {
 	// "url\x00" and "url\x00" are the same input, so this documents that the
-	// separator is what stops ("url", "1.0") from colliding with
-	// ("url\x001.0", "").
+	// separator stops ("url", "1.0") colliding with ("url\x001.0", "").
 	a, err := CacheKey(downloadMod("a", "1.0", "https://example.test/x"))
 	require.NoError(t, err)
 
@@ -900,8 +896,8 @@ func TestGetOrDownloadPublishesAnEvent(t *testing.T) {
 		_, err := m.GetOrDownload(context.Background(), mod)
 		require.NoError(t, err)
 	}
-	// Only the first call downloads, so exactly one event is expected even
-	// though GetOrDownload ran once here; a second, cache-served call adds none.
+	// Only the first call downloads, so exactly one event even though a second,
+	// cache-served call adds none.
 	{
 		_, err := m.GetOrDownload(context.Background(), mod)
 		require.NoError(t, err)
@@ -942,12 +938,9 @@ func blockingDownloader(body string) (*scriptDownloader, chan struct{}, chan str
 }
 
 // waitForJoiners blocks until the in-flight job for key has at least want
-// waiters, or the deadline passes.
-//
-// Asserting "the second caller did not return" proves nothing: a goroutine that
-// has not been scheduled yet has not returned either. Waiting for the join to be
-// recorded is the only check that actually establishes the second caller reached
-// fetch while the first still held the job.
+// waiters, or the deadline passes. Asserting "the second caller did not return"
+// proves nothing, since a goroutine that has not been scheduled has not returned
+// either; only a recorded join establishes that the second caller reached fetch.
 func waitForJoiners(t *testing.T, m *CacheManager, key string, want int) {
 	t.Helper()
 
@@ -995,9 +988,8 @@ func TestFetchCollapsesConcurrentCallersOntoOneTransfer(t *testing.T) {
 
 	<-entered
 
-	// A second caller arriving mid-transfer must join it rather than start its
-	// own. Because this goroutine blocks until the transfer ends, reaching the
-	// return below proves the join happened before release.
+	// This goroutine blocks until the transfer ends, so reaching the return below proves
+	// the second caller joined rather than starting its own.
 	secondPath := make(chan string, 1)
 	secondErr := make(chan error, 1)
 
@@ -1129,10 +1121,8 @@ func TestGetOrDownloadIsSafeUnderConcurrency(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	// Every caller must succeed with the same path. The number of transfers is
-	// deliberately not asserted: callers arriving after the winner finished find
-	// the cache, but there is no lock spanning the whole call, so an exact count
-	// would be a statement about scheduling rather than about behaviour.
+	// The transfer count is not asserted: a caller arriving after the winner finds
+	// the cache, so an exact count would describe scheduling, not behaviour.
 	for i := range errs {
 		require.Nil(t, errs[i], "worker %d: %v", i, errs[i])
 
@@ -1474,11 +1464,9 @@ func seedEntry(
 }
 
 // seedLargeEntry records an entry of a size no test would ever write to disk.
-//
-// Pruning works off the recorded SizeBytes, not off the file, so the size
-// budget can be exercised without allocating gigabytes: the path deliberately
-// names a file that is not there. Remove tolerates that, which is exactly the
-// behaviour a cache with a stale index row needs.
+// Pruning works off the recorded SizeBytes, so the size budget can be exercised
+// without allocating gigabytes; Remove tolerates the missing file, which is what a
+// cache with a stale index row needs.
 func seedLargeEntry(
 	t *testing.T,
 	m *CacheManager,
@@ -1556,9 +1544,8 @@ func TestPruneRemovesLeastRecentlyUsedFirst(t *testing.T) {
 		err := m.Prune(ctx, 2, 0)
 		require.NoError(t, err, "Prune: %v", err)
 	}
-	// 3 MiB over a 2 MiB budget: removing the single least-recently-used entry is
-	// enough to get back under. Removing more would evict data the budget
-	// already accommodates.
+	// 3 MiB against a 2 MiB budget: evicting one entry is enough, and evicting more
+	// would drop data the budget already accommodates.
 	{
 		_, err := m.cache.Index().Get(
 			ctx,
@@ -1695,9 +1682,8 @@ func TestPruneLeavesAnEntryWithNoTimestampAlone(t *testing.T) {
 		)
 		require.NoError(t, err)
 	}
-	// Put stamps a timestamp for a zero value, so the row is fresh; what matters
-	// is that a row whose timestamp is somehow unset is not treated as
-	// infinitely old and deleted on sight.
+	// Put stamps a timestamp for a zero value, so the row is fresh; a row whose
+	// timestamp is somehow unset must not be treated as infinitely old.
 	entry, err := m.cache.Index().Get(ctx, key)
 	require.NoError(t, err)
 

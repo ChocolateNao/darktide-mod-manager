@@ -15,50 +15,40 @@ import (
 // DefaultSTUNServers is what a share falls back to when the caller names no
 // STUN server.
 //
-// Google's public STUN is the default because it needs no account, no key and
-// no configuration, which is what a first share has to be. It is safe to use
-// for that: STUN carries nothing but the reflexive address a NAT hands back,
-// and none of the mod data ever touches it — the data channel is DTLS
-// protected from end to end. What it does leak is the fact that a peer was
-// looking for reachable addresses at that moment, which is the trade every
-// WebRTC application makes and the reason TURN and a self-hosted STUN both
-// remain configurable.
+// Google's public STUN needs no account, no key and no configuration, which is
+// what a first share has to be, and it is safe here: STUN carries nothing but
+// the reflexive address a NAT hands back, and the data channel is DTLS
+// protected. What it does leak is that a peer was looking for reachable
+// addresses, which is why TURN and a self-hosted STUN stay configurable.
 func DefaultSTUNServers() []string {
 	return []string{"stun:stun.l.google.com:19302"}
 }
 
 // DefaultPortRange is the UDP range ICE is allowed to allocate host candidates
-// from. A fixed range rather than an ephemeral one because a share host usually
-// also has a game or a launcher bound, and a predictable range is something a
-// user can open in their firewall; sharing that control would otherwise be
-// something they could only get by reading a log.
+// from. Fixed rather than ephemeral because a share host usually also has a game
+// or a launcher bound, and a range a user can open in their firewall beats one
+// they could only find in a log.
 const (
 	DefaultPortMin = 40000
 	DefaultPortMax = 40999
 )
 
-// DefaultChunkSize is how much of an archive goes into one CHUNK frame.
-//
-// 256 KiB is what the reference implementation this protocol follows uses. It
-// is large enough that per-frame overhead disappears next to the payload and
-// small enough that the receiver's write buffer and the sender's send buffer
-// both stay small — SCTP fragments anything larger, and a frame that spans
-// many fragments makes a single loss cost more than it should.
+// DefaultChunkSize is how much of an archive goes into one CHUNK frame. It is
+// large enough that per-frame overhead disappears next to the payload and small
+// enough to stay inside SCTP's fragmenting, since a frame spanning many
+// fragments makes a single loss cost more than it should.
 const DefaultChunkSize = 256 << 10
 
 // defaultFlowControlThreshold is the point at which the sender stops writing
-// and waits for the channel to drain.
-//
-// It is two chunks: enough that the channel is never idle between frames, and
-// small enough that the kernel socket buffer is not asked to hold a whole mod.
+// and waits for the channel to drain. Two chunks is enough that the channel is
+// never idle between frames, and small enough that the kernel socket buffer is
+// not asked to hold a whole mod.
 const defaultFlowControlThreshold = 2 * DefaultChunkSize
 
-// Config describes how a peer connection is built.
-//
-// It is a value rather than a set of constructor options because the same
-// configuration is needed twice per share — once for the offer, once for the
-// answer — and threading eight arguments through both call sites is how they
-// drift apart.
+// Config describes how a peer connection is built. It is a value rather than a
+// set of constructor options because the same configuration is needed twice per
+// share — once for the offer, once for the answer — and threading eight
+// arguments through both call sites is how they drift apart.
 type Config struct {
 	PionLogger          logging.LeveledLogger
 	STUNServers         []string
@@ -77,18 +67,15 @@ type Config struct {
 const DefaultGatherTimeout = 2 * time.Minute
 
 // DefaultConnectionTimeout bounds how long a session waits for the data channel
-// to open after both descriptions are in place. ICE keeps trying in the
-// background — a user who has a link pasted to them while on a VPN may need a
-// while — so this is generous rather than tight, and it only fails the session
-// rather than the process.
+// to open after both descriptions are in place. Generous because ICE keeps
+// trying in the background and a user who has a link pasted to them while on a
+// VPN may need a while; failing here only fails the session, not the process.
 const DefaultConnectionTimeout = 3 * time.Minute
 
-// withDefaults returns a copy of c with every unset field filled in.
-//
-// A copy rather than mutation: the same Config is often held by a share service
-// for the lifetime of the process and handed to several peers, so filling in
-// defaults in place would let one peer's connection attempt reshape the next
-// one's settings.
+// withDefaults returns a copy of c with every unset field filled in. A copy
+// rather than mutation, because a share service holds one Config for the life of
+// the process and hands it to several peers, so filling defaults in place would
+// let one peer's connection attempt reshape the next one's settings.
 func (c Config) withDefaults() Config {
 	out := c
 
@@ -124,10 +111,9 @@ func (c Config) withDefaults() Config {
 }
 
 // Validate reports the first problem with the configuration, if there is one.
-//
-// It is called once per share rather than per peer, so that a bad STUN URL is
-// reported as "that STUN server is not a URL" before any link exists rather
-// than as an opaque ICE failure ten seconds after the user clicked share.
+// It runs once per share rather than per peer, so a bad STUN URL is reported
+// before any link exists instead of as an opaque ICE failure ten seconds after
+// the user clicked share.
 func (c Config) Validate() error {
 	for _, raw := range c.STUNServers {
 		if err := validateICEURL(raw, "stun", "stuns"); err != nil {
@@ -141,10 +127,8 @@ func (c Config) Validate() error {
 		}
 	}
 
-	// An inverted port range is not rejected: withDefaults swaps the bounds
-	// before the peer is built, so the outcome is well defined either way and a
-	// user who typed the two the wrong way round should get a working share
-	// rather than an error message about a setting they cannot see.
+	// An inverted port range is not rejected: withDefaults swaps the bounds, so a
+	// user who typed the two the wrong way round still gets a working share.
 
 	if c.ChunkSize < 0 {
 		return fmt.Errorf("%w: chunk size %d is negative", ErrInvalidConfig, c.ChunkSize)
@@ -163,21 +147,18 @@ func (c Config) Validate() error {
 }
 
 // ErrInvalidConfig reports a configuration that cannot produce a working
-// connection. It is a sentinel because every caller maps it onto the same
-// error code: a share the user misconfigured is an argument problem, not a
-// network problem, and the two should not read the same in a log.
+// connection. It is a sentinel because every caller maps it onto the same error
+// code: a share the user misconfigured is an argument problem, not a network
+// problem, and the two should not read the same in a log.
 var ErrInvalidConfig = errors.New("p2p: invalid configuration")
 
-// validateICEURL checks one STUN or TURN URL.
-//
-// Two things make this more than a url.Parse. First, the scheme is checked by
-// hand, because url.Parse is perfectly happy with "http://example.com" and ICE
-// is not — pion would then fail much later with a message about a malformed
-// server URL that names neither the setting the user changed nor the value they
-// typed. Second, the host is read from Opaque rather than Host: ICE URLs are
-// scheme-colon-authority with no "//", so "stun:stun.example.test:3478" parses
-// with everything after the scheme in Opaque and an empty Host. Checking Host
-// would reject every URL that actually works.
+// validateICEURL checks one STUN or TURN URL. Two things make this more than a
+// url.Parse. The scheme is checked by hand, because url.Parse is happy with
+// "http://example.com" and ICE is not, and pion would then fail much later with a
+// message naming neither the setting the user changed nor the value they typed.
+// The host is read from Opaque rather than Host, because ICE URLs are
+// scheme-colon-authority with no "//" and checking Host would reject every URL
+// that actually works.
 func validateICEURL(raw string, schemes ...string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -206,9 +187,7 @@ func validateICEURL(raw string, schemes ...string) error {
 }
 
 // iceHost extracts the authority from an ICE URL, whichever field url.Parse put
-// it in.
-//
-// Both forms are accepted because a user who writes "stuns://stun.example.test"
+// it in. Both forms are accepted: a user who writes "stuns://stun.example.test"
 // out of habit from https produces a perfectly valid ICE URL that lands in Host
 // instead of Opaque, and rejecting it would be pedantry rather than safety.
 func iceHost(parsed *url.URL) string {

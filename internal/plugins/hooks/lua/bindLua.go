@@ -11,8 +11,8 @@ import (
 )
 
 // bind exposes the restricted `dmm` surface to the script, plus print as sugar
-// over dmm.log. Nothing else is added: require and dofile are gone, io/os/
-// package are never opened, and every capability goes through the host.
+// over dmm.log. Nothing else is added: require and dofile are gone, io/os/package
+// are never opened, and every capability goes through the host.
 func bind(st *lua.LState, h *host.Host, raised *error) error {
 	dmm := st.NewTable()
 
@@ -227,8 +227,8 @@ func bindEnv(st *lua.LState, dmm *lua.LTable, h *host.Host, raised *error) {
 	st.SetField(dmm, "env", envTable)
 }
 
-// bindPrint keeps `print` working: it is the surface existing scripts know,
-// and the JavaScript binding offers the same sugar, so it stays symmetric.
+// bindPrint keeps `print` working: it is the surface existing scripts know, and
+// the JavaScript binding offers the same sugar.
 func bindPrint(st *lua.LState, h *host.Host) {
 	st.SetGlobal("print", st.NewFunction(func(s *lua.LState) int {
 		h.Log("info", joinArgs(s))
@@ -310,9 +310,8 @@ func toLValue(st *lua.LState, value any) lua.LValue {
 
 		return table
 	default:
-		// DirEntry/FileInfo/StorageEntry and other host structs arrive here
-		// through a JSON round trip in the caller; this branch only sees
-		// unexpected shapes, and formatting them is better than panicking.
+		// Host structs arrive here through the caller's JSON round trip; this branch
+		// only sees unexpected shapes, and formatting them beats panicking.
 		return lua.LString(fmt.Sprintf("%v", typed))
 	}
 }

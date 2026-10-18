@@ -120,11 +120,8 @@ func newCachePruneCommand(s *session) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The cache is measured on both sides of the prune so the message can
-			// report what was removed. Reporting the size afterwards as though it
-			// were the size removed claimed that a prune which freed nothing had
-			// freed everything, which is the one thing this command is asked to
-			// answer.
+			// Measured on both sides so the message can report what was removed;
+			// the size afterwards would claim a prune that freed nothing had freed all.
 			before, err := client.GetCacheInfo(cmd.Context())
 			if err != nil {
 				return err

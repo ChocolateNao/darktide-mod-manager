@@ -14,9 +14,7 @@ import (
 )
 
 func TestFactoryIDsListsEveryRegisteredProvider(t *testing.T) {
-	// Adding a provider means adding a file, and the picker renders this list.
-	// A provider that registers itself but is missing here would silently never
-	// be offered to a user.
+	// The picker renders this list, so a provider missing here is never offered.
 	assert.Equal(t, []string{"dropbox", "gdrive", "onedrive", "s3"}, FactoryIDs())
 }
 
@@ -74,7 +72,7 @@ func TestBuildRefusesAProviderMissingItsRequiredFields(t *testing.T) {
 }
 
 func TestBuildRejectsAnIncompleteS3Settings(t *testing.T) {
-	// The bucket is what an upload is aimed at; naming only credentials leaves
+	// The bucket is what an upload is aimed at, so credentials alone leave
 	// nowhere to put anything.
 	_, err := Build(s3.ProviderID, map[string]string{
 		"endpoint":   "s3.example.com",
@@ -86,9 +84,8 @@ func TestBuildRejectsAnIncompleteS3Settings(t *testing.T) {
 }
 
 func TestProviderErrorsNeverCarryCredentials(t *testing.T) {
-	// A refusal has to be actionable without repeating the secret back. This is
-	// the check that keeps a client secret out of an error string, which ends up
-	// in a log line and then in a support ticket.
+	// A refusal has to be actionable without quoting the secret back, since the
+	// error ends up in a log line and then in a support ticket.
 	secret := "super-secret-value"
 
 	for _, opts := range []map[string]string{

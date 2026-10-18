@@ -37,11 +37,10 @@ type workspace struct {
 
 // newWorkspace points every platform directory at one temporary tree.
 //
-// This is not tidiness. pkg/api's wiring calls platform.CurrentDirs() before it
-// looks at any option, so a test that supplies only some paths still reads the
-// user's real configuration file for the rest — and a test with no paths at all
-// would write to it. Every variable platform.ResolveDirs consults is set, so the
-// same test passes whichever platform it runs on.
+// This is not tidiness: pkg/api calls platform.CurrentDirs() before it looks at
+// any option, so a test supplying only some paths still reads the user's real
+// configuration file for the rest — and one with no paths at all would write to
+// it.
 func newWorkspace(t *testing.T) *workspace {
 	t.Helper()
 
@@ -58,8 +57,7 @@ func newWorkspace(t *testing.T) *workspace {
 	w.configPath = filepath.Join(home, "config", "config.json")
 	w.cacheRoot = filepath.Join(home, "cache")
 	// The database is derived as the parent of the storage root plus mods.db, so
-	// the storage folder gets a parent of its own rather than being the data
-	// folder itself.
+	// the storage folder gets a parent of its own.
 	w.storageRoot = filepath.Join(home, "data", "mods")
 	w.databasePath = filepath.Join(home, "data", "mods.db")
 	w.gameDir = filepath.Join(home, "game")
@@ -79,9 +77,8 @@ func (w *workspace) options() Options {
 	}
 }
 
-// makeGame builds a folder the detector accepts as a game installation. It
-// needs Darktide.exe, a data folder and a mods folder; the mods folder is what
-// an install is deployed into, and its absence is what stops a mod from being
+// makeGame builds a folder the detector accepts as an installation. The mods
+// folder is what an install is deployed into, so its absence stops a mod being
 // enabled automatically.
 func (w *workspace) makeGame(t *testing.T) {
 	t.Helper()
@@ -271,10 +268,8 @@ func TestNewContainerWiresEveryService(t *testing.T) {
 		"CleanupFuncs is empty; nothing would release the database",
 	)
 
-	// The client must wrap the very same services, not a second set built the
-	// same way. Two graphs is the exact failure this package exists to prevent,
-	// and it is invisible until a mod installed through one is missing from the
-	// other.
+	// The client must wrap the very same services: two graphs stay invisible until a
+	// mod installed through one is missing from the other.
 	deps := container.Client.Services()
 	assert.Equal(
 		t,
@@ -384,9 +379,8 @@ func TestNewContainerUsesTheSuppliedPaths(t *testing.T) {
 		w.databasePath,
 	)
 
-	// The database must sit beside the payload tree, not inside it: the local
-	// source scans folders, and a database among the mod folders would be
-	// offered to the user as a mod.
+	// The database sits beside the payload tree: the local source scans folders and
+	// would offer a database file to the user as a mod.
 	assert.True(
 		t,
 		strings.HasPrefix(container.DatabasePath, filepath.Dir(container.StorageRoot)),
@@ -416,15 +410,12 @@ func TestNewContainerFallsBackToThePlatformDirectories(t *testing.T) {
 	dirs, err := platform.CurrentDirs()
 	require.NoError(t, err, "platform.CurrentDirs")
 
-	// No paths at all: every location must come from the platform, and the
-	// configuration file that has not been written yet must be reported from the
-	// place it would be created.
+	// Every location comes from the platform, and the unwritten configuration file is
+	// reported from where it would be created.
 	container := mustContainer(t, context.Background(), Options{})
 
-	// The configuration keeps the user's own (empty) paths — the manager does not
-	// rewrite the file behind their back — and the resolved locations are on the
-	// container instead. A caller reading Config.Cache.Path gets what the user
-	// asked for; a caller reading CacheRoot gets where the archives really are.
+	// The file keeps the user's own empty paths; the resolved locations live on the
+	// container, where CacheRoot is where the archives really are.
 	assert.Equal(
 		t,
 		"",
@@ -466,9 +457,8 @@ func TestNewContainerIgnoresBlankPaths(t *testing.T) {
 	dirs, err := platform.CurrentDirs()
 	require.NoError(t, err, "platform.CurrentDirs")
 
-	// A path that is nothing but spaces is no opinion, not a folder named " ".
-	// Passing it as one would either fail (a path that does not exist) or, worse,
-	// replace the user's own configuration with a default.
+	// An all-spaces path is no opinion, not a folder: passing one would replace the
+	// user's own configuration with a default.
 	container := mustContainer(t, context.Background(), Options{
 		ConfigPath:  "   ",
 		CachePath:   "\t",
@@ -510,8 +500,8 @@ func TestNewContainerPersistsAValidGamePath(t *testing.T) {
 		container.Config.ActiveSettings().Path,
 		w.gameDir,
 	)
-	// And on disk, so the next launch — the CLI's, say — starts from the same
-	// answer instead of re-detecting.
+	// And on disk, so the next launch starts from the same answer instead of
+	// re-detecting.
 	reloaded := storage.NewConfigStore(w.configPath)
 
 	cfg, err := reloaded.Load()
@@ -553,9 +543,8 @@ func TestNewContainerRejectsAnInvalidGamePath(t *testing.T) {
 
 	assert.Nil(t, container, "a container was returned alongside the error")
 
-	// Nothing may be left behind. The database and the cache are opened before
-	// the game path is validated, and a failure here has to release them or the
-	// next launch finds a stale lock and a stale cache directory.
+	// The cache and database are opened before the game path is validated; a failure
+	// here must release them or the next launch finds a stale lock.
 	_, err = os.Stat(w.databasePath)
 	assert.Error(t, err, "%s was created by a failed start-up", w.databasePath)
 
@@ -603,9 +592,8 @@ func TestNewContainerConfiguresTheSourcesItIsGiven(t *testing.T) {
 
 	container := mustContainer(t, context.Background(), opts)
 
-	// Read from the container's configuration, not the client's: the client's
-	// GetConfig reads the file, and source options are deliberately not written
-	// back to it. Container.Config is the merged view that is actually in force.
+	// Read from the container's config, not the client's: the client's GetConfig reads
+	// the file, and source options are deliberately not written back to it.
 	block, ok := container.Config.SourceConfigFor("local")
 	require.True(t, ok, "the local source has no configuration block")
 
@@ -623,10 +611,8 @@ func TestNewContainerConfiguresTheSourcesItIsGiven(t *testing.T) {
 func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 	w := newWorkspace(t)
 
-	// A source whose construction fails is exactly what a half-filled credential
-	// block looks like. The manager must still start: refusing to launch because
-	// one optional plugin is unhappy would make the settings screen — the place
-	// the user would go to fix it — unreachable.
+	// One unhappy optional plugin must not stop launch, or the settings screen
+	// becomes unreachable.
 	const brokenID = "di-test-broken"
 	if err := services.RegisterSourceFactory(
 		brokenID,
@@ -644,10 +630,9 @@ func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 
 	container := mustContainer(t, context.Background(), opts)
 
-	// Read from the log rather than from the diagnostic logger. A source that
-	// cannot be configured is not a start-up failure — the app is running — so it
-	// is a warning, and warnings go to the log file where a user with the same
-	// broken credentials next month will still find them.
+	// Read from the log rather than from the diagnostic logger: a source that cannot
+	// be configured is a warning, and warnings belong in the file where a user with
+	// the same broken credentials next month will still find them.
 	reported := readLogFile(t, container.Logging.Directory())
 	require.NotEqual(t, "", reported, "a source that failed to configure was not reported anywhere")
 
@@ -663,8 +648,7 @@ func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 }
 
 // readLogFile returns the contents of dir's dmm.log. A directory with no log in
-// it reads as empty rather than failing: the assertion the caller is about to
-// make is about what is missing, and a hard error here would hide that.
+// it reads as empty: the assertion about to be made is about what is missing.
 func readLogFile(t *testing.T, dir string) string {
 	t.Helper()
 
@@ -688,9 +672,8 @@ func TestContainerDeliversEventsToTheSuppliedHandler(t *testing.T) {
 
 	container := mustContainer(t, context.Background(), opts)
 
-	// Clearing an empty cache is the cheapest operation in the manager that
-	// still publishes, which makes it a good probe: if the handler were wired to
-	// a different bus, or to none, this is where it would show.
+	// Clearing an empty cache is the cheapest operation that still publishes, so if
+	// the handler were wired to a different bus this is where it would show.
 	err := container.Client.ClearCache(context.Background())
 	require.NoError(t, err, "ClearCache: %v", err)
 
@@ -706,10 +689,8 @@ func TestContainerDeliversEventsToTheSuppliedHandler(t *testing.T) {
 func TestContainerInstallsThroughItsOwnPaths(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
-	// The name matters: the local source derives a mod's identity from the file
-	// name of an archive, and it strips a trailing " 1.2.0" from it. An
-	// underscore-separated name ("better_ui_1.2.0.zip") would keep the version in
-	// the id instead, which is why the fixture uses a space.
+	// The local source derives identity from the file name and strips a trailing
+	// " 1.2.0", so an underscore-separated name would keep the version in the id.
 	w.writeModArchive(t, "better_ui", "1.2.0")
 
 	w.saveConfig(t, func(cfg *domain.Config) {
@@ -804,9 +785,8 @@ func TestContainerCloseIsIdempotent(t *testing.T) {
 }
 
 func TestContainerCloseOnNothingIsNotAFailure(t *testing.T) {
-	// A caller that defers the close and ignores the construction error holds a
-	// nil container. Reporting an error there would force a nil check in front of
-	// a defer that can only ever be right.
+	// A caller that defers the close and ignores the construction error holds a nil
+	// container, so an error here would only force a nil check.
 	var container *Container
 
 	err := container.Close()
@@ -889,9 +869,8 @@ func TestOptionsMapOntoAPIOptions(t *testing.T) {
 	)
 
 	// Blank paths are no opinion at all, so they contribute nothing. The logging
-	// options are the exception: they are the whole of the defaults rather than an
-	// override, and an unset option would leave pkg/api to guess what the logging
-	// configuration file says.
+	// options are the exception: they are the defaults rather than an override,
+	// and an unset option would leave pkg/api to guess what the config file says.
 	blank := Options{ConfigPath: "  ", CachePath: "\t"}
 
 	got, err = blank.apiOptions()
@@ -916,10 +895,8 @@ func TestOptionsRejectABlankSourceID(t *testing.T) {
 }
 
 func TestOptionsMapSourcesInASortedOrder(t *testing.T) {
-	// The mapping cannot be inspected from here — api.Option is opaque — so the
-	// order is pinned by its effect instead: eight runs over the same map must
-	// build the same options in the same order, which is what makes two start-up
-	// logs comparable.
+	// api.Option is opaque, so order is pinned by effect: eight runs over the same map
+	// must build the same options.
 	opts := Options{SourceConfigs: map[string]map[string]any{
 		"vortex": nil, "local": nil, "nexus": nil, "github": nil,
 	}}
@@ -1005,9 +982,8 @@ func TestNewContainerRegistersTheBundledSources(t *testing.T) {
 	w := newWorkspace(t)
 	container := mustContainer(t, context.Background(), w.options())
 
-	// Membership, not a count: the three bundled sources are announced by their
-	// packages' init functions, and a test that counted them would fail every
-	// time somebody adds a fourth — which is a feature, not a bug.
+	// Membership, not a count: the bundled sources are announced by their packages'
+	// init functions, and a count would fail every time somebody adds a fourth.
 	registered := make([]string, 0, 3)
 
 	for _, want := range []string{"github", "local", "nexus"} {
@@ -1089,16 +1065,14 @@ func TestContainerFieldsSurviveAReloadOfTheConfiguration(t *testing.T) {
 }
 
 func TestContainerIsUsableFromMoreThanOnePlatform(t *testing.T) {
-	// The container holds no platform-specific state of its own, so a test that
-	// ran on another platform must behave the same. The one thing worth checking
-	// is that the deployer it inherited is the one the platform asked for.
+	// The container holds no platform-specific state, so only the deployer it
+	// inherited is worth checking.
 	w := newWorkspace(t)
 	container := mustContainer(t, context.Background(), w.options())
 
 	if _, err := container.Client.GetModsPath(context.Background(), nil); err != nil {
-		// With no game configured there is nothing to resolve, and the error is
-		// the point: the call reached the real locator rather than panicking on a
-		// half-built graph.
+		// The error is the point: the call reached the real locator rather than
+		// panicking on a half-built graph.
 		assert.True(
 			t,
 			appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound),

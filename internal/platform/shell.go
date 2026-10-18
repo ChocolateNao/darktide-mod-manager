@@ -26,10 +26,9 @@ func (s Shell) Command(script string) *exec.Cmd {
 	return exec.Command(s.Name, append(append([]string{}, s.Args...), script)...)
 }
 
-// CommandContext renders the invocation for a script or inline command and
-// binds it to ctx, so cancelling the context kills the process instead of leaving
-// it running. Callers that only need to inspect the invocation should use
-// Command.
+// CommandContext binds the invocation to ctx, so cancelling the context kills
+// the process instead of leaving it running. Callers that only need to inspect
+// the invocation should use Command.
 func (s Shell) CommandContext(ctx context.Context, script string) *exec.Cmd {
 	if ctx == nil {
 		ctx = context.Background()
@@ -71,8 +70,7 @@ type LookPath func(file string) (string, error)
 
 // GetShell returns the shell used to run inline hook commands for a platform.
 // Windows prefers PowerShell 7 when present, because it behaves like the POSIX
-// shells the hook documentation is written against; elsewhere the POSIX shell
-// is used.
+// shells the hook documentation is written against.
 func GetShell(p domain.Platform, look LookPath) Shell {
 	if look == nil {
 		look = exec.LookPath
@@ -197,10 +195,9 @@ func ReadShebang(scriptPath string) (string, error) {
 }
 
 // ParseShebang turns an interpreter line into a Shell invocation. Both
-// "/bin/bash -e" and "/usr/bin/env bash" forms are understood, as is env's
-// "-S" split form. An empty or malformed line is an error rather than a silent
-// fallback, because running a script with the wrong interpreter produces
-// baffling failures.
+// "/bin/bash -e" and "/usr/bin/env bash" forms are understood, as is env's "-S"
+// split form. A malformed line is an error rather than a silent fallback,
+// because running a script with the wrong interpreter produces baffling failures.
 func ParseShebang(line string) (Shell, error) {
 	trimmed := strings.TrimSpace(line)
 	if trimmed == "" {
@@ -236,10 +233,8 @@ func ParseShebang(line string) (Shell, error) {
 		return Shell{Name: program, Args: args}, nil
 	}
 
-	// env form. Leading option flags belong to env itself. "-S" takes one word
-	// as a string to split — normally the interpreter on its own — and every word
-	// after that word is passed through to the interpreter. Without "-S" the
-	// first non-flag word is the interpreter and the rest are its arguments.
+	// env form: "-S" splits one word and passes the rest to the interpreter;
+	// without it the first non-flag word is the interpreter.
 	rest := args
 	for len(rest) > 0 && isFlag(rest[0]) {
 		switch {

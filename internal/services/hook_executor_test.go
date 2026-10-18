@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------- test doubles
-
 // recordingRunner is a HookRunner that records what it was handed and returns a
 // canned result. It also implements LanguageTyper so it can go through Register.
 type recordingRunner struct {
@@ -115,8 +113,6 @@ func (c *collectingEvents) types() []EventType {
 	return out
 }
 
-// ------------------------------------------------------------------- fixtures
-
 func hookMod(dir string) *domain.Mod {
 	return &domain.Mod{
 		ID:        "better_ui",
@@ -166,8 +162,6 @@ func envValue(env []string, name string) (string, bool) {
 
 	return "", false
 }
-
-// ------------------------------------------------------- construction / config
 
 func TestNewHookExecutorAppliesDefaultTimeout(t *testing.T) {
 	h := NewHookExecutor(HookExecutorDeps{})
@@ -253,8 +247,6 @@ func TestNewHookExecutorNilLookPathIsReplaced(t *testing.T) {
 	require.NotNil(t, h.lookPath, "lookPath left nil")
 }
 
-// -------------------------------------------------------------------- timeout
-
 func TestTimeoutUsesDefaultWhenUnset(t *testing.T) {
 	h := NewHookExecutor(
 		HookExecutorDeps{
@@ -303,7 +295,7 @@ func TestTimeoutRaisesShorterThanDefaultToFloor(t *testing.T) {
 }
 
 // A permission cap below the floor still wins: the ceiling is the effective
-// upper bound in every case (§3.7).
+// upper bound in every case.
 func TestTimeoutCapOverridesLargerDeclaredValue(t *testing.T) {
 	h := NewHookExecutor(
 		HookExecutorDeps{
@@ -372,8 +364,6 @@ func TestTimeoutClampsPastHardCeiling(t *testing.T) {
 		assert.Equal(t, 30*time.Second, got, "default timeout = %s, want 30s", got)
 	}
 }
-
-// ------------------------------------------------------------------ validation
 
 func TestValidateRejectsUnknownType(t *testing.T) {
 	_, modDir := newGameDirs(t)
@@ -491,8 +481,8 @@ func TestValidateAcceptsEmptyEnvEntryInList(t *testing.T) {
 
 func TestValidateNilModIsFineForCommand(t *testing.T) {
 	h := newExecutor(t)
-	// A command hook with no mod folder and no game path has nothing to
-	// validate against, but it is still a legal hook (a global maintenance script).
+	// A command hook with no mod folder and no game path has nothing to validate
+	// against, but it is still a legal hook (a global maintenance script).
 	{
 		err := h.Validate(
 			domain.HookScript{Language: domain.LangLua, Content: "echo hi"},
@@ -501,8 +491,6 @@ func TestValidateNilModIsFineForCommand(t *testing.T) {
 		assert.NoError(t, err, "validate with nil mod: %v", err)
 	}
 }
-
-// --------------------------------------------------------------- working dir
 
 func TestWorkingDirDefaultsToModFolder(t *testing.T) {
 	game, modDir := newGameDirs(t)
@@ -706,8 +694,6 @@ func TestWorkingDirCannotResolveWithoutAnyRoot(t *testing.T) {
 	)
 }
 
-// ---------------------------------------------------------------------- env
-
 func TestEnvForwardsOnlyAllowlistedVariables(t *testing.T) {
 	t.Setenv("DMM_ALLOWED_FIXTURE", "yes")
 	t.Setenv("DMM_SECRET_TOKEN", "hunter2")
@@ -827,8 +813,6 @@ func TestEnvSkipsInheritedVariablesThatAreSetButEmpty(t *testing.T) {
 		)
 	}
 }
-
-// ------------------------------------------------------------------- registry
 
 func TestRegisterUsesLanguageTyper(t *testing.T) {
 	h := newExecutor(t)
@@ -983,8 +967,6 @@ func TestRunnerLanguagesEmptyIsNotNil(t *testing.T) {
 		)
 	}
 }
-
-// ------------------------------------------------------------------- execute
 
 func TestExecuteRunsScriptsInOrder(t *testing.T) {
 	game, modDir := newGameDirs(t)
@@ -1231,9 +1213,8 @@ func TestExecuteReportsTimeoutWhenRunnerOutlivesDeadline(t *testing.T) {
 	}
 }
 
-// A cancelled parent is the caller's doing, so it must be reported as an
-// operation cancellation rather than as a hook that ran too long — the two mean
-// very different things to whoever retried.
+// A cancelled parent is the caller's doing, so it is reported as an operation
+// cancellation rather than as a hook that ran too long.
 func TestExecuteReportsCancellationWhenParentCanceled(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	r := &recordingRunner{language: domain.LangLua, waitCtx: true}
@@ -1334,8 +1315,6 @@ func TestExecuteOnNilExecutor(t *testing.T) {
 	)
 }
 
-// ---------------------------------------------------------------- execute phase
-
 func TestExecutePhaseRunsOnlyThatPhase(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	r := &recordingRunner{language: domain.LangLua}
@@ -1418,8 +1397,6 @@ func TestExecutePhaseCoversEveryPhase(t *testing.T) {
 		)
 	}
 }
-
-// -------------------------------------------------------------------- context
 
 func TestPreparePopulatesHookContext(t *testing.T) {
 	game, modDir := newGameDirs(t)
@@ -1526,8 +1503,6 @@ func TestPrepareCarriesResolvedValues(t *testing.T) {
 		"permissions should be resolved at prepare time",
 	)
 }
-
-// ---------------------------------------------------------------------- events
 
 func TestExecutePublishesStartedAndFinished(t *testing.T) {
 	_, modDir := newGameDirs(t)
@@ -1647,11 +1622,8 @@ func TestExecuteWithoutEventSinkDoesNotPanic(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- concurrency
-
 // Registering while hooks run must not race: the map is guarded, and a hook
-// dispatched mid-swap must land on either the old or the new runner, never
-// neither.
+// dispatched mid-swap lands on either the old or the new runner, never neither.
 func TestRegisterDuringExecuteIsRaceFree(t *testing.T) {
 	game, modDir := newGameDirs(t)
 	first := &recordingRunner{language: domain.LangLua}
@@ -1724,8 +1696,6 @@ func TestRunnerIsInvokedUnderTestWithoutRace(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------- allowlist doc
-
 // The allowlist is the manager's security boundary; a test pins its contents so
 // adding a variable is a deliberate act rather than an accident.
 func TestHookEnvAllowlistHasNoSecrets(t *testing.T) {
@@ -1763,8 +1733,6 @@ func TestHookEnvAllowlistSetMatchesList(t *testing.T) {
 		)
 	}
 }
-
-// ------------------------------------------------------------------- platform
 
 // The executor stores the platform it was built for, so hooks written for a
 // Windows install keep working when the tests run on Linux.

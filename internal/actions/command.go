@@ -16,9 +16,8 @@ import (
 // CommandSpec is one external program invocation.
 //
 // It is a struct rather than a long argument list because the three ways a
-// command can be run — directly, through an interpreter, from a specific working
-// directory — are variations of the same call, and passing a dozen positional
-// strings to express one of them invites the wrong order at the call site.
+// command can be run — directly, through an interpreter, from a working
+// directory — are variations of one call.
 type CommandSpec struct {
 	Path  string
 	Dir   string
@@ -37,8 +36,8 @@ type CommandOutput struct {
 func (o CommandOutput) Succeeded() bool { return o.ExitCode == 0 }
 
 // Combined returns stdout and stderr in one string, which is what a result
-// message usually wants: a user reading "the action failed" should not have to
-// know which stream the tool preferred.
+// message usually wants: a user should not have to know which stream a tool
+// preferred.
 func (o CommandOutput) Combined() string {
 	switch {
 	case strings.TrimSpace(o.Stderr) == "":
@@ -52,9 +51,7 @@ func (o CommandOutput) Combined() string {
 
 // CommandRunner executes a script action's command line.
 //
-// The interface exists so the runner can be tested without launching anything:
-// the tests assert on the spec that would have been run, not on the behaviour of
-// whatever program happens to be installed on the developer's machine.
+// The interface exists so the runner can be tested without launching anything.
 type CommandRunner interface {
 	Run(ctx context.Context, spec CommandSpec) (CommandOutput, error)
 }
@@ -74,10 +71,9 @@ func NewExecRunner() *ExecRunner { return &ExecRunner{} }
 
 // Run executes the command and captures both output streams.
 //
-// Two deliberate choices: no shell, so a mod name in an argument can never become
-// a command; and a non-zero exit is reported as an error *and* returned as
-// output, because a tool's diagnostic text is usually the only useful part of
-// its failure and a caller that only saw the error would have nothing to show.
+// No shell, so a mod name in an argument can never become a command; and a
+// non-zero exit is reported as an error *and* returned as output, because a
+// tool's diagnostic text is usually the only useful part of its failure.
 func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -152,9 +148,8 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, 
 
 // discardCommandRunner refuses to run anything.
 //
-// It is the default for a runner that was built without one, so a mis-wired
-// composition root produces a clear "no runner" error rather than a panic or a
-// silent success.
+// It is the default for a runner built without one, so a mis-wired composition
+// root produces a clear "no runner" error rather than a panic.
 type discardCommandRunner struct{}
 
 // ErrNoCommandRunner is returned when a script action is run without a runner.
@@ -168,17 +163,15 @@ func (discardCommandRunner) Run(context.Context, CommandSpec) (CommandOutput, er
 // captureLogger collects what a handler logged so the result can carry it.
 //
 // A handler's progress text is otherwise lost: the CLI writes it to the terminal
-// and the frontend has nowhere to put it. Buffering it into the result is what
-// lets one implementation serve both. The buffer is bounded because the caller
-// controls what runs: a tool that prints a download log must not be able to grow
-// a result without limit.
+// and the frontend has nowhere to put it. The buffer is bounded because the
+// caller controls what runs.
 type captureLogger struct {
 	sb   *strings.Builder
 	Echo domain.ActionLogger
 	// limit is the number of characters retained; lines past it are echoed but
 	// dropped, and the truncation is announced once.
 	limit int
-	// dropped counts the characters discarded, so the result can say so rather
+	// dropped counts the discarded characters, so the result can say so rather
 	// than presenting a silently shortened log as complete.
 	dropped int
 	// announced records that the truncation notice has already been logged.

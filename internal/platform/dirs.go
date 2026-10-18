@@ -1,11 +1,9 @@
-// Package platform answers every "what does the host operating system do?"
-// question the rest of the backend needs: where the config/data/cache
-// directories live, which shell runs a hook, how a mod folder is exposed to
-// the game, and where a Darktide installation might be hiding.
+// Package platform answers every "what does the host operating system do?" question the rest of
+// the backend needs: where the config/data/cache directories live, which shell runs a hook, how
+// a mod folder reaches the game, and where an installation might be hiding.
 //
-// Nothing in this package reads global process state implicitly. The platform,
-// the home directory and the environment are injected, so all behaviour —
-// including Windows and macOS behaviour — is reachable from tests on any host.
+// Nothing here reads global process state implicitly — platform, home directory and environment
+// are injected, so Windows and macOS behaviour is reachable from tests on any host.
 package platform
 
 import (
@@ -39,12 +37,10 @@ type AppDirs struct {
 	Logs string
 }
 
-// ResolveDirs computes the application directories for a platform.
-//
-// Resolution follows each platform's convention: Known Folders on Windows,
-// Application Support on macOS, the XDG Base Directory spec elsewhere. When an
-// environment variable is unset or empty the documented fallback under the home
-// directory is used, so the manager still works with a bare environment.
+// ResolveDirs computes the application directories for a platform: Known Folders
+// on Windows, Application Support on macOS, the XDG Base Directory spec
+// elsewhere. A blank environment variable falls back to the documented location
+// under the home directory, so a bare environment still resolves.
 func ResolveDirs(p domain.Platform, home string, getenv Env) (AppDirs, error) {
 	if getenv == nil {
 		getenv = func(string) string { return "" }
@@ -87,9 +83,8 @@ func ResolveDirs(p domain.Platform, home string, getenv Env) (AppDirs, error) {
 		dirs.Config = xdgPath(getenv, "XDG_CONFIG_HOME", home, ".config")
 		dirs.Data = xdgPath(getenv, "XDG_DATA_HOME", home, ".local", "share")
 		dirs.Cache = xdgPath(getenv, "XDG_CACHE_HOME", home, ".cache")
-		// XDG_STATE_HOME is the spec's home for state that should persist but
-		// need not be synced or backed up, which is exactly what a log is. It is
-		// newer than the variables above, so ~/.local/state is the fallback.
+		// A log belongs under XDG_STATE_HOME, which is newer than the variables
+		// above, so ~/.local/state is the fallback.
 		dirs.Logs = xdgPath(getenv, "XDG_STATE_HOME", home, ".local", "state")
 		dirs.Logs = domain.JoinPath(dirs.Logs, "logs")
 	}
@@ -171,11 +166,10 @@ func envPath(getenv Env, key, home string, fallback ...string) string {
 	return domain.JoinPath(append([]string{home}, fallback...)...)
 }
 
-// xdgPath applies the XDG Base Directory spec: use the variable when it holds an
-// absolute path, otherwise use the specified fallback under home. A relative
-// XDG value is ignored on purpose, since resolving it against the process
-// working directory would make the manager's data location depend on where it
-// happens to be started. AppName is always appended.
+// xdgPath applies the XDG Base Directory spec: the variable when it holds an
+// absolute path, otherwise the specified fallback under home, plus AppName. A
+// relative value is ignored on purpose, since resolving it against the working
+// directory would make the data location depend on where the manager was started.
 func xdgPath(getenv Env, key, home string, fallback ...string) string {
 	base := envPath(getenv, key, home, fallback...)
 	if base == "" {
@@ -186,9 +180,8 @@ func xdgPath(getenv Env, key, home string, fallback ...string) string {
 }
 
 // looksAbsolute reports whether a path is absolute under either this host's
-// rules or Windows' rules. Windows detection is needed because a config written
-// on Windows is inspected on Linux when the storage is shared, and because tests
-// for Windows directory layouts run on Unix hosts.
+// rules or Windows' rules: a Windows config is inspected on Linux when the
+// storage is shared, and Windows layouts are tested on Unix hosts.
 func looksAbsolute(p string) bool {
 	if p == "" {
 		return false

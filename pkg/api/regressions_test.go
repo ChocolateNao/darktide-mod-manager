@@ -48,9 +48,8 @@ func TestSourceInfoReportsAnUnknownSource(t *testing.T) {
 		"error = %v, want INVALID_ARGUMENT for a blank id",
 		err,
 	)
-	// The bundled sources are all registered by the time the api package is
-	// loaded, so one of them has to be described — otherwise the refusal above
-	// would be the only answer this method ever gives.
+	// A bundled source is always registered by the time the api package loads, so
+	// this call can never be the refusal above.
 	_, err = client.SourceInfo(t.Context(), "local")
 	assert.NoError(t, err, "SourceInfo for a bundled source")
 }
@@ -94,9 +93,7 @@ func TestSetConfigValueNamesTheFailingKey(t *testing.T) {
 		{"advanced.enable_experimental", "maybe"},
 		{"cache.max_size_gb", "not a number"},
 		{"cache.max_age_days", "-4"},
-		// game.path is deliberately absent: it is a plain string, and clearing it is
-		// how a user goes back to auto-detection, so an empty value is a request
-		// rather than a mistake.
+		// An empty game.path is a request to return to auto-detection, not a mistake.
 	}
 	for _, tc := range cases {
 		err := SetConfigValue(cfg, tc.key, tc.value)

@@ -7,9 +7,8 @@ import (
 )
 
 func TestEscapeNameClosesTheQueryLiteral(t *testing.T) {
-	// Drive's query language ends a name literal at a quote. A name holding one
-	// would otherwise match everything after it in the same query, which is a
-	// far wider search than the caller asked for.
+	// Drive's query language ends a name literal at a quote, which would make a
+	// name holding one match everything after it in the same query.
 	assert.Equal(t, "mod-a.zip", escapeName("mod-a.zip"))
 	assert.Equal(t, `keep\'it`, escapeName("keep'it"))
 }

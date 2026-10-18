@@ -14,8 +14,7 @@ import (
 
 // Detector finds installations of a single registered game and validates
 // user-supplied paths. Every candidate and marker is read from the game
-// definition, so adding a game is registering its definition — no detector
-// changes.
+// definition, so adding a game is registering its definition.
 type Detector struct {
 	fs       FS
 	game     domain.GameDefinition
@@ -27,9 +26,8 @@ type Detector struct {
 }
 
 // NewDetector builds a detector for game. home may be empty, in which case it
-// is taken from the environment. extras are user-configured paths tried before
-// the built-in candidates. A nil game falls back to the built-in Darktide
-// definition, keeping single-game call sites working.
+// is taken from the environment; extras are user-configured paths tried before
+// the built-in candidates. A nil game falls back to the built-in Darktide one.
 func NewDetector(
 	game domain.GameDefinition,
 	p domain.Platform,
@@ -106,9 +104,8 @@ func (d *Detector) Platform() domain.Platform { return d.platform }
 
 // FindInstallations probes every candidate and returns the ones that look like
 // the configured game, de-duplicated by path and ordered with the most likely
-// source first. A cancelled context stops the search and yields no results.
-//
-// Individual probe failures are not fatal: half the candidates will not exist.
+// source first. A cancelled context stops the search; individual probe failures
+// are not fatal, because half the candidates will not exist.
 func (d *Detector) FindInstallations(ctx context.Context) ([]domain.GameInstallation, error) {
 	d.init()
 

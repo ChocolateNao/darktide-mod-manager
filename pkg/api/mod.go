@@ -9,12 +9,10 @@ import (
 )
 
 // Aliases for the service-layer value types that appear in this package's
-// signatures. They are aliases rather than wrappers so a caller can construct
-// and inspect one without this package being in the middle — and, more to the
-// point, so a value returned here can be passed straight back in. The underlying
-// types live in an internal package that a consumer cannot import, which is
-// exactly why the alias exists: it gives the type a name in the public API
-// without moving it.
+// signatures. They are aliases rather than wrappers so a value returned here can be
+// passed straight back in, and because the underlying types live in an internal
+// package a consumer cannot import — which is exactly what an alias fixes: it gives
+// the type a name in the public API without moving it.
 type (
 	// InstallOptions tunes InstallMod. The zero value enables the mod when a game
 	// mods folder resolves, refuses to overwrite an existing install, and keeps
@@ -36,10 +34,9 @@ type (
 	SearchQuery = domain.SearchQuery
 )
 
-// The conflict resolutions. A report names two mods, sorted, as "A" and "B";
-// which is which is available from ConflictReport.ModIDs, and the resolution
-// refers to the sorted order so a caller does not have to remember which side of
-// the report it is looking at.
+// The conflict resolutions. A report names two mods, sorted, as "A" and "B"; which
+// is which is available from ConflictReport.ModIDs, and a resolution refers to that
+// sorted order so a caller need not remember which side it is looking at.
 const (
 	// ResolutionUnset is the zero value and is refused: a caller that meant to
 	// resolve a conflict and did not say how should be told, not guessed at.
@@ -56,22 +53,20 @@ const (
 	ResolutionUninstallModB ConflictResolution = services.ResolutionUninstallModB
 )
 
-// ParseConflictResolution turns the textual form of a resolution back into the
-// value, reporting false for anything it does not recognise — including the
-// zero value, which is refused rather than guessed at.
-//
-// It is re-exported here because both entry points that need it work in terms
-// of this package: the GUI passes a resolution as a JSON string over the Wails
-// bridge and the CLI takes it as a flag argument. Accepts the spellings
-// ConflictResolution.String produces, with either a dash or an underscore and
-// any surrounding space or case.
+// ParseConflictResolution turns the textual form of a resolution back into the value,
+// reporting false for anything it does not recognise — including the zero value,
+// which is refused rather than guessed at. It is re-exported here because both entry
+// points that need it work in terms of this package: the GUI passes a resolution as a
+// JSON string over the Wails bridge and the CLI takes it as a flag argument. It
+// accepts the spellings ConflictResolution.String produces, with either a dash or an
+// underscore and any surrounding space or case.
 func ParseConflictResolution(text string) (ConflictResolution, bool) {
 	return services.ParseConflictResolution(text)
 }
 
-// mods returns the mod service, or the error to report. A client built from
-// services may legitimately have no mod service, and every operation here would
-// otherwise nil-panic at the first call.
+// mods returns the mod service, or the error to report. A client built from services
+// may legitimately have no mod service, and every operation here would otherwise
+// nil-panic at the first call.
 func (c *Client) mods() (*services.ModService, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -106,9 +101,9 @@ func (c *Client) GetMod(ctx context.Context, id string) (*Mod, error) {
 }
 
 // InstallMod downloads and installs a mod, and enables it when a game mods folder
-// resolves. The returned mod's Enabled field says which happened, because
-// installing a mod on a machine with no detected game is a perfectly normal thing
-// to do and the caller should not have to re-read the config to find out.
+// resolves. The returned mod's Enabled field says which happened: installing on a
+// machine with no detected game is a perfectly normal thing to do, and the caller
+// should not have to re-read the config to find out.
 func (c *Client) InstallMod(ctx context.Context, sourceID, modID string) (*Mod, error) {
 	svc, err := c.mods()
 	if err != nil {
@@ -213,9 +208,9 @@ func (c *Client) CancelUpdate(ctx context.Context, modID string) error {
 }
 
 // CheckModUpdates reports what is known about available updates without changing
-// anything. A source that cannot be reached leaves that mod's remote version
-// empty rather than failing the whole scan, because one unreachable provider is
-// not a reason to hide the other six updates.
+// anything. A source that cannot be reached leaves that mod's remote version empty
+// rather than failing the whole scan: one unreachable provider is no reason to hide
+// the other six updates.
 func (c *Client) CheckModUpdates(ctx context.Context) ([]ModUpdateInfo, error) {
 	svc, err := c.mods()
 	if err != nil {
@@ -253,17 +248,14 @@ func (c *Client) DetectConflicts(ctx context.Context) ([]ConflictReport, error) 
 	return svc.DetectConflicts(ctx)
 }
 
-// ResolveConflict settles one reported conflict.
+// ResolveConflict settles one reported conflict. The report is named by
+// ConflictReport.Identity() rather than passed whole, because the conflict is
+// re-detected first: a report the caller has held since the UI drew it may no longer
+// exist, and acting on a stale one — disabling a mod to fix a problem since fixed — is
+// worse than refusing. An unknown id reports ErrCodeNotFound.
 //
-// The report is named by ConflictReport.ID() rather than passed whole, because
-// the conflict is re-detected first: a report the caller has been holding since
-// the UI drew it may no longer exist, and acting on a stale one — disabling a
-// mod to fix a problem that has since been fixed — is worse than refusing. An
-// unknown id reports ErrCodeNotFound.
-//
-// how refers to the two mods in the report's sorted order. A report with only
-// one mod — a missing dependency has no second mod to blame — cannot be resolved
-// and reports ErrCodeInvalidArgument.
+// how refers to the two mods in the report's sorted order. A report with only one mod
+// — a missing dependency has no second mod to blame — reports ErrCodeInvalidArgument.
 func (c *Client) ResolveConflict(
 	ctx context.Context,
 	reportID string,

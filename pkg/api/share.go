@@ -44,11 +44,9 @@ func (c *Client) shareService() (*services.ShareService, error) {
 	return c.deps.Shares, nil
 }
 
-// CreateShare uploads mods to one or more cloud providers and returns the
-// shareable links.
-//
-// An empty providerIDs list uses the configured default provider, so a caller
-// that only knows "share this collection" does not have to learn provider ids.
+// CreateShare uploads mods to one or more cloud providers and returns the shareable
+// links. An empty providerIDs uses the configured default, so a caller that only knows
+// "share this collection" does not have to learn provider ids.
 func (c *Client) CreateShare(
 	ctx context.Context,
 	mods []Mod,
@@ -96,11 +94,9 @@ func (c *Client) GetShare(ctx context.Context, id string) (*ShareRecord, error) 
 	return svc.GetShare(ctx, id)
 }
 
-// ResolveShare previews a share: the mod names, versions, authors and total
-// size, without downloading anything.
-//
-// The preview carries the share's GameID, so a recipient can see which game a
-// share installs into before agreeing to the download.
+// ResolveShare previews a share — the mod names, versions, authors and total size,
+// without downloading anything. The preview carries the share's GameID so a recipient
+// can see which game a share installs into before agreeing to the download.
 func (c *Client) ResolveShare(ctx context.Context, link ShareLink) (*SharePreview, error) {
 	svc, err := c.shareService()
 	if err != nil {

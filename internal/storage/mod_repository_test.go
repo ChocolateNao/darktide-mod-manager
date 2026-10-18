@@ -16,12 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fixedTime is the instant the test clock reports, at millisecond precision
-// because that is what the timestamp columns store.
+// fixedTime is the pinned test clock, at millisecond precision.
 var fixedTime = time.Date(2024, 3, 4, 5, 6, 7, 891000000, time.UTC)
 
-// newRepo returns a repository over a private in-memory database whose clock is
-// pinned to fixedTime.
+// newRepo returns a repository over an in-memory database pinned to fixedTime.
 func newRepo(t *testing.T) (ModRepository, *sql.DB) {
 	t.Helper()
 	db := openMemory(t)
@@ -223,8 +221,7 @@ func TestModRepositoryRoundTripsMinimalMod(t *testing.T) {
 	got, err := repo.GetByID(context.Background(), "tiny")
 	require.NoError(t, err, "load mod")
 	// The columns store "[]" and "{}", so an absent collection reads back as an
-	// empty one. That is deliberate: empty is what callers range over, and the
-	// mod's JSON is identical either way because the fields are omitempty.
+	// empty one — empty is what callers range over, and omitempty keeps the JSON identical.
 	assert.False(
 		t,
 		len(got.Dependencies) != 0 || len(got.ConflictsWith) != 0 || len(got.Tags) != 0,

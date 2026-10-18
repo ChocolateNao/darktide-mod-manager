@@ -11,11 +11,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// stubSource is a ModSource that refuses the operations a test has not set up.
-//
-// Refusing rather than answering with a zero value is deliberate: a test that
-// wires a source and calls something it did not expect should fail loudly rather
-// than install an empty mod and pass.
+// stubSource is a ModSource that refuses operations a test has not set up, so an
+// unexpected call fails loudly.
 type stubSource struct {
 	creds    domain.AuthCredentials
 	id       string
@@ -89,14 +86,12 @@ func (s *stubSource) lastCreds() domain.AuthCredentials {
 	return s.creds
 }
 
-// noSearchSource is a source that cannot be searched, for the branch where
-// SearchSource has to say so rather than return an empty list.
+// noSearchSource is a source that cannot be searched.
 type noSearchSource struct{ stubSource }
 
 func (s *noSearchSource) SupportsSearch() bool { return false }
 
-// failingSource refuses every operation it is asked to perform, with a code the
-// test chooses.
+// failingSource refuses every operation with a code the test chooses.
 type failingSource struct {
 	code appErrors.Code
 	stubSource
@@ -123,10 +118,7 @@ var (
 	_ domain.ModSource = (*failingSource)(nil)
 )
 
-// hooksRegisterForTest wires the real hook runners onto an executor. It is a
-// helper rather than an import at the top of the file so that a test which does
-// not care about hooks does not drag the runners into its binary — the golang
-// runner in particular registers a compiled-in function under a build tag.
+// hooksRegisterForTest wires the real hook runners onto an executor.
 func hooksRegisterForTest(executor *services.HookExecutor) error {
 	return hooks.RegisterAll(executor, host.Providers{})
 }

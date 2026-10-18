@@ -10,10 +10,9 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// release is the subset of the GitHub release payload this source reads.
-// Fields the manager does not use are deliberately absent: a narrower struct
-// means an upstream rename fails loudly here instead of silently becoming a
-// zero value somewhere in the middle of the manager.
+// release is the subset of the GitHub release payload this source reads. Fields
+// the manager does not use are deliberately absent, so an upstream rename fails
+// loudly here instead of becoming a zero value somewhere mid-manager.
 type release struct {
 	TagName     string  `json:"tag_name"`
 	Name        string  `json:"name"`
@@ -34,14 +33,13 @@ type asset struct {
 	Size               int64  `json:"size"`
 }
 
-// archiveExtensions are the release asset suffixes treated as a mod payload.
-// Everything else in a release (a source zipball, a changelog, a signature, an
-// installer) is metadata rather than something to install.
+// archiveExtensions are the release asset suffixes treated as a mod payload;
+// everything else in a release is metadata rather than something to install.
 var archiveExtensions = []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".rar", ".7z"}
 
-// validRepoRef reports whether ref looks like "owner/repo": exactly one slash,
-// with a non-blank owner and repository on either side. The check exists
-// because the value goes straight into a URL path.
+// validRepoRef reports whether ref looks like "owner/repo": exactly one slash, with
+// a non-blank name on either side. The check exists because the value goes straight
+// into a URL path.
 func validRepoRef(ref string) bool {
 	trimmed := strings.TrimSpace(ref)
 	if trimmed == "" {
@@ -57,12 +55,9 @@ func validRepoRef(ref string) bool {
 }
 
 // splitRef returns the owner and repository of a reference, or a pair of empty
-// strings when the reference is not of the form "owner/repo".
-//
-// Callers are expected to have run validRepoRef first, but the value can come
-// straight out of a mod id in the database, so this returns empties instead of
-// indexing past the end of the split: a panic here would take down the whole
-// manager over one malformed record.
+// strings when the reference is not "owner/repo". The value can come straight out
+// of a mod id in the database, so this returns empties rather than indexing past
+// the end of the split.
 func splitRef(ref string) (owner, repo string) {
 	parts := strings.Split(strings.TrimSpace(ref), "/")
 	if len(parts) != 2 {
@@ -80,19 +75,11 @@ func splitRef(ref string) (owner, repo string) {
 }
 
 // ModID renders a repository reference as a mod id, and is the exact inverse of
-// repoFromModID.
-//
-// The separator is a dot: repositoryFromModID splits at the first one, so
-// "someone/darktide.mods" and "someone/darktide" stay distinct, and the id
-// survives domain.SanitizeSegment as a single path segment (which is how the
-// manager stores the payload).
-//
-// Dots are stripped from the owner for the same reason. GitHub guarantees a
-// login contains no dot, so stripping them costs nothing for real data — but
-// without it ModID("some.one", "pack") would produce "some.one.pack", which
-// reverses to the different repository "some/one.pack". The round trip is what
-// Download and GetMod depend on to recover the repository from a stored mod id,
-// so it has to hold for every input, not just for inputs GitHub would accept.
+// repoFromModID. The separator is a dot so "someone/darktide.mods" and
+// "someone/darktide" stay distinct, and the id survives domain.SanitizeSegment as
+// one path segment. Dots are stripped from the owner for the same reason: GitHub
+// logins contain none, but without it ModID("some.one", "pack") reverses to the
+// different repository "some/one.pack".
 func ModID(owner, repo string) string {
 	owner = strings.TrimSpace(owner)
 
@@ -129,10 +116,9 @@ func repoFromModID(modID string) (string, error) {
 	return owner + "/" + repo, nil
 }
 
-// normalizeVersion turns a tag into a version string. GitHub tags are
-// unconstrained text, so the common "v1.2.3" prefix is stripped; anything that
-// is still not version-shaped is kept verbatim rather than discarded, because a
-// maintainer is entitled to tag a release "hotfix-2024-01".
+// normalizeVersion turns a tag into a version string. GitHub tags are unconstrained
+// text, so the common "v1.2.3" prefix is stripped; anything still not version-shaped
+// is kept verbatim, because a maintainer is entitled to tag a release "hotfix-2024-01".
 func normalizeVersion(tag string) string {
 	trimmed := strings.TrimSpace(tag)
 	if trimmed == "" {
@@ -220,9 +206,8 @@ func modFor(ref string, r release) (domain.Mod, bool) {
 		Tags:        []string{"github", strings.ToLower(owner)},
 		SourceData:  map[string]any{},
 	}
-	// A release whose name is just the repository name adds nothing over the id,
-	// and its body is the only real description, so the name is left alone and
-	// an empty body stays empty rather than becoming placeholder text.
+	// A release named after its own repository adds nothing over the id, so an
+	// empty body stays empty rather than becoming placeholder text.
 	if asset, ok := payloadAsset(r.Assets); ok {
 		m.SourceData["download_url"] = asset.BrowserDownloadURL
 		if asset.Digest != "" {
@@ -245,7 +230,8 @@ func modFor(ref string, r release) (domain.Mod, bool) {
 	if r.Prerelease {
 		m.SourceData["prerelease"] = true
 	}
-	// Set source URLs
+	// The release page is the mod's canonical home, so it becomes both the source
+	// and the update URL; a release that names none falls back to the repo below.
 	if r.HTMLURL != "" {
 		m.SourceURL = r.HTMLURL
 		m.UpdateURL = r.HTMLURL
@@ -280,11 +266,8 @@ func searchQuery(query, topic string) string {
 	return trimmed + " topic:" + topic
 }
 
-// summarize renders a handful of errors on one line for an aggregate message.
-// The helpers below delegate to internal/plugins/sources/sourceutil so every
-// source plugin pages, matches and summarises identically. They are kept as thin
-// wrappers because this package's own call sites read better without the package
-// qualifier on every use.
+// The helpers below are thin wrappers over internal/plugins/sources/shared/sourceutil,
+// kept so this package's call sites read without the package qualifier on every use.
 
 func selectMods(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 	return sourceutil.SelectMods(mods, q)

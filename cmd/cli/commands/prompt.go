@@ -12,38 +12,17 @@ import (
 	"golang.org/x/term"
 )
 
-// This file is the CLI's one interaction with a person who is at a terminal
-// rather than running a script. There is exactly one such interaction — reading
-// a credential — and it is kept apart from the command that needs it for two
-// reasons.
-//
-// The first is that the difference between a pipe and a terminal changes what
-// the command has to do. A pipe ends on its own; a terminal does not, so a
-// command that reads one to end-of-file appears to hang, echoes the secret onto
-// the screen while the person types it, and offers no way out short of killing
-// the process. Telling the two apart is the whole job of this file.
-//
-// The second is testability. A real prompt needs a real terminal, which a test
-// cannot portably have, so the read is behind an interface with one method. The
-// logic around it — when to prompt, what to do with an empty line, which error a
-// cancelled prompt produces — is then ordinary testable code, and the only part
-// left unproven is the ioctl.
+// This file is the CLI's one interaction with a person at a terminal: reading a
+// credential. A pipe and a terminal are different things to read, so telling them
+// apart is the whole job here, and a real prompt needs a real terminal, so the
+// read sits behind an interface with one method.
 
-// keyPrompter asks for a secret and returns it, without echoing it.
-//
-// One method, and the narrowest one that does the job. It is an interface so the
-// flow can be tested; it is not a seam for the commands, which never construct
-// one.
-//
-// The prompt is passed in rather than written by the caller because the terminal
-// prompter has to be in its raw state before it writes anything: a person typing
-// while the prompt is still being composed has their keystrokes echoed by the
-// terminal, which for a secret means printed on the screen. Only the prompter
-// knows when that moment is.
+// keyPrompter asks for a secret and returns it, without echoing it. One method,
+// the narrowest that does the job, so the flow can be tested. The prompt is
+// passed in because the terminal prompter must be in raw state before writing.
 type keyPrompter interface {
-	// ReadKey writes prompt, then blocks until the person submits or abandons a
-	// line, or until ctx is cancelled, and returns what was typed. An error means
-	// nothing usable was typed and nothing was stored.
+	// ReadKey writes prompt, then blocks until the line is submitted or abandoned
+	// or ctx is cancelled; an error means nothing was typed and nothing stored.
 	ReadKey(ctx context.Context, prompt string) (string, error)
 }
 
@@ -54,25 +33,10 @@ type terminalPrompter struct {
 }
 
 // terminalPrompterFor returns a prompter for in when in is a terminal, and nil
-// when it is not.
-//
-// A nil result is the ordinary answer, not a failure, and the caller has to cope
-// with it. A pipe has to keep behaving like a pipe: a command that prompted
-// anyway would consume the rest of what the script was feeding it, and a script
-// cannot answer a question it never sees.
-//
-// It returns the interface rather than the concrete type, and returns an untyped
-// nil in the non-terminal case, because that is the only version of this
-// function whose nil is nil. A *terminalPrompter that happens to be nil, boxed
-// into the interface, is an interface that is not nil, and every call through it
-// then dereferences nothing. The distinction is invisible at the return
-// statement and fatal at the call, so it is made once here instead of being left
-// to each caller to get right.
-//
-// The reader is narrowed to an *os.File because that is the only thing a
-// descriptor can be got from. Everything else — a test's strings.Reader, an
-// embedder's buffer — is therefore non-interactive by construction, which is the
-// right answer rather than a limitation.
+// when it is not. A nil result is the ordinary answer: a pipe has to keep
+// behaving like a pipe. It returns an untyped nil on purpose — a boxed nil
+// *terminalPrompter is an interface that is not nil, and that mistake is fatal at
+// the call.
 func terminalPrompterFor(in io.Reader, errw io.Writer) keyPrompter {
 	file, ok := in.(*os.File)
 	if !ok || !term.IsTerminal(int(file.Fd())) {
@@ -89,10 +53,9 @@ type readResult struct {
 	key string
 }
 
-// errNoLine is how a cancelled prompt says so. It is a value rather than
-// io.EOF because the terminal reports end-of-file on an empty line as no error
-// at all, and Ctrl-D on an empty line means "nothing was typed" rather than "the
-// terminal closed".
+// errNoLine is how a cancelled prompt says so. It is a value rather than io.EOF
+// because the terminal reports end-of-file on an empty line as no error at all,
+// and Ctrl-D there means "nothing was typed" rather than "the terminal closed".
 var errNoLine = errors.New("no line was typed")
 
 // The bytes raw mode delivers in place of the keys a terminal would otherwise
@@ -103,33 +66,15 @@ const (
 	delete_ = 0x7f
 )
 
-// maxKeyLine bounds what a person can type into a hidden prompt. A key is a
-// UUID or a fixed-length token, so this is far more than any real one, and it
-// exists because the line is accumulated in memory and a held-down key is an
-// unbounded amount of it.
+// maxKeyLine bounds what a person can type into a hidden prompt: a key is a UUID
+// or a fixed-length token, and a held-down key is an unbounded amount of memory.
 const maxKeyLine = 512
 
-// readHiddenLine reads one line from a terminal with echo off.
-//
-// The line is assembled here rather than by term.ReadPassword, and the terminal
-// is put into raw mode to do it, because both of the ways out of a prompt that
-// somebody reaches for do not work through that function.
-//
-// Ctrl-D: in canonical mode an empty line followed by Ctrl-D makes the terminal
-// deliver a zero-byte read, and x/term's line reader treats "no bytes and no
-// error" as keep waiting. It loops on it, so the prompt never returns and never
-// responds to the keyboard again. Raw mode delivers Ctrl-D as the byte 0x04,
-// which is an ordinary case here.
-//
-// Ctrl-C: the entry point installs a handler for SIGINT so that a long download
-// can be cancelled, and a handled signal is no longer a default action — the
-// interrupted read is resumed by the runtime. Raw mode turns ISIG off, so Ctrl-C
-// arrives as the byte 0x03 instead and never becomes a signal to lose.
-//
-// Raw mode is also what keeps the secret off the screen: with echo off alone, a
-// terminal that redraws its line on a resize can write it out, and the byte at a
-// time read below is what lets backspace be handled without the terminal doing
-// the drawing.
+// readHiddenLine reads one line from a terminal with echo off. Raw mode because
+// term.ReadPassword cannot be escaped from — Ctrl-D in canonical mode loops
+// forever — and because Ctrl-C is a handled SIGINT, so the runtime resumes the
+// interrupted read; raw mode turns ISIG off, and keeps the secret off the screen
+// when the terminal redraws.
 func readHiddenLine(
 	file *os.File,
 	previous *term.State,
@@ -140,15 +85,8 @@ func readHiddenLine(
 		return "", err
 	}
 	defer term.Restore(int(file.Fd()), previous)
-	// The prompt is written here, after raw mode is on rather than before it,
-	// and written by this function rather than by the caller because a keystroke
-	// arriving while the caller was still composing the prompt would be echoed by
-	// the terminal, which for a secret means printed on the screen.
-	//
-	// It carries no line ending of its own. The one the person types to submit the
-	// key is consumed by the raw terminal along with the rest of the line and is
-	// written back by ReadKey once the terminal is restored, so adding one here
-	// would move the answer up a line for no reason.
+	// Written here, after raw mode is on, or a keystroke arriving while the caller
+	// composed the prompt is echoed. It adds no line ending; the raw terminal eats it.
 	if _, err := io.WriteString(promptTo, prompt); err != nil {
 		return "", err
 	}
@@ -156,29 +94,21 @@ func readHiddenLine(
 	return readLine(file, maxKeyLine)
 }
 
-// readLine reads one line of raw terminal input, one byte at a time.
-//
-// One byte at a time is what makes the interesting cases visible rather than
-// something the caller has to guess: a newline and Ctrl-D both end the line, and
-// Ctrl-C ends the whole prompt. Backspace is handled here because raw mode does
-// not do it, and without it a mistyped character could only be removed by
-// cancelling and starting again.
+// readLine reads one line of raw terminal input, one byte at a time — which is
+// what makes the interesting cases visible. A newline and Ctrl-D both end the
+// line, Ctrl-C ends the whole prompt, and backspace is handled here.
 func readLine(file *os.File, limit int) (string, error) {
 	var (
 		line []byte
 		one  [1]byte
 	)
 	for len(line) <= limit {
-		// A read that returns no bytes and no error is end-of-file rather than
-		// more input, which is what a terminal reports for a closed connection.
-		// Anything that loops on such a read never returns at all.
+		// A read with no bytes and no error is end-of-file, not more input;
+		// anything that loops on such a read never returns.
 		got, err := file.Read(one[:])
 		if got == 0 || err != nil {
-			// Either way the line is over: a terminal that has been closed reports
-			// no bytes and no error, and one that was closed with a line half typed
-			// reports end-of-file with it. A line typed without a final Enter is
-			// still a line, and an empty one is reported as no line at all, which
-			// promptForKey then treats as a cancellation.
+			// Either way the line is over. A line typed without a final Enter is
+			// still a line; an empty one is no line, which promptForKey reads as a cancel.
 			if len(line) > 0 {
 				return string(line), nil
 			}
@@ -212,32 +142,17 @@ func readLine(file *os.File, limit int) (string, error) {
 		"that is longer than any API key; nothing was stored")
 }
 
-// ReadKey returns one line from the terminal without echoing it.
-//
-// All three ways out of a password prompt are ordinary ones: Enter submits,
-// Ctrl-D submits an empty line, and Ctrl-C cancels. The third takes the work
-// rather than assuming the read will notice it, because it will not.
-//
-// Reading blocks, and the entry point installs a handler for SIGINT so that a
-// long download can be cancelled. Once a signal is handled it is not a default
-// action any more, so the interrupted read is resumed by the runtime and the
-// prompt sits there apparently ignoring the keyboard — the symptom that made an
-// interactive credential check look broken in the first place. So the read
-// happens on its own goroutine and the cancellation is awaited here, and the
-// terminal is put back before returning.
-//
-// The terminal is restored explicitly rather than left to the goroutine, because
-// that goroutine is still blocked and may never run its own restore. Leaving
-// echo off would silently swallow everything the person typed for the rest of the
-// session, which is a worse failure than the one being fixed.
+// ReadKey returns one line from the terminal without echoing it. Enter submits,
+// Ctrl-D submits an empty line, Ctrl-C cancels. The read runs on its own
+// goroutine with the terminal restored here on cancellation: that goroutine may
+// never restore it, and echo left off would swallow every later keystroke.
 func (t *terminalPrompter) ReadKey(ctx context.Context, prompt string) (string, error) {
 	if !term.IsTerminal(int(t.file.Fd())) {
 		return "", appErrors.Wrap(errNoLine, appErrors.ErrCodeOperationCanceled,
 			"standard input stopped being a terminal; nothing was stored")
 	}
-	// The terminal's own state is captured before the read changes it, so the
-	// cancellation path can put it back without waiting for the goroutine that is
-	// still blocked inside it.
+	// The terminal's state is captured before the read changes it, so cancellation
+	// can restore it without waiting for the still-blocked goroutine.
 	descriptor := int(t.file.Fd())
 
 	previous, err := term.GetState(descriptor)
@@ -258,11 +173,8 @@ func (t *terminalPrompter) ReadKey(ctx context.Context, prompt string) (string, 
 	select {
 	case typed = <-answered:
 	case <-ctx.Done():
-		// Put the terminal back here rather than waiting for the goroutine to
-		// finish a read nobody is going to type into. What it left behind is raw
-		// mode, so leaving it would take the line discipline with it: no echo,
-		// no Ctrl-C, and no Enter either. The state is restored rather than reset
-		// so a terminal that had been in some other mode is not silently changed.
+		// Restored here, not by the goroutine nobody will type into again: raw mode
+		// left behind means no echo, no Ctrl-C and no Enter for the rest of the session.
 		_ = term.Restore(descriptor, previous)
 
 		return "", appErrors.Wrap(ctx.Err(), appErrors.ErrCodeOperationCanceled,
@@ -270,9 +182,7 @@ func (t *terminalPrompter) ReadKey(ctx context.Context, prompt string) (string, 
 	}
 
 	// The terminal consumed the newline without echoing it, so the cursor is
-	// still sitting on the prompt line. Without this the next thing the program
-	// prints lands in the middle of it and the shell's own prompt follows a
-	// half-written line.
+	// still on the prompt line and the next print would land in the middle of it.
 	if _, writeErr := fmt.Fprintln(t.err); writeErr != nil && typed.err == nil {
 		typed.err = writeErr
 	}
@@ -290,19 +200,10 @@ func (t *terminalPrompter) ReadKey(ctx context.Context, prompt string) (string, 
 	return typed.key, nil
 }
 
-// promptForKey asks for a credential and returns what was typed.
-//
-// It writes to err rather than to out, and that is not a stylistic choice.
-// Standard output is a contract this program keeps with whatever is reading it,
-// and a prompt printed there lands in the middle of a table or a JSON document
-// for anyone who piped one. Standard error is where the person at the terminal is
-// already looking, and nothing in this package parses it.
-//
-// Pressing Enter is the confirmation: nothing is stored, and nothing is sent to
-// the source, until a line has been completed. An empty line and a cancelled
-// prompt both mean "never mind", and both are reported as a cancellation rather
-// than as a missing argument — the exit code then distinguishes "I stopped" from
-// "this failed", which is the difference a wrapping script cares about.
+// promptForKey asks for a credential and returns what was typed. It writes to
+// err rather than out because standard output is a contract with whatever reads
+// it. Pressing Enter is the confirmation; an empty line and a cancelled prompt
+// both mean "never mind", reported as a cancellation.
 func promptForKey(
 	ctx context.Context,
 	errw io.Writer,
@@ -339,23 +240,15 @@ func (s *session) prompter() keyPrompter {
 	return terminalPrompterFor(s.env.In, s.env.Err)
 }
 
-// maxKeyFromStdin bounds what a pipe is read for. A Nexus key is a UUID and an
-// API key from any of the other hosts is a fixed-length token, so 4 KiB is
-// several orders of magnitude more than any real one. The bound exists because
-// this reads a pipe rather than a file: an unbounded read of `dmm ... < /dev/zero`
-// ends by exhausting memory instead of by complaining.
+// maxKeyFromStdin bounds what a pipe is read for. 4 KiB is orders of magnitude
+// more than any real key, and the bound exists because this reads a pipe: an
+// unbounded read of `dmm ... < /dev/zero` exhausts memory instead of complaining.
 const maxKeyFromStdin = 1 << 12
 
 // readKey takes the credential from standard input, asking for it on a terminal
-// when standard input is one.
-//
-// The two cases are genuinely different operations rather than the same one
-// reached differently. A pipe is finite and ends on its own, so it is read to the
-// end and whatever is in it is the key. A terminal is neither finite nor
-// self-terminating, so it is asked for a line: read to end-of-file, the command
-// appears to hang, the secret is echoed as it is typed, and the only exit is a
-// process signal — which is exactly the behaviour that makes an interactive
-// `--api-key-stdin` look broken.
+// when standard input is one. A pipe is finite and ends on its own, so it is
+// read to the end; a terminal is asked for a line, since reading to end-of-file
+// appears to hang and echoes the secret.
 func (s *session) readKey(ctx context.Context, sourceID string) (string, error) {
 	if ask := s.prompter(); ask != nil {
 		return promptForKey(ctx, s.env.Err, ask, sourceID)

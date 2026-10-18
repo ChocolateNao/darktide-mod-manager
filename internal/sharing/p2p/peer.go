@@ -11,26 +11,21 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// DataChannelLabel is the only channel a share uses.
-//
-// One channel rather than one per file: SCTP streams already give ordering and
-// reliability per stream, and a share is a sequential transfer, so a second
-// channel would add bookkeeping without adding throughput.
+// DataChannelLabel is the only channel a share uses. One rather than one per
+// file: SCTP streams already give ordering and reliability per stream, and a share
+// is a sequential transfer, so a second channel is bookkeeping without throughput.
 const DataChannelLabel = "dmm-share"
 
-// bufferSize is how many incoming messages a peer queues before the reader
-// drains them. Large enough that a fast sender is not throttled into a timeout
-// while a receiver opens its staging file, small enough that a peer which sends
-// without reading cannot make the process grow without bound.
+// bufferSize is how many incoming messages a peer queues before the reader drains
+// them. Large enough that a fast sender is not throttled into a timeout while a
+// receiver opens its staging file, small enough that a peer which sends without
+// reading cannot make the process grow without bound.
 const bufferSize = 64
 
-// drainPollInterval is how often the flow-control loop re-checks a send buffer
-// it is waiting on.
-//
-// OnBufferedAmountLow is the mechanism; this is the safety net for a peer that
-// has stopped reading and will therefore never produce the event. A quarter of
-// a second is long enough not to busy-wait and short enough that a resumed
-// transfer is not visibly stalled.
+// drainPollInterval is how often the flow-control loop re-checks a send buffer it
+// is waiting on. OnBufferedAmountLow is the mechanism; this is the safety net for
+// a peer that has stopped reading and will never produce the event. A quarter of
+// a second neither busy-waits nor visibly stalls a resumed transfer.
 const drainPollInterval = 250 * time.Millisecond
 
 // ErrPeerClosed reports that the peer was closed while an operation was in
@@ -69,12 +64,11 @@ type Peer struct {
 	sendMu         sync.Mutex
 }
 
-// NewSenderPeer builds the offerer's peer and opens the data channel.
-//
-// The channel is created by the offerer because SCTP lets exactly one side
-// announce it; the answerer learns about it from OnDataChannel. It is created
-// before gathering so that the SDP that goes into the link includes the
-// application-mtu line the SCTP association needs.
+// NewSenderPeer builds the offerer's peer and opens the data channel. The
+// channel is created by the offerer because SCTP lets exactly one side announce
+// it; the answerer learns about it from OnDataChannel. It is created before
+// gathering so the SDP that goes into the link carries the application-mtu line
+// the SCTP association needs.
 func NewSenderPeer(cfg Config) (*Peer, error) {
 	return newPeer(cfg, false)
 }
@@ -95,25 +89,22 @@ func newPeer(cfg Config, answerer bool) (*Peer, error) {
 
 	settings := webrtc.SettingEngine{}
 
-	// Loopback candidates cost one line in the SDP and let two managers on one
-	// machine — the first thing anybody tests a share with — connect without a
-	// STUN round trip. Only a peer on the same host can use them.
+	// Loopback candidates let two managers on one machine — the first thing anybody
+	// tests a share with — connect without a STUN round trip.
 	settings.SetIncludeLoopbackCandidate(resolved.IncludeLoopback)
 
-	// mDNS advertises a candidate without telling the network the machine's
-	// address. Querying as well as gathering means a peer on the same LAN can
-	// resolve the name the other advertised instead of needing an address. It
-	// can be switched off for networks that block multicast, where the name
-	// never resolves and the share simply never connects.
+	// mDNS advertises a candidate without telling the network the machine's address,
+	// so a peer on the same LAN can resolve the name instead of needing an address.
+	// It is switchable for networks that block multicast.
 	if resolved.DisableMulticastDNS {
 		settings.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	} else {
 		settings.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryAndGather)
 	}
 
-	// A bounded port range rather than the ephemeral one: ICE will otherwise
-	// take whatever the OS hands it, and a user who wants to open a firewall
-	// hole has no way to know which port to open.
+	// A bounded port range rather than the ephemeral one: ICE would otherwise take
+	// whatever the OS hands it, and a user opening a firewall hole has no way to
+	// know which port to open.
 	settings.SetEphemeralUDPPortRange(resolved.PortMin, resolved.PortMax)
 
 	settings.LoggerFactory = loggerFactoryFor(resolved.PionLogger)
@@ -140,10 +131,9 @@ func newPeer(cfg Config, answerer bool) (*Peer, error) {
 
 	if answerer {
 		conn.OnDataChannel(func(channel *webrtc.DataChannel) {
-			// Only the one channel a share uses is attached. pion will
-			// announce any channel the remote peer opens, and accepting them
-			// all would let a peer that got the passphrase onto the SDP
-			// multiplex onto a session nobody asked for.
+			// Only the one channel a share uses is attached: pion announces any channel
+			// the remote opens, and accepting them all would let a peer that got the
+			// passphrase multiplex onto a session nobody asked for.
 			if channel.Label() != DataChannelLabel {
 				_ = channel.Close()
 
@@ -178,22 +168,20 @@ func (p *Peer) attach(channel *webrtc.DataChannel) {
 	channel.OnMessage(func(msg webrtc.DataChannelMessage) { p.deliver(msg.Data) })
 }
 
-// markReady latches the "channel is open" signal.
-//
-// Both peers wait on this rather than on their own callback: the answerer's
-// channel does not exist until the offerer's SDP has been applied, so a peer
-// that started waiting before its channel arrived would wait on nothing.
+// markReady latches the "channel is open" signal. Both peers wait on this rather
+// than on their own callback: the answerer's channel does not exist until the
+// offerer's SDP has been applied, so a peer that started waiting before its
+// channel arrived would wait on nothing.
 func (p *Peer) markReady() {
 	p.readyOnce.Do(func() { close(p.ready) })
 }
 
 // onConnectionStateChange turns the terminal connection states into failures.
-//
-// A connection that reaches failed is not going to recover on its own, and
-// waiting for the context deadline instead would leave a share looking as
-// though it were still negotiating. Disconnected is deliberately not terminal:
-// ICE keeps probing and the channel can come back, which matters for a share on
-// a laptop that has just changed network.
+// A connection that reaches failed will not recover on its own, and waiting for
+// the context deadline instead would leave a share looking as though it were
+// still negotiating. Disconnected is deliberately not terminal: ICE keeps probing
+// and the channel can come back, which matters for a share on a laptop that has
+// just changed network.
 func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
 	switch state {
 	case webrtc.PeerConnectionStateFailed:
@@ -206,12 +194,10 @@ func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
 }
 
 // deliver queues an incoming message, failing the session if the queue is full.
-//
-// Failing the session rather than dropping the message is deliberate: the
-// protocol has no resynchronisation point inside a file, so a message that
-// cannot be queued is one the receiver can never account for, and continuing
-// would produce an archive that fails its digest check minutes later with no
-// clue why.
+// Failing rather than dropping is deliberate: the protocol has no resynchronisation
+// point inside a file, so a message that cannot be queued is one the receiver can
+// never account for, and continuing would produce an archive that fails its digest
+// check minutes later with no clue why.
 func (p *Peer) deliver(data []byte) {
 	select {
 	case <-p.closed:
@@ -236,12 +222,11 @@ func (p *Peer) fail(err error) {
 	}
 }
 
-// CreateOffer gathers candidates and returns the offer SDP.
-//
-// Gathering has to finish before the SDP is returned: an offer sent with no
-// candidates in it reaches the peer as a connection that cannot be made, and
-// the only symptom the user sees is a share that times out. The wait is
-// bounded, and the context lets a caller abandon a share it no longer wants.
+// CreateOffer gathers candidates and returns the offer SDP. Gathering has to
+// finish first: an offer sent with no candidates reaches the peer as a connection
+// that cannot be made, and the only symptom the user sees is a share that times
+// out. The wait is bounded, and the context lets a caller abandon a share it no
+// longer wants.
 func (p *Peer) CreateOffer(ctx context.Context) (string, error) {
 	offer, err := p.conn.CreateOffer(nil)
 	if err != nil {
@@ -308,11 +293,10 @@ func (p *Peer) localSDP() (string, error) {
 	return local.SDP, nil
 }
 
-// gather waits for ICE to finish collecting candidates, once.
-//
-// The promise is created on first use and reused, so a peer whose caller
-// gathers twice waits on the same closed channel the second time rather than
-// hanging on a promise that will never fire again.
+// gather waits for ICE to finish collecting candidates, once. The promise is
+// created on first use and reused, so a peer whose caller gathers twice waits on
+// the same closed channel the second time rather than hanging on a promise that
+// will never fire again.
 func (p *Peer) gather(ctx context.Context) error {
 	p.gatherOnce.Do(func() {
 		p.gatherSignal = webrtc.GatheringCompletePromise(p.conn)
@@ -334,12 +318,10 @@ func (p *Peer) gather(ctx context.Context) error {
 	}
 }
 
-// WaitOpen blocks until the data channel is usable.
-//
-// "Usable" means open, not merely negotiated: pion opens the channel after the
-// DTLS handshake completes, and a message sent before that is dropped rather
-// than queued, so a sender that skipped this wait would lose the first frame of
-// every transfer.
+// WaitOpen blocks until the data channel is usable. "Usable" means open, not
+// merely negotiated: pion opens the channel after the DTLS handshake completes,
+// and a message sent before that is dropped rather than queued, so a sender that
+// skipped this wait would lose the first frame of every transfer.
 func (p *Peer) WaitOpen(ctx context.Context) error {
 	timer := time.NewTimer(p.connectTimeout)
 	defer timer.Stop()
@@ -358,12 +340,10 @@ func (p *Peer) WaitOpen(ctx context.Context) error {
 	}
 }
 
-// Send writes one message, applying flow control first.
-//
-// The wait is why Send is a method rather than a call straight to the channel:
-// SCTP's own window is finite, and a fast local disk produces chunks faster than
-// a slow uplink drains them. Without this the reads pile up in memory until the
-// process dies mid-transfer.
+// Send writes one message, applying flow control first. The wait is why Send is a
+// method rather than a call straight to the channel: SCTP's own window is finite,
+// and a fast local disk produces chunks faster than a slow uplink drains them.
+// Without this the reads pile up in memory until the process dies mid-transfer.
 func (p *Peer) Send(ctx context.Context, data []byte, threshold int) error {
 	p.sendMu.Lock()
 	defer p.sendMu.Unlock()
@@ -436,19 +416,16 @@ func (p *Peer) waitForDrain(ctx context.Context, threshold int) error {
 	}
 }
 
-// Flush waits until everything written has left the channel's send buffer.
+// Flush waits until everything written has left the channel's send buffer, which
+// is what makes a close safe. pion's DataChannel.Send hands bytes to the SCTP
+// association and returns without waiting for them to reach the wire, so a caller
+// that writes its last frame and immediately closes tears the association down
+// while the peer is still holding those bytes, and they are discarded — which
+// arrives at the other end as a truncated transfer rather than a closed connection.
 //
-// This is what makes a close safe. pion's DataChannel.Send hands bytes to the
-// SCTP association and returns; it does not wait for them to reach the wire. A
-// caller that writes its last frame and immediately closes therefore tears the
-// association down while the peer is still holding those bytes in its socket
-// buffer, and they are discarded — which arrives at the other end as a truncated
-// transfer, not as a closed connection. Waiting for the buffer to drain first is
-// the difference between a share that completed and one that did not.
-//
-// The wait is bounded by ctx and by connectTimeout, so a peer that has stopped
-// reading cannot hold a close open indefinitely; the cost of hitting that bound
-// is one truncated frame, which is what closing without flushing costs anyway.
+// The wait is bounded by ctx and connectTimeout, so a peer that has stopped reading
+// cannot hold a close open; the cost of hitting that bound is one truncated frame,
+// which is what closing without flushing costs anyway.
 func (p *Peer) Flush(ctx context.Context) error {
 	p.sendMu.Lock()
 	defer p.sendMu.Unlock()
@@ -515,11 +492,10 @@ func (p *Peer) State() webrtc.PeerConnectionState {
 	return p.conn.ConnectionState()
 }
 
-// ChunkSize is the payload size the sender should use for this session.
-//
-// It is read back off the peer rather than passed alongside it because the peer
-// is what applied the configuration: a caller that kept its own copy could
-// disagree with the peer about a value that both ends have to agree on.
+// ChunkSize is the payload size the sender should use for this session. It is
+// read back off the peer rather than passed alongside it because the peer is what
+// applied the configuration: a caller that kept its own copy could disagree with
+// the peer about a value both ends have to agree on.
 func (p *Peer) ChunkSize() int {
 	if p.chunkSize > 0 {
 		return p.chunkSize
@@ -551,11 +527,10 @@ func (p *Peer) Close() error {
 	return p.closeErr
 }
 
-// iceServers converts a configuration into pion's ICE server list.
-//
-// A TURN URL that also carries credentials is kept whole: pion parses the
-// query parameters itself, and splitting the URL here to pass username and
-// credential separately would mean re-implementing that parse badly.
+// iceServers converts a configuration into pion's ICE server list. A TURN URL
+// that also carries credentials is kept whole: pion parses the query parameters
+// itself, and splitting the URL here to pass username and credential separately
+// would mean re-implementing that parse badly.
 func iceServers(cfg Config) []webrtc.ICEServer {
 	servers := make([]webrtc.ICEServer, 0, len(cfg.STUNServers)+len(cfg.TURNServers))
 

@@ -19,10 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// key builds a syntactically valid cache key from a short seed. Tests care about
-// behaviour, not about how a key is derived, so the seed is hashed and the
-// digest used verbatim — which also keeps every key the right length and every
-// character lowercase hex, exactly as NormalizeCacheKey demands.
+// key builds a valid cache key from a short seed: the SHA256 digest, verbatim.
 func key(seed string) string {
 	sum := sha256.Sum256([]byte(seed))
 	return hex.EncodeToString(sum[:])
@@ -587,9 +584,8 @@ func TestCacheIndexListIsOrderedByLastAccessThenHash(t *testing.T) {
 
 	entries, err := idx.List(ctx)
 	require.NoError(t, err, "List")
-	// Two entries share a timestamp, so the hash tiebreak is what makes the order
-	// stable — and the order pruning evicts in reproducible across runs. The
-	// expectation is built by sorting the two tied keys, never by seed order.
+	// Two entries share a timestamp, so the hash tiebreak makes the order stable;
+	// the expectation is built by sorting the tied keys, never by seed order.
 	tied := []string{older, sameTime}
 	sort.Strings(tied)
 
@@ -783,9 +779,8 @@ func TestCacheIndexRoundTripsTimestampPrecision(t *testing.T) {
 
 	entry, err := idx.Get(ctx, k)
 	require.NoError(t, err, "Get")
-	// The storage layout keeps milliseconds; sub-millisecond precision is dropped
-	// on purpose so a round-trip is exact for the value the rest of the code
-	// writes.
+	// The layout keeps milliseconds; sub-millisecond precision is dropped so
+	// round-trips are exact.
 	assert.True(
 		t,
 		entry.LastAccess.Equal(stamp),

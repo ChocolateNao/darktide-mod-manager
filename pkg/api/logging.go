@@ -9,13 +9,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// LoggingOptions are the per-process logging overrides the CLI and the GUI hand
-// down.
-//
-// They are kept apart from logging.Config on purpose: config.json records
-// preferences that should survive, whereas these describe how one invocation was
-// asked to run. A user who types `dmm --verbose mods list` has not expressed a
-// standing preference for debug logs, so nothing here is ever written back.
+// LoggingOptions are the per-process logging overrides the CLI and GUI hand down.
+// Kept apart from logging.Config on purpose: config.json records preferences that
+// should survive, whereas these describe one invocation. Nothing here is ever
+// written back.
 type LoggingOptions struct {
 	Level   string
 	Dir     string
@@ -27,8 +24,7 @@ type LoggingOptions struct {
 
 // ZerologLogger adapts a zerolog logger to the Printf-style Logger this package
 // exposes. It exists so the pre-zerolog plumbing (wire diagnostics, the Wails
-// command base) has somewhere to write now that structured logging owns the
-// output.
+// command base) has somewhere to write.
 type ZerologLogger struct {
 	// Logger is the destination. A nil Logger discards.
 	Logger *zerolog.Logger
@@ -36,12 +32,9 @@ type ZerologLogger struct {
 	Level zerolog.Level
 }
 
-// NewZerologLogger wraps l, reporting Printf calls at warn level.
-//
-// Warn is the right default for this channel: everything routed through it is a
-// "this did not work" diagnostic (a command that failed, a source that would not
-// configure). Error would overstate a failure the user was already told about
-// directly, and debug would hide it at the default level.
+// NewZerologLogger wraps l, reporting Printf calls at warn level. Warn is the right
+// default: everything routed through it is a "this did not work" diagnostic. Error
+// would overstate a failure the user was already told about; debug would hide it.
 func NewZerologLogger(l *zerolog.Logger) *ZerologLogger {
 	return &ZerologLogger{Logger: l, Level: zerolog.WarnLevel}
 }
@@ -63,12 +56,10 @@ func (z *ZerologLogger) Printf(format string, args ...any) {
 	z.Logger.WithLevel(level).Msgf(format, args...)
 }
 
-// loggingConfig folds the persisted config block and the per-process overrides
-// into one logging.Config.
-//
-// logging.level wins over the legacy advanced.log_level, but only once the user
-// has actually set it: migrateLevel has already copied the legacy value across
-// for configs written before the logging block existed.
+// loggingConfig folds the persisted config block and the per-process overrides into
+// one logging.Config. logging.level wins over the legacy advanced.log_level, but
+// only once the user has set it: migrateLevel already copied the legacy value
+// across.
 func loggingConfig(cfg *domain.Config, opts LoggingOptions) logging.Config {
 	out := logging.DefaultConfig()
 	if cfg != nil {
@@ -110,12 +101,9 @@ func loggingConfig(cfg *domain.Config, opts LoggingOptions) logging.Config {
 var logLevels = []string{"trace", "debug", "info", "warn", "error"}
 
 // parseLogLevel validates a level named by a user and returns it in zerolog's
-// spelling.
-//
-// It exists beside logging.ParseLevel because that one is for reading
-// configuration, where an unrecognised value falls back to info rather than
-// refusing to start. A person typing a setting into a field deserves to be told
-// that "verbse" is not a level, and the settings API has nowhere else to say so.
+// spelling. It exists beside logging.ParseLevel because that one falls back to info
+// for an unrecognised value; a person typing a setting into a field deserves to be
+// told "verbse" is not a level.
 func parseLogLevel(value string) (string, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	for _, level := range logLevels {
@@ -129,12 +117,9 @@ func parseLogLevel(value string) (string, error) {
 		strings.Join(logLevels, ", "))
 }
 
-// migrateLevel copies the legacy advanced.log_level into logging.level for a
-// config that predates the logging block, so an existing `advanced.log_level`
-// keeps working instead of being silently ignored.
-//
-// It reports whether it changed anything, which lets the caller avoid saving a
-// config that is already correct.
+// migrateLevel copies the legacy advanced.log_level into logging.level for a config
+// that predates the logging block, so an existing setting keeps working. It reports
+// whether it changed anything, so the caller can avoid saving an unchanged config.
 func migrateLevel(cfg *domain.Config) bool {
 	if cfg == nil || cfg.Logging.Level != "" {
 		return false

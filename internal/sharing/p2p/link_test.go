@@ -32,8 +32,7 @@ func sampleOffer() domain.P2PShareOffer {
 	}
 }
 
-// secretFor is a fresh link secret, taken from a real link so the tests cannot
-// drift away from the shape LinkOffer actually produces.
+// secretFor takes a link secret from a real link, so the tests cannot drift from LinkOffer's shape.
 func secretFor(t *testing.T) string {
 	t.Helper()
 
@@ -45,8 +44,7 @@ func secretFor(t *testing.T) string {
 	return secret
 }
 
-// The link has to survive a chat client. That means: no whitespace, no shell
-// metacharacters, and a size a person can still paste.
+// TestLinkOfferRoundTrips covers a link surviving a chat client: no whitespace, pasteable size.
 func TestLinkOfferRoundTrips(t *testing.T) {
 	t.Parallel()
 
@@ -106,8 +104,7 @@ func TestLinkOfferRoundTrips(t *testing.T) {
 	}
 }
 
-// The whole point of sealing the offer is that a chat preview — or a curious
-// server that relays the link — cannot read what is inside it.
+// TestLinkOfferHidesTheOffer covers a chat preview or a relaying server reading nothing inside.
 func TestLinkOfferHidesTheOffer(t *testing.T) {
 	t.Parallel()
 
@@ -123,8 +120,7 @@ func TestLinkOfferHidesTheOffer(t *testing.T) {
 	}
 }
 
-// A permanent share has no expiry at all, which has to survive as absence
-// rather than as a zero timestamp that reads as 1 January year one.
+// TestLinkOfferWithoutAnExpiryIsPermanent covers absence surviving the round trip, not a zero time.
 func TestLinkOfferWithoutAnExpiryIsPermanent(t *testing.T) {
 	t.Parallel()
 
@@ -249,8 +245,7 @@ func TestLinkAnswerNeedsAnOfferID(t *testing.T) {
 	}
 }
 
-// Two links for the same offer must not share a token, or a paste of one would
-// be interchangeable with a paste of the other.
+// TestLinkOfferGeneratesAFreshSecret covers two links for one offer not being interchangeable.
 func TestLinkOfferGeneratesAFreshSecret(t *testing.T) {
 	t.Parallel()
 
@@ -303,8 +298,7 @@ func TestOpenOfferRefusesGarbage(t *testing.T) {
 	}
 }
 
-// A link whose payload was sealed under a different secret must fail, not
-// silently decrypt to something meaningless.
+// TestOpenOfferRefusesAWrongSecret covers another secret's payload failing rather than decrypting.
 func TestOpenOfferRefusesAWrongSecret(t *testing.T) {
 	t.Parallel()
 
@@ -326,8 +320,7 @@ func TestOpenOfferRefusesAWrongSecret(t *testing.T) {
 	}
 }
 
-// Flipping one bit of the ciphertext must be detected: that is the whole value
-// of an authenticated mode.
+// TestOpenOfferRefusesATamperedPayload covers one flipped ciphertext bit being detected.
 func TestOpenOfferRefusesATamperedPayload(t *testing.T) {
 	t.Parallel()
 
@@ -366,8 +359,7 @@ func TestOpenOfferRefusesAnUnknownProtocolVersion(t *testing.T) {
 	}
 }
 
-// A link that seals a valid offer of the wrong kind must not pass as an answer:
-// the two links are pasted into different sides of the conversation.
+// TestOpenAnswerRefusesAnOfferPayload covers an offer payload sealed under the answer scheme.
 func TestOpenAnswerRefusesAnOfferPayload(t *testing.T) {
 	t.Parallel()
 
@@ -388,8 +380,7 @@ func TestOpenAnswerRefusesAnOfferPayload(t *testing.T) {
 	}
 }
 
-// The session key and the envelope key must not be the same bytes: a party that
-// could open the envelope could otherwise forge a handshake.
+// TestSessionKeyIsNotTheEnvelopeKey covers opening an envelope without forging a handshake.
 func TestSessionKeyIsNotTheEnvelopeKey(t *testing.T) {
 	t.Parallel()
 
@@ -418,8 +409,7 @@ func TestSessionKeyIsNotTheEnvelopeKey(t *testing.T) {
 	}
 }
 
-// The scheme is the only part of a link that may change case: the secret and
-// the token are base64url, where an upper-case letter is a different value.
+// TestIsOfferLinkIsCaseInsensitive covers the scheme alone changing case.
 func TestIsOfferLinkIsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
@@ -444,8 +434,7 @@ func TestIsOfferLinkIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// Upper-casing the payload is not a supported edit: base64url is case-sensitive
-// and the token must stay exactly as it was sealed.
+// TestOpenOfferRefusesAnUpperCasedPayload covers base64url staying case-sensitive.
 func TestOpenOfferRefusesAnUpperCasedPayload(t *testing.T) {
 	t.Parallel()
 
@@ -459,8 +448,7 @@ func TestOpenOfferRefusesAnUpperCasedPayload(t *testing.T) {
 	}
 }
 
-// A very large share must not be able to make the reader allocate whatever the
-// sender claims.
+// TestOpenOfferRefusesAnOversizedLink covers the ceiling on what a paste may allocate.
 func TestOpenOfferRefusesAnOversizedLink(t *testing.T) {
 	t.Parallel()
 

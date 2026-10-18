@@ -14,12 +14,9 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// CacheEntry is the bookkeeping row for one cached download.
-//
-// The archive is addressed by Hash, which is the SHA256 of the download URL
-// plus the mod version. That makes the key stable across restarts (no need to
-// remember which URL a blob came from) and unique per version (an update never
-// overwrites the old archive in place).
+// CacheEntry is the bookkeeping row for one cached download. The archive is addressed by
+// Hash, the SHA256 of the download URL plus the mod version: stable across restarts, and
+// unique per version, so an update never overwrites the old archive in place.
 type CacheEntry struct {
 	LastAccess time.Time `json:"last_access"`
 	Hash       string
@@ -28,22 +25,18 @@ type CacheEntry struct {
 	Refs       int    `json:"refs"`
 }
 
-// CacheIndex is the persistence contract for cache metadata.
-//
-// Every method takes a context: the index is a SQLite handle and inherits the
-// same cancellation semantics as the rest of the storage layer. Implementations
-// must be safe for concurrent use.
+// CacheIndex is the persistence contract for cache metadata. Every method takes a
+// context: the index is a SQLite handle and inherits the storage layer's cancellation
+// semantics. Implementations must be safe for concurrent use.
 type CacheIndex interface {
-	// Get returns the entry for hash, or ErrCacheMiss when there is none. An
-	// entry whose blob has disappeared from disk is *not* a miss here — checking
-	// that is the caller's job, because only the caller knows whether the file
-	// it cares about is the one named by Path.
+	// Get returns the entry for hash, or ErrCacheMiss when there is none. An entry
+	// whose blob has disappeared from disk is *not* a miss: only the caller knows
+	// whether the file it cares about is the one named by Path.
 	Get(ctx context.Context, hash string) (*CacheEntry, error)
 	// Put inserts or replaces an entry.
 	Put(ctx context.Context, entry *CacheEntry) error
 	// Acquire increments the reference count and stamps last_access, returning
-	// the updated entry. It is what makes an entry prunable-ineligible while a
-	// mod is installed.
+	// the updated entry. It is what makes an entry pruning-ineligible.
 	Acquire(ctx context.Context, hash string, at time.Time) (*CacheEntry, error)
 	// Release decrements the reference count, never below zero, and returns the
 	// updated entry. Releasing an unknown hash is a miss, not a silent success:
@@ -51,9 +44,8 @@ type CacheIndex interface {
 	Release(ctx context.Context, hash string) (*CacheEntry, error)
 	// Touch stamps last_access without changing the reference count.
 	Touch(ctx context.Context, hash string, at time.Time) error
-	// List returns every entry ordered by last_access ascending, ties broken by
-	// hash. The order is the one age-based pruning wants, and it is stable so
-	// two runs prune the same entries in the same sequence.
+	// List returns every entry ordered by last_access ascending, ties broken by hash:
+	// the order age-based pruning wants, stable so two runs prune the same sequence.
 	List(ctx context.Context) ([]CacheEntry, error)
 	// Delete forgets an entry. Deleting an unknown hash is not an error, because
 	// callers use it to make a store idempotent.
@@ -65,12 +57,10 @@ type CacheIndex interface {
 	Close() error
 }
 
-// Cache is the on-disk download cache: a blob store rooted at a directory plus
-// the CacheIndex that describes it.
-//
-// Blobs live at <root>/blobs/<first two hex chars>/<hash>. The two-character
-// fan-out exists because a single directory holding thousands of 200 MB archives
-// is slow to list on Windows, where directory enumeration is O(n) per entry.
+// Cache is the on-disk download cache: a blob store rooted at a directory plus the
+// CacheIndex that describes it. Blobs live at <root>/blobs/<first two hex chars>/<hash>;
+// the fan-out exists because one directory holding thousands of 200 MB archives is slow
+// to list on Windows, where enumeration is O(n) per entry.
 type Cache struct {
 	index     CacheIndex
 	rootPath  string
@@ -85,12 +75,9 @@ func NewCache(rootPath string) (*Cache, error) {
 	return NewCacheWithFS(rootPath, nil)
 }
 
-// NewCacheWithIndex builds a Cache around an index the caller already owns.
-//
-// Passing a non-nil index is how tests inject an in-memory database, and how a
-// caller that wants the metadata elsewhere (a shared cache.db for several
-// roots) avoids a second connection fighting over the same file. The caller
-// keeps ownership: Close does not close a borrowed index.
+// NewCacheWithIndex builds a Cache around an index the caller already owns: how tests
+// inject an in-memory database. The caller keeps ownership, so Close never closes a
+// borrowed index.
 func NewCacheWithFS(rootPath string, index CacheIndex) (*Cache, error) {
 	trimmed := strings.TrimSpace(rootPath)
 	if trimmed == "" {
@@ -124,8 +111,8 @@ func NewCacheWithFS(rootPath string, index CacheIndex) (*Cache, error) {
 }
 
 // NewMemoryCache builds a cache whose index lives in memory. Nothing is written
-// to disk, which is what makes it usable for `--dry-run` flows and for tests
-// that care about ref-counting rather than about layout.
+// to disk, which is what makes it usable for `--dry-run` flows and for tests that
+// care about ref-counting rather than layout.
 func NewMemoryCache() (*Cache, error) {
 	db, err := Open(context.Background(), MemoryPath)
 	if err != nil {
@@ -172,13 +159,10 @@ func (c *Cache) BlobPath(hash string) (string, error) {
 	return filepath.Join(c.blobsDir, key[:2], key), nil
 }
 
-// NormalizeCacheKey validates a cache key and returns it in canonical form.
-//
-// The key becomes a filename, so anything that could escape the blob directory
-// is rejected outright rather than sanitised: a caller that mangles a key would
-// otherwise silently write to an unrelated path. Only lowercase hex is accepted
-// (not mixed case, not a short prefix) because the key is defined as a SHA256
-// and comparing keys byte-for-byte is much easier when there is one spelling.
+// NormalizeCacheKey validates a cache key and returns it in canonical form. The key
+// becomes a filename, so anything that could escape the blob directory is rejected
+// rather than sanitised. Only lowercase hex is accepted: the key is a SHA256, and
+// byte-for-byte comparison is easier with one spelling.
 func NormalizeCacheKey(hash string) (string, error) {
 	key := strings.TrimSpace(hash)
 	if key == "" {
@@ -213,13 +197,10 @@ func (c *Cache) Entry(ctx context.Context, hash string) (*CacheEntry, error) {
 	return c.index.Get(ctx, key)
 }
 
-// Write stores the bytes read from src under hash and records the metadata.
-//
-// The write is atomic: the bytes land in a temporary file inside the same
-// directory and are renamed into place, so a crash or a concurrent reader never
-// observes a half-written archive that later looks like a cache hit. When the
-// key already has a usable blob, Write is a no-op that returns the existing
-// entry — callers use it to make "fetch and cache" idempotent.
+// Write stores the bytes read from src under hash and records the metadata. The write is
+// atomic (temp file in the same directory, then rename), so a crash or a concurrent reader
+// never sees a half-written archive that later looks like a cache hit. An existing usable
+// blob is returned unchanged, which is what makes "fetch and cache" idempotent.
 func (c *Cache) Write(ctx context.Context, hash string, src io.Reader) (*CacheEntry, error) {
 	key, err := NormalizeCacheKey(hash)
 	if err != nil {
@@ -265,9 +246,8 @@ func (c *Cache) Write(ctx context.Context, hash string, src io.Reader) (*CacheEn
 	}
 
 	tmpName := tmp.Name()
-	// Any failure past this point must not leave the partial file behind: a
-	// leftover .partial-* in the blob directory looks like a cache entry to every
-	// later scan and is never cleaned up on its own.
+	// Any failure past this point must not leave the partial file behind: a leftover
+	// .partial-* looks like a cache entry to every later scan and is never cleaned up.
 	committed := false
 
 	defer func() {
@@ -333,8 +313,8 @@ func (c *Cache) Write(ctx context.Context, hash string, src io.Reader) (*CacheEn
 		_ = os.Remove(dest)
 		return nil, err
 	}
-	// Put keeps LastAccess at the zero time for a fresh row only when the index
-	// wants to; normalise here so callers can rely on it being set.
+	// Put fills in and clamps fields the caller left unset, so re-read to hand back
+	// the stored entry rather than the one that was passed in.
 	stored, err := c.index.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -343,11 +323,9 @@ func (c *Cache) Write(ctx context.Context, hash string, src io.Reader) (*CacheEn
 	return stored, nil
 }
 
-// Open returns a reader for the blob stored under hash.
-//
-// A missing metadata row and a present row whose file has vanished are reported
-// the same way (ErrCacheMiss) on purpose: both mean "not in the cache", and the
-// caller's correct response — download it again — is identical.
+// Open returns a reader for the blob stored under hash. A missing row and a present row
+// whose file has vanished are both ErrCacheMiss on purpose: both mean "not in the
+// cache", and the caller's correct response — download again — is identical.
 func (c *Cache) Open(ctx context.Context, hash string) (*os.File, error) {
 	entry, err := c.Entry(ctx, hash)
 	if err != nil {
@@ -396,11 +374,9 @@ func (c *Cache) Remove(ctx context.Context, hash string) error {
 	return c.index.Delete(ctx, key)
 }
 
-// RemoveAll deletes every blob and every metadata row.
-//
-// Refs are deliberately ignored: "clear the cache" is an explicit user action
-// and the affected mods can be re-downloaded on demand. It is not the same
-// operation as pruning, which must never remove a referenced archive.
+// RemoveAll deletes every blob and every metadata row. Refs are deliberately ignored:
+// "clear the cache" is an explicit user action and the affected mods can be re-downloaded
+// on demand. Pruning is the operation that must never remove a referenced archive.
 func (c *Cache) RemoveAll(ctx context.Context) error {
 	entries, err := c.index.List(ctx)
 	if err != nil {
@@ -436,10 +412,9 @@ func (c *Cache) RemoveAll(ctx context.Context) error {
 	return firstErr
 }
 
-// Exists reports whether a blob for hash is present on disk, checking the file
-// rather than only the metadata: an archive deleted by a disk-cleanup tool has
-// a row but no bytes, and treating that as a hit would make every install fail
-// at the extraction step with a confusing error.
+// Exists reports whether a blob for hash is present on disk, checking the file and not
+// only the metadata: an archive deleted by a disk-cleanup tool has a row but no bytes,
+// and treating that as a hit would make every install fail at the extraction step.
 func (c *Cache) Exists(ctx context.Context, hash string) (bool, error) {
 	entry, err := c.Entry(ctx, hash)
 	if err != nil {
@@ -466,10 +441,9 @@ func (c *Cache) Exists(ctx context.Context, hash string) (bool, error) {
 	return true, nil
 }
 
-// usableEntry returns the entry for key when it is safe to hand back as a cache
-// hit, or nil when the caller must download. A recorded entry whose blob is gone
-// is self-healing: the stale row is dropped so the fresh write can take its
-// place instead of tripping over the primary key.
+// usableEntry returns the entry for key when it is safe to hand back as a cache hit, or
+// nil when the caller must download. A recorded entry whose blob is gone is self-healing:
+// the stale row is dropped so the fresh write does not trip over the primary key.
 func (c *Cache) usableEntry(ctx context.Context, key string) (*CacheEntry, error) {
 	entry, err := c.index.Get(ctx, key)
 	if err != nil {
@@ -619,9 +593,8 @@ func (s *sqliteCacheIndex) Put(ctx context.Context, entry *CacheEntry) error {
 
 	refs := entry.Refs
 	if refs < 0 {
-		// A negative count would make every "is it referenced?" test wrong in a
-		// way that silently deletes a live archive, so it is clamped rather than
-		// stored.
+		// A negative count would make every "is it referenced?" test wrong in a way
+		// that silently deletes a live archive, so it is clamped rather than stored.
 		refs = 0
 	}
 
@@ -658,8 +631,8 @@ func (s *sqliteCacheIndex) Release(ctx context.Context, hash string) (*CacheEntr
 }
 
 // mutate adjusts the reference count and, when at is non-zero, the last-access
-// stamp, inside one transaction so two concurrent acquires cannot both read the
-// same count and write back a single increment.
+// stamp, inside one transaction so two concurrent acquires cannot both read one
+// count and write back a single increment.
 func (s *sqliteCacheIndex) mutate(
 	ctx context.Context,
 	hash string,
@@ -841,10 +814,9 @@ func (s *sqliteCacheIndex) Close() error {
 	return wrapKeepingCode(err, appErrors.ErrCodeConfigIO, "close cache index")
 }
 
-// scanCacheEntry reads one cache_entries row.
-//
-// A missing row surfaces as sql.ErrNoRows so callers can tell "no entry" apart
-// from "could not read the table"; Get translates it into ErrCacheMiss.
+// scanCacheEntry reads one cache_entries row. A missing row surfaces as
+// sql.ErrNoRows so callers can tell "no entry" apart from "could not read the
+// table"; Get translates it into ErrCacheMiss.
 func scanCacheEntry(row rowScanner) (*CacheEntry, error) {
 	var (
 		entry      CacheEntry

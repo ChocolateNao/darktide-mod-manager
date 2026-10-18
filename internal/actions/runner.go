@@ -1,12 +1,8 @@
-// Package actions: game-specific actions, the registry that publishes them and
-// the runner that executes them.
+// Package actions holds the registry and runner behind game-specific actions.
 //
-// The split exists so that three very different callers — the Wails frontend,
-// the cobra CLI and a test — can all drive the same behaviour. A game declares
-// an action; the registry holds the declarations; the runner is the only thing
-// that decides what running one actually means. Surfaces translate a click or a
-// flag into a (id, args) pair and nothing else, which is why adding a new
-// surface never requires touching a game definition.
+// A game declares an action, the registry holds the declarations and the runner
+// decides what running one means, so a surface only has to translate a click or
+// a flag into an (id, args) pair.
 package actions
 
 import (
@@ -20,36 +16,28 @@ import (
 
 // GameResolver is the slice of the game locator a run needs.
 //
-// Actions that touch the game's installation have to find it, and finding it is
-// the locator's job: it knows about Steam, GOG, Proton prefixes and the user's
-// configured override. An interface this narrow keeps the runner testable
-// without a database and keeps it from depending on anything else the locator
-// happens to offer.
+// An interface this narrow keeps the runner testable without a database and keeps
+// it from depending on anything else the locator happens to offer.
 type GameResolver interface {
-	// Active returns the game the manager is currently pointed at together
-	// with the settings chosen for it.
+	// Active returns the game the manager is currently pointed at and its settings.
 	Active() (domain.GameDefinition, domain.GameSettings, error)
-	// Current returns the installation of the active game, or an error when
-	// none is known.
+	// Current returns the installation of the active game, or an error.
 	Current(ctx context.Context) (*domain.GameInstallation, error)
-	// GetModsPath resolves the mods folder for an installation, honouring the
-	// user's override when one is set.
+	// GetModsPath resolves the mods folder, honouring the user's override.
 	GetModsPath(install *domain.GameInstallation) (string, error)
 }
 
 // DefinitionLookup resolves a game definition by its registry id.
 //
-// It is separate from GameResolver because an action may belong to a game that
-// is not currently active: listing and describing its actions must still work,
-// and only a run that needs paths requires the active game.
+// It is separate from GameResolver because an action may belong to a game that is
+// not currently active: listing and describing its actions must still work.
 type DefinitionLookup interface {
 	Get(id string) (domain.GameDefinition, bool)
 }
 
-// RunnerDeps is what a Runner needs. Each field is optional in a meaningful
-// way: a nil Opener or Commands disables the actions that need it rather than
-// crashing the manager, which is how a headless run with no shell and no
-// desktop can still list and describe actions.
+// RunnerDeps is what a Runner needs. Each field is optional in a meaningful way:
+// a nil Opener or Commands disables the actions that need it rather than crashing
+// the manager.
 type RunnerDeps struct {
 	Definitions DefinitionLookup
 	Games       GameResolver
@@ -77,8 +65,7 @@ type Runner struct {
 // NewRunner builds a Runner, filling in the platform default.
 //
 // The error return exists for the one mistake that cannot be defaulted: a runner
-// with no registry could only ever report every action as missing, which is a
-// confusing failure for whoever wired the manager up.
+// with no registry could only ever report every action as missing.
 func NewRunner(deps RunnerDeps) (*Runner, error) {
 	if deps.Registry == nil {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -118,11 +105,10 @@ func (r *Runner) Platform() domain.Platform {
 // Run executes one action and returns what it reported.
 //
 // The failure modes are deliberately distinct, because a caller must be able to
-// tell them apart: an unknown id (ACTION_NOT_FOUND) means the surface offered
-// something stale, an action that does not run here (ACTION_UNAVAILABLE) means
-// the platform filter or a missing prerequisite stopped it, a cancelled context
-// (OPERATION_CANCELED) means the user changed their mind, and everything else
-// (ACTION_FAILED) is the action's own fault.
+// tell them apart: ACTION_NOT_FOUND means the surface offered something stale,
+// ACTION_UNAVAILABLE means the platform filter or a missing prerequisite stopped
+// it, OPERATION_CANCELED means the user changed their mind, and everything else
+// is the action's own fault.
 func (r *Runner) Run(
 	ctx context.Context,
 	actionID string,
@@ -288,9 +274,8 @@ func (r *Runner) resolveInstallation(
 
 	modsPath, err := r.games.GetModsPath(install)
 	if err != nil {
-		// The mods folder is not the installation itself: an action that only
-		// reads the game directory is still worth running, so a failure here
-		// degrades the context instead of failing the run.
+		// The mods folder is not the installation itself: an action that only reads
+		// the game directory is still worth running, so this degrades the context.
 		actx.Logf("could not resolve the mods folder: %v", err)
 
 		return actx, nil
@@ -303,10 +288,9 @@ func (r *Runner) resolveInstallation(
 
 // runScript dispatches a script-based action.
 //
-// Scripts are never handed to a shell. The command and its arguments are fixed
-// by the game definition, with option placeholders substituted, and are
-// executed directly: an action is developer-authored code, and running it
-// through /bin/sh would turn a definition typo into arbitrary code execution.
+// Scripts are never handed to a shell. The command and its arguments are fixed by
+// the game definition and executed directly: running them through /bin/sh would
+// turn a definition typo into arbitrary code execution.
 func (r *Runner) runScript(
 	ctx context.Context,
 	action domain.GameAction,
@@ -315,7 +299,6 @@ func (r *Runner) runScript(
 	command, ok := action.Script.CommandFor(r.platform)
 	if !ok {
 		if action.Script.SuccessWhenEmpty {
-			// Some games simply have nothing to launch on a given platform.
 			// Reporting success keeps a caller that loops over every available
 			// action from treating "not applicable" as a failure.
 			return &domain.GameActionResult{
@@ -391,8 +374,7 @@ func (r *Runner) runScript(
 // normaliseResult guarantees a handler's result is safe to hand to a surface.
 //
 // A handler that returns (nil, nil) is a bug, not a crash: the frontend needs a
-// value to render and the CLI needs something to print, so an empty success is
-// synthesised here rather than made every handler remember to.
+// value to render, so an empty success is synthesised here.
 func normaliseResult(
 	action domain.GameAction,
 	result *domain.GameActionResult,
@@ -419,10 +401,9 @@ func normaliseResult(
 
 // wrapActionError keeps the code a lower layer chose.
 //
-// ExecRunner already maps an exit status, a missing binary and a cancelled
-// context onto distinct codes; re-wrapping them as a plain ACTION_FAILED would
-// throw that away and leave a caller unable to tell a missing tool from a tool
-// that failed.
+// ExecRunner already maps an exit status, a missing binary and a cancelled context
+// onto distinct codes; re-wrapping them as a plain ACTION_FAILED would throw that
+// away.
 func wrapActionError(action domain.GameAction, err error) error {
 	if appErrors.CodeOf(err) != appErrors.CodeUnknown {
 		return err
@@ -458,8 +439,7 @@ func firstLine(text string) string {
 
 // renderArgs substitutes {{option}} placeholders in a declared argument list.
 //
-// Only values from the action's declared options are visible. A placeholder
-// that names nothing declared is refused rather than silently expanded to an
+// A placeholder that names nothing declared is refused rather than expanded to an
 // empty string, because that turns a typo in a game definition into a command
 // that runs with a missing argument.
 func renderArgs(args []string, values map[string]any) ([]string, error) {
@@ -497,8 +477,7 @@ func renderDir(dir string, actx domain.ActionContext) (string, error) {
 // renderTemplate expands every {{name}} occurrence in text.
 //
 // Values are stringified here rather than by the command runner so that one
-// argument containing a placeholder followed by a suffix stays a single
-// argument: an option that expands to a path with a space must not become two.
+// argument holding a placeholder followed by a suffix stays a single argument.
 func renderTemplate(text string, values map[string]any) (string, error) {
 	var out strings.Builder
 

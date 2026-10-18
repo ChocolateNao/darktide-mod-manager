@@ -10,13 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests cover the one case the registry could previously get wrong: the
-// composition root builds the effective configuration in memory — the file with
-// the caller's overrides merged over it — and deliberately does not write it back,
-// because a token supplied on a command line should not end up in a file. The
-// registry was reading the file instead, so it disagreed with RegisterAll about
-// which sources are switched on: a source the caller had disabled was never built
-// and then reported as enabled.
+// These tests cover the case the registry could get wrong: the composition root
+// builds the effective configuration in memory and does not write it back, so a
+// registry reading the file disagrees with RegisterAll about which sources are
+// switched on.
 
 // TestWithConfigWinsOverTheStoreForEnabledSources.
 func TestWithConfigWinsOverTheStoreForEnabledSources(t *testing.T) {
@@ -24,8 +21,8 @@ func TestWithConfigWinsOverTheStoreForEnabledSources(t *testing.T) {
 	fileCfg.Sources["github"] = domain.SourceConfig{Enabled: true}
 	fileCfg.Sources["nexus"] = domain.SourceConfig{Enabled: false}
 
-	// What the caller asked for at start-up: nexus on, github off. Nothing of
-	// this is in the file.
+	// What the caller asked for at start-up: nexus on, github off, none of it in
+	// the file.
 	merged := domain.DefaultConfig()
 	merged.Sources["github"] = domain.SourceConfig{Enabled: false}
 	merged.Sources["nexus"] = domain.SourceConfig{Enabled: true}
@@ -73,8 +70,8 @@ func TestWithConfigWinsOverTheStoreForEnabledSources(t *testing.T) {
 }
 
 // TestWithConfigAlsoReachesFactories: the block handed to a factory has to be the
-// merged one too, or a source the caller configured in memory would be built from
-// the file's block and find no token.
+// merged one, or a source configured in memory is built from the file's block and
+// finds no token.
 func TestWithConfigAlsoReachesFactories(t *testing.T) {
 	fileCfg := domain.DefaultConfig()
 	merged := domain.DefaultConfig()
@@ -103,9 +100,8 @@ func TestWithConfigAlsoReachesFactories(t *testing.T) {
 	)
 }
 
-// TestWithConfigFallsBackToTheStore: a provider that has no opinion — nil, or a
-// read that failed — must not leave the registry with an empty configuration,
-// which would make every source count as missing rather than enabled.
+// TestWithConfigFallsBackToTheStore: a provider with no opinion must not leave the
+// registry with an empty configuration, which counts every source as missing.
 func TestWithConfigFallsBackToTheStore(t *testing.T) {
 	cfg := domain.DefaultConfig()
 	cfg.Sources["steam"] = domain.SourceConfig{Enabled: false}
@@ -142,8 +138,8 @@ func TestWithConfigFallsBackToTheStore(t *testing.T) {
 	}
 }
 
-// TestWithConfigToleratesANilRegistry: it is a chainable setter, so it has to
-// survive being called on nothing rather than panicking inside the wiring.
+// TestWithConfigToleratesANilRegistry: a chainable setter must survive being
+// called on nothing rather than panicking inside the wiring.
 func TestWithConfigToleratesANilRegistry(t *testing.T) {
 	var r *SourceRegistry
 	{
@@ -154,13 +150,12 @@ func TestWithConfigToleratesANilRegistry(t *testing.T) {
 	assert.False(t, r.Has("anything"), "Has on a nil registry reported a source")
 }
 
-// TestSearchAllSkipsDisabledSources is the other half of the fix. Asking a source
-// the user switched off is not a cosmetic problem: a source whose anonymous quota
-// is spent still spends it, and one that would need a credential sends one the
-// user chose not to give.
+// TestSearchAllSkipsDisabledSources: asking a source the user switched off is not
+// cosmetic — a source whose anonymous quota is spent still spends it, and one that
+// would need a credential sends one the user chose not to give.
 func TestSearchAllSkipsDisabledSources(t *testing.T) {
-	// The counters are written from the fan-out goroutines and read after it has
-	// joined, which the wait inside the fan-out makes safe.
+	// Written from the fan-out goroutines and read after it joins, which the wait
+	// inside the fan-out makes safe.
 	asked := map[string]int{}
 	counting := func(id string) *fakeSource {
 		return &fakeSource{
@@ -199,7 +194,7 @@ func TestSearchAllSkipsDisabledSources(t *testing.T) {
 	assert.Equal(t, 1, asked["on"], "the enabled source was asked %d times, want 1", asked["on"])
 }
 
-// TestSearchAllReportsWhenEverythingIsDisabled: with every source switched off the
+// TestSearchAllReportsWhenEverythingIsDisabled: with nothing switched on the
 // fan-out has nothing to ask, and an empty result would read as "no such mod".
 func TestSearchAllReportsWhenEverythingIsDisabled(t *testing.T) {
 	cfg := domain.DefaultConfig()
@@ -225,9 +220,7 @@ func TestSearchAllReportsWhenEverythingIsDisabled(t *testing.T) {
 }
 
 // TestHasDistinguishesUnknownFromUnbuildable. Describing a source must not build
-// it — a source switched off has to stay unbuilt — so Has is the only way to tell
-// "switched off" from "no such source", and the two are the same empty
-// description without it.
+// it, so Has is the only way to tell "switched off" from "no such source".
 func TestHasDistinguishesUnknownFromUnbuildable(t *testing.T) {
 	registerFactory(t, "hasfactory", func(SourceBuildContext) (domain.ModSource, error) {
 		return &fakeSource{id: "hasfactory"}, nil

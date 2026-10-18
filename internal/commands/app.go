@@ -8,15 +8,12 @@ import (
 
 // App is everything a Wails frontend binds to.
 //
-// The Wails bindings are generated from the methods of the structs registered
-// with wails.Run, and registering five separate structs means five places to
-// remember. App holds them and adds the three calls that belong to the window
-// rather than to any one subject: Startup binds the lifecycle context, Shutdown
-// cancels everything in flight, and CancelAll is the user pressing stop.
+// The bindings come from the methods of the structs registered with wails.Run, so
+// registering five sets would mean five places to remember. App holds them and
+// adds the three window-level calls: Startup, Shutdown, CancelAll.
 //
-// Every set shares one scope, so cancelling an install also stops a search that
-// happened to be running at the same time. That is deliberate: they are all
-// driven by the same person, and a window that has stopped responding has not
+// Every set shares one scope, so cancelling an install also stops a running
+// search: they share one driver, and a window that has stopped responding has not
 // stopped caring.
 type App struct {
 	base *base
@@ -28,24 +25,21 @@ type App struct {
 	Config  *ConfigCommands
 	Logs    *LogCommands
 	Shares  *ShareCommands
-	// P2PShares is separate from Shares because it is a different protocol with
-	// different states: a peer-to-peer share is in flight between two people
-	// rather than a record in a table, and a frontend that mixed the two would
-	// have to guess which lifecycle applies.
+	// P2PShares is separate because it is a different protocol with different states:
+	// a peer-to-peer share is in flight, not a record in a table.
 	P2PShares *P2PShareCommands
 	Actions   *ActionCommands
 	// SourceLinks is its own set because it answers a question about a mod rather
-	// than changing one. Grouping it under Mods would bury "where do I get this"
-	// in the lifecycle commands, which is exactly the call a user makes when an
-	// update cannot be fetched for them.
+	// than changing one.
 	SourceLinks *SourceLinkCommands
+	// Paths is the folder and file choosers, the only commands that talk to the
+	// window runtime rather than the manager's data.
+	Paths *PathCommands
 }
 
-// New builds the command surface over a client.
-//
-// It always returns a usable App: a nil client is reported by every method rather
-// than panicking, because the frontend binds to these methods during startup and
-// a panic there leaves a window that cannot draw an error message.
+// New builds the command surface over a client. It always returns a usable App:
+// a nil client is reported by every method rather than panicking, because the
+// frontend binds to these methods during startup.
 func New(deps Deps) *App {
 	shared := newBase(deps)
 
@@ -61,6 +55,7 @@ func New(deps Deps) *App {
 		P2PShares:   newP2PShareCommands(shared),
 		Actions:     newActionCommands(shared),
 		SourceLinks: newSourceLinkCommands(shared),
+		Paths:       newPathCommands(shared),
 	}
 }
 
@@ -76,9 +71,8 @@ func (a *App) Startup(ctx context.Context) {
 }
 
 // Shutdown cancels everything in flight and refuses further calls. It is
-// idempotent, and it does not close the client: the container owns that, so
-// closing here as well would leave the order of release up to whichever ran
-// first.
+// idempotent, and does not close the client: the container owns that, so closing
+// here too would leave the order of release to whichever ran first.
 func (a *App) Shutdown() {
 	if a == nil {
 		return
@@ -178,10 +172,8 @@ func (a *App) HookTimeout(script api.HookScript, mod *api.Mod) (float64, error) 
 	defer cancel()
 
 	timeout := client.HookTimeout(ctx, script, mod)
-	// Milliseconds, because that is what a JavaScript caller can hand to
-	// setTimeout without a unit argument. The type is a plain float rather than a
-	// duration because a duration does not survive the bridge as anything a
-	// frontend would recognise.
+	// Milliseconds, because that is what a JavaScript caller can hand to setTimeout;
+	// a duration does not survive the bridge.
 	return float64(timeout.Milliseconds()), nil
 }
 
@@ -201,6 +193,32 @@ func (a *App) ValidateHookScript(script api.HookScript, mod *api.Mod) error {
 
 	if err := client.ValidateHookScript(ctx, script, mod); err != nil {
 		return a.base.fail(err, "validate hook script")
+	}
+
+	return nil
+}
+
+// RunHookScript executes one script by hand, under the same containment rules a
+// real hook run uses — same working-directory resolution, same environment
+// allowlist, same timeout kill.
+//
+// It exists because "does this script actually work?" is the first question a
+// mod author asks about a hook, and installing the mod to find out is a poor
+// answer. Its output is not returned: a hook's writes go to the manager's log,
+// which the console panel reads from the events the run already publishes.
+func (a *App) RunHookScript(script api.HookScript, mod *api.Mod) error {
+	if a == nil {
+		return errUninitialised()
+	}
+
+	client, ctx, cancel, err := a.base.ready()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	if err := client.RunHookScripts(ctx, []api.HookScript{script}, mod); err != nil {
+		return a.base.fail(err, "run hook script")
 	}
 
 	return nil

@@ -15,10 +15,9 @@ import (
 
 // ConfigStore reads and writes the configuration file.
 //
-// The file is JSON: a human edits it by hand when something is broken badly
-// enough that the GUI cannot start, so the on-disk shape is exactly the struct
-// in pkg/domain (plus nothing). Writes go through the platform's atomic
-// replace, so an interrupted save can never leave a half-written file behind.
+// The file is JSON because a user edits it by hand when the GUI cannot start, so the on-disk
+// shape is exactly the struct in pkg/domain. Writes go through the platform's atomic replace,
+// so an interrupted save cannot leave a half-written file behind.
 type ConfigStore struct {
 	path string
 	mu   sync.RWMutex
@@ -41,15 +40,11 @@ func (s *ConfigStore) Path() string {
 	return s.path
 }
 
-// Load reads the configuration.
+// Load reads the configuration, with defaults already applied.
 //
-// A missing file is not an error: it yields defaults, which is what a first run
-// looks like. A file that exists but cannot be parsed *is* an error — silently
-// replacing a user's configuration with defaults would throw away their game
-// path and API keys without telling anyone.
-//
-// The returned config always has defaults applied, so callers never have to
-// worry about a zero-valued field being a deliberate choice.
+// A missing file is not an error: it yields defaults, which is what a first run looks like.
+// A file that exists but cannot be parsed is — silently replacing it would throw away the
+// user's game path and API keys without telling anyone.
 func (s *ConfigStore) Load() (*domain.Config, error) {
 	path := s.Path()
 	if path == "" {
@@ -81,10 +76,9 @@ func (s *ConfigStore) Load() (*domain.Config, error) {
 }
 
 // decodeConfig parses configuration bytes, mapping every failure onto the typed
-// invalid-config code. Whitespace-only content is treated as an empty document
-// rather than an error: a file truncated to nothing is still recoverable by
-// defaults, whereas a file containing a half-written object is not, and the
-// caller deserves to hear about it.
+// invalid-config code. Whitespace-only content is an empty document rather than an
+// error: a file truncated to nothing is still recoverable by defaults, whereas a
+// half-written object is not, and the caller deserves to hear about it.
 func decodeConfig(data []byte) (*domain.Config, error) {
 	if len(strings.TrimSpace(string(data))) == 0 {
 		cfg := domain.DefaultConfig()
@@ -131,8 +125,8 @@ func (s *ConfigStore) Save(cfg *domain.Config) error {
 	}
 
 	if err := platform.AtomicWriteFile(s.path, data, 0o600); err != nil {
-		// AtomicWriteFile reports raw os errors; re-code them here so callers
-		// only ever have to look at one code for "the config would not persist".
+		// AtomicWriteFile reports raw os errors; re-code them here so callers only ever
+		// have to look at one code for "the config would not persist".
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "write config %q: %v", s.path, err)
 	}
 
@@ -141,8 +135,8 @@ func (s *ConfigStore) Save(cfg *domain.Config) error {
 
 // SaveIfChanged writes cfg only when it differs from what is already on disk,
 // and reports whether a write happened. The GUI calls this on every settings
-// change; without the comparison each keystroke in a text field would rewrite
-// the file and trip filesystem watchers.
+// change; without the comparison each keystroke in a text field would rewrite the
+// file and trip filesystem watchers.
 func (s *ConfigStore) SaveIfChanged(cfg *domain.Config) (bool, error) {
 	current, err := s.Load()
 	if err != nil {
@@ -170,9 +164,9 @@ func SaveConfig(path string, cfg *domain.Config) error {
 	return NewConfigStore(path).Save(cfg)
 }
 
-// equalConfig compares two configurations by their canonical JSON form. Using
-// the encoding rather than field-by-field comparison means a new field is
-// covered the moment it is added, and it cannot be forgotten here.
+// equalConfig compares two configurations by their canonical JSON form. Using the
+// encoding rather than field-by-field comparison means a new field is covered the
+// moment it is added, and it cannot be forgotten here.
 func equalConfig(a, b *domain.Config) bool {
 	if a == nil || b == nil {
 		return a == b

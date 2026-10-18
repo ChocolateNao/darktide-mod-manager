@@ -1,10 +1,8 @@
 // Package onedrive is the OneDrive adapter.
 //
 // OneDrive addresses a file by the path under the drive root, so the id the
-// payload carries is that path. The upload session is what makes a large
-// archive survivable: the bytes are sent in fragments and OneDrive reassembles
-// them, so a connection that drops mid-transfer resumes instead of starting
-// over.
+// payload carries is that path. An upload session is what makes a large archive
+// survivable: a dropped connection resumes from a fragment instead of over.
 package onedrive
 
 import (
@@ -70,15 +68,15 @@ func (p *Provider) SupportsAuth() bool  { return true }
 func (p *Provider) MaxFileSize() int64  { return 100 * 1024 * 1024 * 1024 }
 func (p *Provider) MaxTotalSize() int64 { return 0 }
 
-// ConsentURL is the page the user approves on. It is exposed because the GUI is
-// what opens it; a provider never opens a browser itself.
+// ConsentURL is the page the user approves on; the GUI opens it, a provider
+// never opens a browser itself.
 func (p *Provider) ConsentURL(redirectURL, state string) string {
 	if p == nil {
 		return ""
 	}
 
-	// Files.ReadWrite reaches only what this app puts there, which is exactly
-	// the set a share touches.
+	// Files.ReadWrite reaches only what this app puts there, which is exactly the
+	// set a share touches.
 	return p.session.ConsentURL(redirectURL, state, "Files.ReadWrite offline_access")
 }
 
@@ -146,9 +144,8 @@ func (p *Provider) Upload(
 	refs := make([]domain.FileReference, 0, len(files))
 
 	for _, f := range files {
-		// An upload session is opened first and the bytes follow in fragments.
-		// The simple one-shot PUT would be shorter, but it has to hold the whole
-		// archive in memory and gives up entirely when the connection drops.
+		// An upload session is opened first and the bytes follow in fragments: a
+		// one-shot PUT buffers the whole archive and gives up when the link drops.
 		uploadURL, err := p.createSession(ctx, p.objectPath(f.Path))
 		if err != nil {
 			return nil, fmt.Errorf("upload %q: %w", f.Path, err)
@@ -236,9 +233,8 @@ func (p *Provider) sendFragments(
 	}
 
 	if last.ID == "" {
-		// The final fragment answers with the created item; a session that
-		// completed without one is reported as an empty object, and the id is
-		// what proves the file landed.
+		// The final fragment answers with the created item, so its id is what
+		// proves the file landed.
 		return item{}, fmt.Errorf("%s completed the upload but returned no file", ProviderID)
 	}
 

@@ -6,12 +6,12 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// okAction is the smallest action that passes validation: a handler, no
-// options, no platform restriction. Tests mutate it rather than building their
-// own so that a change to the validation rules shows up as one failing test
-// instead of fifty.
+// okAction is the smallest action that passes validation. Tests mutate it so
+// that a change to the rules shows up as one failing test instead of fifty.
 func okAction(gameID, id string) domain.GameAction {
 	action := domain.GameAction{
 		ID:     domain.ActionID(id),
@@ -49,9 +49,8 @@ func TestRegistryRegisterAndGet(t *testing.T) {
 	}
 }
 
-// Registration replaces rather than refusing: game definitions are registered at
-// start-up, and a test suite that registers a fixture repeatedly should not
-// have to care about leftovers from an earlier test.
+// Registration replaces rather than refusing, so a suite that registers a
+// fixture repeatedly need not care about leftovers from an earlier test.
 func TestRegistryRegisterReplaces(t *testing.T) {
 	reg := NewRegistry()
 
@@ -76,8 +75,8 @@ func TestRegistryRegisterReplaces(t *testing.T) {
 	}
 }
 
-// A game publishes its own actions, so supporting a new game never means
-// editing the registry. A game that publishes none must cost nothing.
+// A game publishes its own actions, so supporting a new game never means editing
+// the registry; one that publishes none must cost nothing.
 func TestRegistryRegisterGame(t *testing.T) {
 	reg := NewRegistry()
 
@@ -271,4 +270,58 @@ func withOptions(action domain.GameAction, options ...domain.ActionOption) domai
 	action.Options = options
 
 	return action
+}
+
+// Platform universality and game scoping are two different questions and the
+// registry answers both: `darktide:open_workshop` declares every platform and
+// needs no installation, `x:windows_only` is scoped to one, and neither answer
+// may depend on which game is selected.
+func TestListAvailableGatesOnPlatformNotOnInstallation(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+
+	for _, action := range []domain.GameAction{
+		{ID: "darktide:open_workshop", GameID: "darktide", RequiresGame: false},
+		{ID: "darktide:validate_loadorder", GameID: "darktide", RequiresGame: true},
+		{ID: "other:thing", GameID: "other"},
+	} {
+		action.DisplayName = string(action.ID)
+		action.Handler = func(context.Context, domain.ActionContext) (*domain.GameActionResult, error) {
+			return &domain.GameActionResult{Success: true}, nil
+		}
+		require.NoError(t, registry.Register(action), "register %s", action.ID)
+	}
+
+	registry.Register(domain.GameAction{
+		ID: "darktide:anywhere", GameID: "darktide",
+		DisplayName: "Anywhere", Platform: domain.ActionPlatformUniversal,
+		Handler: func(context.Context, domain.ActionContext) (*domain.GameActionResult, error) {
+			return &domain.GameActionResult{Success: true}, nil
+		},
+	})
+	registry.Register(domain.GameAction{
+		ID: "darktide:windows_only", GameID: "darktide",
+		DisplayName: "Windows only", Platform: domain.ActionPlatformWindows,
+		Handler: func(context.Context, domain.ActionContext) (*domain.GameActionResult, error) {
+			return &domain.GameActionResult{Success: true}, nil
+		},
+	})
+
+	ids := make([]string, 0, 4)
+	for _, action := range registry.ListAvailable("darktide", domain.PlatformLinux) {
+		ids = append(ids, string(action.ID))
+	}
+
+	assert.Contains(t, ids, "darktide:open_workshop",
+		"needs no installation, so it is offered anyway")
+	assert.Contains(t, ids, "darktide:validate_loadorder")
+	assert.Contains(t, ids, "darktide:anywhere", "a universal action runs everywhere")
+	assert.NotContains(
+		t,
+		ids,
+		"darktide:windows_only",
+		"not offered on a platform it cannot run on",
+	)
+	assert.NotContains(t, ids, "other:thing", "another game's action is not ours to offer")
 }

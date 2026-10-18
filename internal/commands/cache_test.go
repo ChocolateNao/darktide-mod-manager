@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGetCacheInfoReportsTheCacheRoot.
 func TestGetCacheInfoReportsTheCacheRoot(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -39,7 +38,6 @@ func TestGetCacheInfoReportsTheCacheRoot(t *testing.T) {
 	assert.Equal(t, w.cacheRoot, root, "CacheRoot = %q, want %q", root, w.cacheRoot)
 }
 
-// TestClearCacheEmptiesItAndSaysSo.
 func TestClearCacheEmptiesItAndSaysSo(t *testing.T) {
 	_, app, handler := appWithHandler(t)
 	{
@@ -55,10 +53,8 @@ func TestClearCacheEmptiesItAndSaysSo(t *testing.T) {
 	)
 }
 
-// cacheWorkspace builds a workspace whose configuration expires archives after a
-// day, one stored archive whose last access is far older than that, and the
-// container behind the surface. The stale archive plus a small age limit are what
-// let a test tell the configured limits apart from "no limits".
+// cacheWorkspace builds a workspace whose configured age limit expires its one
+// stored archive, which is what lets a test tell the limits from "no limits".
 func cacheWorkspace(t *testing.T, maxAgeDays int) (*workspace, *App, *di.Container) {
 	t.Helper()
 	w := newWorkspace(t)
@@ -74,12 +70,8 @@ func cacheWorkspace(t *testing.T, maxAgeDays int) (*workspace, *App, *di.Contain
 	return w, app, c
 }
 
-// storeArchive puts one blob in the cache and ages its last-access stamp.
-//
-// The stamp is written straight into the index because the public surface has no
-// way to backdate an entry, and a test that slept for a day would not be a test.
-// The index is opened as a second connection, which is exactly what a second
-// process looking at the same cache directory does.
+// storeArchive puts one blob in the cache and ages its last-access stamp. The
+// stamp goes straight into the index, which has no backdating surface of its own.
 func storeArchive(
 	t *testing.T,
 	w *workspace,
@@ -121,8 +113,7 @@ func cacheFileCount(t *testing.T, app *App) int {
 }
 
 // TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits is the assertion that both
-// zeros do not mean "no limits": with the configuration expiring archives after a
-// day and one archive a year stale, the archive has to go.
+// zeros do not mean "no limits": a year-stale archive must still be expired.
 func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 	w, app, c := cacheWorkspace(t, 1)
 	{
@@ -140,9 +131,8 @@ func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 		assert.Equal(t, 0, got, "%d archives survived a prune that should have expired them", got)
 	}
 
-	// The two-argument form with both zeros is the same command, so it has to
-	// behave identically — a frontend with no fields next to the button sends
-	// exactly that.
+	// The two-argument form with both zeros is the same command, and a frontend
+	// with no fields next to the button sends exactly that.
 	storeArchive(t, w, c, "second", "more bytes", 365*24)
 
 	{
@@ -157,8 +147,8 @@ func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 }
 
 // TestPruneCacheWithNoLimitsKeepsEverything is the other half: a negative on both
-// axes means "no limit on either", so the archive survives. Without it the two
-// halves of the argument above could not tell each other apart.
+// axes means "no limit on either", so without it the two halves cannot be told
+// apart.
 func TestPruneCacheWithNoLimitsKeepsEverything(t *testing.T) {
 	_, app, _ := cacheWorkspace(t, 1)
 	{
@@ -179,8 +169,7 @@ func TestPruneCacheWithNoLimitsKeepsEverything(t *testing.T) {
 }
 
 // TestPruneCacheAppliesEachAxisIndependently: a zero on one axis is no limit on
-// that axis, so the archive the configured age would have expired survives a
-// prune that sets only a size limit, and does not survive one that sets the age.
+// that axis, so the stale archive survives a size-only prune and not an age one.
 func TestPruneCacheAppliesEachAxisIndependently(t *testing.T) {
 	_, app, _ := cacheWorkspace(t, 1)
 	{
@@ -211,10 +200,8 @@ func TestPruneCacheAppliesEachAxisIndependently(t *testing.T) {
 }
 
 // TestASuccessfulPruneIsNotLogged: the log is for failures, and filling it with
-// routine successes would bury the one line a bug report needs. The other
-// direction — that a failure *is* logged — is covered by
-// TestFailedOperationsAreLogged, which drives a real MOD_NOT_FOUND rather than
-// inventing one here.
+// routine successes would bury the one line a bug report needs. That a failure
+// *is* logged is covered by TestFailedOperationsAreLogged.
 func TestASuccessfulPruneIsNotLogged(t *testing.T) {
 	logger := &recordingLogger{}
 	w := newWorkspace(t)
@@ -254,8 +241,7 @@ func TestRefusedCallsAreNotLogged(t *testing.T) {
 	}
 }
 
-// appWithHandler builds the surface with an event handler wired through the
-// container, which is the route a GUI uses.
+// appWithHandler builds the surface with an event handler wired, the GUI route.
 func appWithHandler(t *testing.T) (*workspace, *App, *recordingHandler) {
 	t.Helper()
 	w := newWorkspace(t)

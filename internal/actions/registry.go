@@ -11,14 +11,10 @@ import (
 
 // Registry is the set of actions this manager can run.
 //
-// It is a map guarded by a mutex rather than a slice so that registering a game
-// at startup and listing actions while the UI is open can happen concurrently,
-// and so that a lookup by id is a single map read instead of a scan.
-//
-// Registration validates: a definition that could never run correctly — an id
-// belonging to another game, an option nobody could fill in, an action with
-// neither a handler nor a script — is refused where it is introduced rather than
-// discovered when a user tries to use it.
+// It is a map guarded by a mutex so that registering a game at startup and
+// listing actions while the UI is open can happen concurrently. Registration
+// validates, so a definition that could never run correctly is refused where it
+// is introduced rather than discovered when a user presses the button.
 type Registry struct {
 	actions map[domain.ActionID]domain.GameAction
 	mu      sync.RWMutex
@@ -32,9 +28,8 @@ func NewRegistry() *Registry {
 // Register adds one action, replacing any action already registered under the
 // same id.
 //
-// Replacement rather than refusal is deliberate: game definitions are registered
-// by init-time functions, and a test suite that re-registers a fixture game
-// should not have to care whether a previous run left the id behind.
+// Replacement rather than refusal is deliberate: a test suite that re-registers a
+// fixture game should not have to care whether a previous run left the id behind.
 func (r *Registry) Register(action domain.GameAction) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -56,8 +51,7 @@ func (r *Registry) Register(action domain.GameAction) error {
 // RegisterGame registers every action a game definition publishes.
 //
 // Games declare their own actions so that adding support for a game never
-// requires editing the registry, and a game that declares none costs nothing
-// here beyond a call to GameActions.
+// requires editing the registry.
 func (r *Registry) RegisterGame(game domain.GameDefinition) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -80,9 +74,8 @@ func (r *Registry) RegisterGame(game domain.GameDefinition) error {
 
 // validate refuses an action that could not run.
 //
-// The checks are ordered cheapest-first and, more importantly, they are made once
-// at registration: a malformed action is a bug in this program, so it should
-// surface during development rather than as a confusing failure on a user's
+// The checks are made once, at registration: a malformed action is a bug in this
+// program, so it should surface during development rather than on a user's
 // machine.
 func validate(action domain.GameAction) error {
 	gameID := strings.TrimSpace(action.GameID)
@@ -169,14 +162,24 @@ func (r *Registry) ListAll() []domain.GameAction {
 	return r.list(func(domain.GameAction) bool { return true })
 }
 
-// ListAvailable returns the actions of one game that run on target.
+// ListAvailable returns the actions offered for one game on target.
 //
-// This is the list a surface should offer rather than ListByGame: an
-// action that is not offered on the current platform should be invisible rather
-// than present and then refused.
+// This is the list a surface should offer rather than ListByGame: an action not
+// offered on the current platform should be invisible rather than present and then
+// refused. An action registered with no game is included whatever game was asked
+// for, because `RequiresGame: false` means exactly that — matching on the game
+// id alone would drop "darktide:open_workshop" the moment a game was selected.
 func (r *Registry) ListAvailable(gameID string, target domain.Platform) []domain.GameAction {
+	wanted := strings.TrimSpace(gameID)
+
 	return r.list(func(action domain.GameAction) bool {
-		return action.GameID == strings.TrimSpace(gameID) && action.AvailableOn(target)
+		if !action.AvailableOn(target) {
+			return false
+		}
+
+		owner := strings.TrimSpace(action.GameID)
+
+		return wanted == "" || owner == wanted || owner == ""
 	})
 }
 

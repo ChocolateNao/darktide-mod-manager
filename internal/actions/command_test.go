@@ -99,9 +99,8 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 	}
 }
 
-// A script that names a program the machine does not have is a configuration
-// problem, and saying "not found" points the user at the fix rather than at the
-// action.
+// A script naming a program the machine does not have is a configuration
+// problem, and "not found" points the user at the fix.
 func TestExecRunnerReportsAMissingProgram(t *testing.T) {
 	runner := NewExecRunner()
 
@@ -120,8 +119,8 @@ func TestExecRunnerRefusesAnEmptyPath(t *testing.T) {
 	}
 }
 
-// The runner is reachable from a UI handler, which has no request context; a nil
-// context must behave like a background one rather than panic inside exec.
+// A UI handler has no request context; a nil one must behave like a background
+// one rather than panic inside exec.
 func TestExecRunnerAcceptsANilContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no portable command on windows")

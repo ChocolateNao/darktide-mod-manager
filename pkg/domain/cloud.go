@@ -56,10 +56,9 @@ type CloudProvider interface {
 type ShareFile struct {
 	Path string `json:"path"`
 	Hash string `json:"hash"`
-	// Source is the local file the bytes are read from. A provider has to name
-	// it to upload anything, and it is deliberately absent from the share
-	// payload: a recipient's manager would have no such path, and a leak of the
-	// sharer's filesystem layout in a link is not something to hand out.
+	// Source is the local file the bytes are read from. Absent from the share
+	// payload: a recipient has no such path, and a link should not leak the
+	// sharer's filesystem layout.
 	Source string `json:"-"`
 	Size   int64  `json:"size"`
 }
@@ -110,13 +109,10 @@ type SharedFile struct {
 const ArchiveFormatZip = "zip"
 
 // PackedMod describes a mod transmitted as one archive rather than as its
-// individual files.
-//
-// One archive per mod is the unit that makes a share resumable and verifiable:
-// the recipient checks a single hash instead of one per file, and a provider
-// never sees a mod as N separate objects that a partial failure can leave
-// half-uploaded. The archive is named after the mod id, so two mods that both
-// ship a file called shared.zip cannot overwrite each other.
+// individual files. One archive per mod is what makes a share resumable and
+// verifiable: the recipient checks a single hash instead of one per file, and a
+// partial upload cannot leave a provider holding half a mod. The archive is
+// named after the mod id, so two mods shipping a shared.zip cannot collide.
 type PackedMod struct {
 	FileID string `json:"id"`
 	Hash   string `json:"h"`
@@ -210,10 +206,8 @@ func IsDeepLink(url string) bool {
 }
 
 // ParseDeepLink extracts the provider and encoded payload from a dmm:// link.
-//
-// A malformed link is rejected before any provider is contacted: the payload
-// is decoded and schema-checked here, so a garbage URL never reaches the
-// network.
+// The payload is decoded and schema-checked here, so a garbage URL is rejected
+// before any provider is contacted.
 func ParseDeepLink(url string) (providerID, encoded string, err error) {
 	if !IsDeepLink(url) {
 		return "", "", ErrShareInvalid

@@ -12,10 +12,8 @@ import (
 )
 
 // Action ids. They are code, not configuration: a game's actions are part of
-// what this package means by "supporting Darktide", so they are named here and
-// validated at registration like every other id. Nothing outside this package
-// needs to know the strings — callers address an action by id and read its
-// display name from the registry.
+// what this package means by "supporting Darktide", and callers address one by
+// id and read its display name from the registry.
 const (
 	actionValidateLoadOrder = "validate_loadorder"
 	actionOpenModsFolder    = "open_mods_folder"
@@ -37,13 +35,10 @@ func steamURL(workshopID string) string {
 	return fmt.Sprintf("steam://url/CommunityFilePage/%s", strings.TrimSpace(workshopID))
 }
 
-// launchCommand is the per-platform command that starts the game from an
-// installation directory.
+// launchCommand is the per-platform command that starts the game.
 //
-// Each platform gets a different command because that is a fact about the
-// operating system, not about the action: the action stays one action, and the
-// command table decides how it is carried out. Declaring the table as data
-// means a new platform is a new row rather than a new branch in the handler.
+// The table is data rather than a branch in the handler because which command
+// applies is a fact about the operating system, not about the action.
 var launchCommand = []domain.ActionCommand{
 	{Path: "steam", Args: []string{"-applaunch", SteamAppID}},
 	{
@@ -63,13 +58,9 @@ var launchCommand = []domain.ActionCommand{
 	},
 }
 
-// validateLoadOrder reads the game's load-order file and reports the problems a
-// user can actually fix.
+// validateLoadOrder reports the load-order problems a user can fix.
 //
-// The check is deliberately conservative: it reports what is definitely wrong
-// (entries naming folders that do not exist, an entry repeated, an empty or
-// unparsable line) and never rewrites the file. A load order is the user's
-// decision, and a tool that "fixes" it silently removes control from them.
+// It never rewrites the file: a load order is the user's decision.
 func validateLoadOrder(
 	_ context.Context,
 	actx domain.ActionContext,
@@ -124,10 +115,9 @@ func validateLoadOrder(
 }
 
 // readLoadOrder parses the load-order file, returning the entries it named and
-// a message for every line that cannot be honoured.
-//
-// Blank lines and comments are legal — a user annotating their own file should
-// not be told off — but they are not entries.
+// a message for every line that cannot be honoured. Blank lines and comments are
+// legal — a user annotating their own file should not be told off — but they are
+// not entries.
 func readLoadOrder(file *os.File, modsPath string) ([]string, []string) {
 	var (
 		entries []string
@@ -182,8 +172,8 @@ func readLoadOrder(file *os.File, modsPath string) ([]string, []string) {
 }
 
 // duplicateEntries returns the entries that appear more than once, in the order
-// they were first seen. A repeated entry is how a load order ends up silently
-// loading the same mod twice, which is hard to notice and easy to fix.
+// they were first seen. A repeat is how a load order silently loads one mod
+// twice, which is hard to notice and easy to fix.
 func duplicateEntries(entries []string) []string {
 	seen := make(map[string]struct{}, len(entries))
 	dupes := make([]string, 0, len(entries))
@@ -227,10 +217,7 @@ func openModsFolder(
 
 // openWorkshop shows a mod's Steam Workshop page in the Steam client.
 //
-// Some sources — the workshop above all — cannot hand a manager a fresh download
-// because the file lives inside the client. Opening the page is what lets a
-// user update such a mod by hand, so the action takes the item id as an option
-// rather than hard-coding a link.
+// The file lives inside the client, so such a mod can only be updated by hand.
 func openWorkshop(
 	ctx context.Context,
 	actx domain.ActionContext,
@@ -257,13 +244,10 @@ func openWorkshop(
 	}, nil
 }
 
-// launchGame reports how the game is started.
+// launchGame reports how the game is started, without starting it.
 //
-// It does not start anything itself: doing so from a manager window would make
-// the manager the parent of a game process, which is a decision the user should
-// make in Steam where they can see it. What the action does return is the exact
-// command for the platform, so the CLI can print it and the frontend can offer
-// it as a copyable line — and so the platform table below is verifiable.
+// A manager launching the game would make the manager the parent of the game
+// process, a decision the user should make in Steam where they can see it.
 func launchGame(_ context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
 	command, ok := domain.ActionScript{
 		Commands: launchCommand,
@@ -294,9 +278,8 @@ func launchGame(_ context.Context, actx domain.ActionContext) (*domain.GameActio
 
 // actions is the table every call to GameActions copies from.
 //
-// Building the slice per call keeps the definition stateless, as the rest of
-// this package is, and keeps the handlers unexported: nothing outside the
-// package can execute them, only this package can offer them.
+// Building the slice per call keeps the definition stateless and keeps the
+// handlers unexported: nothing outside this package can execute them.
 func actions() []domain.GameAction {
 	return []domain.GameAction{
 		{
@@ -347,9 +330,8 @@ func actions() []domain.GameAction {
 			Category:     categoryGame,
 			Icon:         "play",
 			RequiresGame: true,
-			// Universal, because which command applies is a fact the handler
-			// decides from the platform table above — the action itself is the
-			// same everywhere, and hiding it would hide the answer too.
+			// Universal, because which command applies is a fact launchGame decides from
+			// the platform table above; hiding the action would hide the answer too.
 			Platform: domain.ActionPlatformUniversal,
 			Handler:  launchGame,
 		},

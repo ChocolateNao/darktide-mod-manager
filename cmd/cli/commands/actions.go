@@ -10,12 +10,8 @@ import (
 )
 
 // newActionsCommand builds the group that lists and runs the game-specific
-// actions.
-//
-// The list is the contract: a game publishes actions in code, and both this CLI
-// and the frontend render whatever the manager reports rather than a table
-// compiled into them. That is what lets a new game ship actions without a
-// release of the client.
+// actions. The list is the contract: both this CLI and the frontend render what
+// the manager reports, so a new game ships actions without a client release.
 func newActionsCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "actions",
@@ -35,9 +31,8 @@ func newActionsCommand(s *session) *cobra.Command {
 	return group
 }
 
-// actionView is the machine-readable shape of one action. The fields are the
-// ones a caller cannot recompute: the id and the display name come from the game,
-// and the options are what the caller has to supply to run it.
+// actionView is the machine-readable shape of one action: the fields a caller
+// cannot recompute, plus the options it has to supply to run it.
 type actionView struct {
 	ID           string             `json:"id"`
 	GameID       string             `json:"game_id"`
@@ -82,9 +77,8 @@ func newActionsListCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			// Two questions, two calls: which actions exist at all, and which of
-			// them could run here. A machine that lists the Windows-only ones on
-			// Linux has told the user something true and useless.
+			// Two questions, two calls: which actions exist, and which of them
+			// could run here. Listing Windows-only actions on Linux is true but useless.
 			gameID := strings.TrimSpace(gameFlag)
 
 			list, err := client.ListGameActions(gameID)
@@ -219,9 +213,8 @@ func newActionsRunCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			// Refusing an unknown key here rather than letting the runner drop it
-			// is what turns `--set wrokshop_id=1` into an error message instead of
-			// an action that quietly did nothing.
+			// Refusing an unknown key here is what turns `--set wrokshop_id=1`
+			// into an error instead of an action that quietly did nothing.
 			if err := checkActionArgs(action, values); err != nil {
 				return err
 			}
@@ -241,11 +234,9 @@ func newActionsRunCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// writeActionResult prints what the action produced.
-//
-// The output is printed before the JSON so that `--json` still shows the tool's
-// own words: a result whose Message is the only thing that explains a failure is
-// not machine-readable, and it is not the JSON's job to invent one.
+// writeActionResult prints what the action produced. The message goes out before
+// the JSON so `--json` still shows the tool's own words: a result whose Message
+// is the only explanation of a failure is not machine-readable.
 func (s *session) writeActionResult(result *domain.GameActionResult) error {
 	if result == nil {
 		return nil
@@ -270,10 +261,8 @@ func (s *session) writeActionResult(result *domain.GameActionResult) error {
 	return nil
 }
 
-// parseActionArgs turns repeated --set flags into a map.
-//
-// Everything arrives as a string because that is all a shell can express. The
-// conversion to the declared type happens in the action layer, which is the only
+// parseActionArgs turns repeated --set flags into a map. Everything arrives as a
+// string because that is all a shell can express; the action layer is the only
 // place that knows what a given option means.
 func parseActionArgs(pairs []string) (map[string]any, error) {
 	values := make(map[string]any, len(pairs))

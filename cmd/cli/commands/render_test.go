@@ -30,8 +30,7 @@ func TestTableRendersNothingWithoutRows(t *testing.T) {
 func TestTableAlignsColumnsOnRunes(t *testing.T) {
 	table := NewTable("ID", "NAME")
 	// "Böhm" is four runes and six bytes. Padding by byte length would push the
-	// second column of the previous row out by two spaces, which is exactly the
-	// misalignment a non-English mod name causes.
+	// second column out by two spaces, which is what a non-English mod name causes.
 	table.Add("a", "Böhm")
 	table.Add("longer-id", "wide")
 
@@ -50,10 +49,8 @@ func TestTableAlignsColumnsOnRunes(t *testing.T) {
 
 	header := strings.Index(lines[0], "NAME")
 	require.GreaterOrEqual(t, header, 0, "the header lost its own column: %q", lines[0])
-	// Every row must place its second column exactly where the header does.
-	// Measuring the second column by finding the value itself is the only way
-	// to catch this: the padding is a run of spaces, and counting them says
-	// nothing about whether the width was measured in runes.
+	// Every row must place its second column exactly where the header does;
+	// measuring the padding itself says nothing about whether the width was in runes.
 	for i, want := range []string{"Böhm", "wide"} {
 		got := strings.Index(lines[i+1], want)
 		require.GreaterOrEqual(t, got, 0, "line %d lost its value: %q", i+1, lines[i+1])
@@ -83,9 +80,8 @@ func TestTablePadsShortRowsAndDropsExtraCells(t *testing.T) {
 		"a cell past the header count was rendered: %q",
 		out.String(),
 	)
-	// The first column is as wide as "longer-id" in the other test, here as wide
-	// as "only-a"; "a" is padded up to it and the second column of both rows
-	// lands on the same offset.
+	// The first column is as wide as "only-a"; "a" is padded up to it and the
+	// second column of both rows lands on the same offset.
 	second := strings.Index(lines[2], "b")
 	assert.Equal(
 		t,
@@ -215,8 +211,7 @@ func TestSanitizeCellKeepsColumnsAligned(t *testing.T) {
 
 func TestTableSanitizesWhatItStores(t *testing.T) {
 	// The sanitising has to happen in Add rather than in Render: Render measures
-	// what it prints, so a value it only cleaned on the way out would be
-	// measured at its uncleaned width and the columns would still be wrong.
+	// what it prints, so a value cleaned on the way out would be measured uncleaned.
 	table := NewTable("NAME", "STATE")
 	table.Add("first\nsecond", "yes")
 
@@ -243,12 +238,9 @@ func TestTableSanitizesWhatItStores(t *testing.T) {
 
 // TestRenderToAPipeIgnoresTheTerminalThisProcessHappensToHave runs the table
 // through a real terminal-shaped file and still expects the full document.
-//
 // A pipe, a file and a test's buffer all get every row in full: output is a
 // contract, and a table that wrapped itself to whichever window it was run in
-// would be a different document to every reader of the same command. The
-// terminal branch is reached only when gridOf says the writer really is a
-// terminal, and this is the case that keeps the pipe branch honest.
+// would be a different document to every reader of the same command.
 func TestRenderToAPipeIgnoresTheTerminalThisProcessHappensToHave(t *testing.T) {
 	table := NewTable("ID", "DESCRIPTION")
 	for i := range 40 {
@@ -327,8 +319,7 @@ func TestFitWidthsSqueezesTheWidestColumnFirst(t *testing.T) {
 
 func TestFitWidthsStopsAtTheFloors(t *testing.T) {
 	// A table too narrow for its own headers is rendered over the edge rather
-	// than squeezed into single letters: an overflowing table still wraps into
-	// something readable, while a table of one-character columns says nothing.
+	// than squeezed into single letters: an overflowing table still says everything.
 	widths, floors := (&Table{
 		headers: []string{"MOD", "STATE", "SOURCE"},
 		rows:    [][]string{{strings.Repeat("x", 30), "ok", "nexus"}},
@@ -369,8 +360,7 @@ func TestMeasureKeepsHeadersWholeAndFloorsThem(t *testing.T) {
 		len("NEEDS KEY"),
 	)
 	// A header is never truncated, so a column is never narrower than the word
-	// above it — and never narrower than minColumnWidth either, which is what
-	// raises the short one.
+	// above it — and never narrower than minColumnWidth either.
 	assert.Equal(
 		t,
 		minColumnWidth,
@@ -581,9 +571,8 @@ func TestFieldsAlignsAndShowsBlanks(t *testing.T) {
 
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
 	require.Len(t, lines, 4, "rendered %d lines, want 4:\n%s", len(lines), out.String())
-	// The block is scannable because the *values* line up, which is what the
-	// padding achieves. The colons deliberately do not: a key longer than
-	// "version" has to push its own value right to keep that column straight.
+	// The block is scannable because the *values* line up. The colons deliberately
+	// do not: a key longer than "version" pushes its own value right.
 	value := strings.Index(lines[0], "betterui")
 	require.GreaterOrEqual(t, value, 0, "the header row lost its value: %q", lines[0])
 
@@ -850,9 +839,8 @@ func TestDescribeError(t *testing.T) {
 	got = describeError(
 		oneLine(appErrors.New(appErrors.ErrCodeGameNotFound, "no Darktide installation was found")),
 	)
-	// The code travels with the message: in a table of source results the code
-	// is what tells a person whether a missing credential and an unreachable
-	// server are the same problem, and there is no other column for it.
+	// The code travels with the message: in a table of source results it is what
+	// tells a person whether a missing credential and an unreachable server are the same problem.
 	assert.Contains(t, got, "GAME_NOT_FOUND", "the cell dropped the error code: %q", got)
 
 	assert.Contains(t, got, "no Darktide installation", "the cell lost the message: %q", got)

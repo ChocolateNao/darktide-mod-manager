@@ -24,8 +24,7 @@ import (
 // come from the network, so a decompression bomb is a real input, not a
 // hypothetical one: without a ceiling one crafted entry can fill a user's disk.
 type ExtractionLimits struct {
-	// MaxEntries caps the number of archive members. A mod needing more than
-	// this is malformed.
+	// MaxEntries caps the number of archive members. A mod needing more is malformed.
 	MaxEntries int
 	// MaxEntrySize caps one extracted file.
 	MaxEntrySize int64
@@ -44,7 +43,7 @@ func DefaultExtractionLimits() ExtractionLimits {
 }
 
 // normalized returns a usable copy, replacing every unset or nonsensical field
-// with its default. A zero ExtractionLimits must not mean "extract nothing" and a
+// with its default: a zero ExtractionLimits must not mean "extract nothing" and a
 // negative one must not mean "allow everything".
 func (l ExtractionLimits) normalized() ExtractionLimits {
 	d := DefaultExtractionLimits()
@@ -68,18 +67,15 @@ type ExtractionResult struct {
 	// Files is the written inventory, sorted by relative path.
 	Files []domain.ModFile
 	// Skipped names entries the extractor deliberately did not write, each
-	// followed by the reason in parentheses. Surfaced so a user whose mod came
-	// out short can see why.
+	// followed by the reason in parentheses, so a user whose mod came out short
+	// can see why.
 	Skipped []string
 }
 
-// ArchiveExtractor unpacks a downloaded archive into a mod folder and reports the
-// file inventory so the repository can record it.
-//
-// Extraction is deliberately tolerant of junk and intolerant of escapes: an entry
-// whose name would land outside the destination is skipped and counted, because a
-// real archive occasionally carries a stray "../" entry, while honouring it would
-// let a mod write anywhere on the user's disk.
+// ArchiveExtractor unpacks a downloaded archive into a mod folder and reports the file
+// inventory so the repository can record it. Extraction tolerates junk but not escapes: an
+// entry landing outside the destination is skipped and counted, because honouring a stray
+// "../" would let a mod write anywhere on the user's disk.
 type ArchiveExtractor struct {
 	limits ExtractionLimits
 }
@@ -116,17 +112,13 @@ const (
 )
 
 // UnsupportedArchive is the message prefix used when the container format is not
-// one the manager unpacks. It is a prefix so callers can recognise the failure
-// without depending on a sentinel value.
+// one the manager unpacks, so callers can recognise the failure without depending
+// on a sentinel value.
 const UnsupportedArchive = "unsupported archive format"
 
-// Extract unpacks archivePath into destDir.
-//
-// destDir is created if missing. It is not required to be empty: extraction
-// overwrites same-named files and leaves everything else in place. Manager
-// manifests such as mod.toml are written like any other file — they belong in the
-// storage folder and are filtered out later, when the payload is exposed to the
-// game.
+// Extract unpacks archivePath into destDir, creating it if missing and leaving anything it
+// does not overwrite in place. Manager manifests such as mod.toml are written like any other
+// file and filtered out later, when the payload is exposed to the game.
 func (e *ArchiveExtractor) Extract(
 	ctx context.Context,
 	archivePath, destDir string,
@@ -187,12 +179,9 @@ func (e *ArchiveExtractor) Extract(
 	return state.result(), nil
 }
 
-// detectArchiveKind picks the reader for a path.
-//
-// The magic bytes are checked *before* the extension, because a mislabelled
-// archive is common (release assets are frequently named .tar.gz while holding a
-// zip) and the content is the more reliable signal. Only when the leading bytes
-// match nothing known does the name decide.
+// detectArchiveKind picks the reader for a path. Magic bytes are checked before
+// the extension, because mislabelled archives are common and content is the more
+// reliable signal; only unknown leading bytes fall back to the name.
 func detectArchiveKind(archivePath string) archiveKind {
 	switch magicOf(archivePath) {
 	case magicZip:
@@ -285,8 +274,8 @@ func (s *extractState) result() ExtractionResult {
 	for _, f := range s.byPath {
 		out = append(out, f)
 	}
-	// Sorted so the recorded inventory is stable across runs: reinstalling the
-	// same archive must not look like a change.
+	// Sorted so the recorded inventory is stable: reinstalling the same archive
+	// must not look like a change.
 	sort.Slice(out, func(i, j int) bool { return out[i].RelPath < out[j].RelPath })
 
 	files := make([]domain.ModFile, len(out))
@@ -302,8 +291,8 @@ func (s *extractState) result() ExtractionResult {
 // write. Everything that could escape destDir is rejected: absolute paths, drive
 // letters, UNC prefixes, and any ".." that climbs above the root.
 func safeRelPath(name string) (string, bool) {
-	// Archives built on Windows may use backslashes; treating them as separators
-	// means "..\..\evil.dll" is caught rather than becoming one oddly-named file.
+	// Archives built on Windows may use backslashes, and treating them as
+	// separators means "..\..\evil.dll" is caught rather than becoming one file.
 	slashed := strings.ReplaceAll(name, "\\", "/")
 	if strings.TrimSpace(slashed) == "" {
 		return "", false
@@ -312,10 +301,8 @@ func safeRelPath(name string) (string, bool) {
 	if strings.HasPrefix(slashed, "/") {
 		return "", false
 	}
-	// filepath.VolumeName only recognises drive letters on Windows, so a zip made
-	// on Windows and unpacked on Linux would sneak "C:/windows/system32/x.dll"
-	// through as an ordinary relative path. The colon is checked directly so the
-	// rejection is the same on every host.
+	// filepath.VolumeName only recognises drive letters on Windows, so the colon
+	// is checked directly to keep "C:/windows/system32/x.dll" out on every host.
 	if hasDrivePrefix(slashed) || strings.HasPrefix(slashed, "//") {
 		return "", false
 	}
@@ -364,9 +351,9 @@ func (s *extractState) skip(name, reason string) {
 }
 
 // admit reserves room for one more entry. Entries are counted before they are
-// written so an archive with a million zero-byte members cannot run the loop away
-// from the manager, and the context is re-checked per member so cancelling a large
-// install takes effect promptly.
+// written so an archive with a million zero-byte members cannot run the loop away,
+// and the context is re-checked per member so cancelling a large install takes
+// effect promptly.
 func (s *extractState) admit(ctx context.Context, name string) error {
 	if err := ctx.Err(); err != nil {
 		return canceledError(err)
@@ -383,9 +370,9 @@ func (s *extractState) admit(ctx context.Context, name string) error {
 }
 
 // writeFile copies one entry out and records its checksum and size. The recorded
-// size is what was actually written, never the header's claim: a header that says
-// "10 bytes" can expand to gigabytes of NUL bytes, and the repository would then
-// record a size the game could not verify.
+// size is what was actually written, never the header's claim: a header claiming
+// "10 bytes" can expand to gigabytes of NUL, and the repository would then record
+// a size the game could not verify.
 func (s *extractState) writeFile(
 	ctx context.Context,
 	rel string,
@@ -400,8 +387,8 @@ func (s *extractState) writeFile(
 	if err := platform.MkdirAll(filepath.Dir(destPath)); err != nil {
 		return err
 	}
-	// O_TRUNC follows a symlink that already sits at this path, which would let a
-	// hostile archive overwrite whatever the link points at. Removing first makes
+	// O_TRUNC follows a symlink already sitting at this path, which would let a
+	// hostile archive overwrite whatever the link points at; removing first makes
 	// the entry land on a path we just created.
 	if err := os.RemoveAll(destPath); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed, "replace %q", destPath)
@@ -444,11 +431,9 @@ func (s *extractState) writeFile(
 	return ctx.Err()
 }
 
-// trySymlink re-creates a link entry, but only when its resolved target stays
-// inside the destination. A link pointing at /etc/passwd is the archive
-// equivalent of "../", and unlike a plain file it would survive a later move of
-// the mod folder. It reports ok=false (with the reason) for an entry that must be
-// skipped, so one hostile link does not cost the user the whole mod.
+// trySymlink re-creates a link entry only when its resolved target stays inside the
+// destination: a link to /etc/passwd is the archive equivalent of "../", and unlike a plain
+// file it survives a later move of the mod folder. A refusal is reported rather than fatal.
 func (s *extractState) trySymlink(rel, target string) (ok bool, reason string, err error) {
 	destPath, err := s.resolve(rel)
 	if err != nil {
@@ -458,8 +443,8 @@ func (s *extractState) trySymlink(rel, target string) (ok bool, reason string, e
 	if strings.TrimSpace(target) == "" {
 		return false, "link has no target", nil
 	}
-	// Absolute targets are rejected outright; a relative one is resolved against
-	// the directory the link itself sits in, which is how tar semantics work.
+	// Absolute targets are rejected outright; a relative one resolves against the
+	// directory the link itself sits in, which is how tar semantics work.
 	if path.IsAbs(strings.ReplaceAll(target, "\\", "/")) {
 		return false, "link points outside the archive", nil
 	}
@@ -492,8 +477,7 @@ func (s *extractState) trySymlink(rel, target string) (ok bool, reason string, e
 }
 
 // dirEntry records a directory so the inventory reflects empty folders the mod
-// declared. Directories contribute no checksum and are not counted towards the
-// byte budget.
+// declared. Directories contribute no checksum and count towards no byte budget.
 func (s *extractState) dirEntry(rel string) error {
 	destPath, err := s.resolve(rel)
 	if err != nil {
@@ -562,8 +546,8 @@ func (s *extractState) zip(ctx context.Context, archivePath string) error {
 }
 
 // gzipDecompress and bzip2Decompress adapt the two standard-library readers to
-// the one decompress signature state.tar uses. A corrupt compressed stream fails
-// here, before anything is written.
+// the one decompress signature state.tar uses; a corrupt stream fails here, before
+// anything is written.
 func gzipDecompress(r io.Reader) (io.Reader, error) { return gzip.NewReader(r) }
 
 func bzip2Decompress(r io.Reader) (io.Reader, error) { return bzip2.NewReader(r), nil }

@@ -1,12 +1,8 @@
 package storage
 
-// This file owns the walk over a mod folder. Three callers need the same answer
-// — what files does this mod actually contain, and where are they — and they
-// need it to be the *same* answer: the local source when it copies a folder into
-// the download staging area, the cache when it turns whatever a source handed it
-// into one blob, and the share service when it packs a mod to send. A walker per
-// caller is how mods with subfolders end up installed, cached and shared with
-// different contents.
+// This file owns the walk over a mod folder. The local source, the cache and the share service
+// all need the same answer — what files this mod contains — and a walker per caller is how mods
+// with subfolders end up installed, cached and shared with different contents.
 
 import (
 	"context"
@@ -40,22 +36,15 @@ func (e TreeEntry) PackEntry() PackEntry {
 	return PackEntry{Source: e.Source, Name: e.Path}
 }
 
-// CollectTree walks root and returns every regular file beneath it, sorted by
-// path so that two runs over the same folder produce the same archive.
+// CollectTree walks root and returns every regular file beneath it, sorted by path so two runs
+// over the same folder produce the same archive.
 //
-// Names are relative and slash-separated rather than absolute: an archive that
-// carried the sharer's home directory in every entry name would leak the layout
-// of their machine to the recipient and would not extract anywhere.
-//
-// Symlinks are followed only when they resolve inside the tree. A mod folder is
-// user-owned, so links inside it are expected; a link pointing out of it would
-// turn "share this folder" into "read whatever it points at", which is the same
-// reason the local source refuses to copy one. Such a link is refused rather
-// than quietly skipped, because a mod that silently loses a file is the failure
-// mode this walk exists to remove.
-//
-// Entries that are neither files nor directories — sockets, devices, FIFOs — are
-// skipped: they have no meaning inside a mod archive.
+// Names are relative and slash-separated: absolute names would leak the sharer's home layout to
+// the recipient and would not extract anywhere. Symlinks are followed only when they resolve
+// inside the tree — a mod folder is user-owned, so inner links are expected, and an outward
+// one would turn "share this folder" into "read whatever it points at". Such a link is refused
+// rather than skipped, because a mod that silently loses a file is the failure mode this walk
+// exists to remove. Sockets, devices and FIFOs have no meaning inside a mod archive.
 func CollectTree(root string) ([]TreeEntry, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no folder to collect")
@@ -125,9 +114,8 @@ func CollectTree(root string) ([]TreeEntry, error) {
 		return nil, walkErr
 	}
 
-	// WalkDir already walks lexically, so the result is sorted; the sort is here
-	// so that the guarantee is stated rather than inferred, because the archive's
-	// bytes — and therefore its hash — depend on it.
+	// WalkDir already sorts lexically; the explicit sort states the guarantee
+	// the archive's bytes — and therefore its hash — depend on.
 	slices.SortFunc(entries, func(a, b TreeEntry) int { return strings.Compare(a.Path, b.Path) })
 
 	return entries, nil
@@ -144,11 +132,8 @@ func escapes(root, resolved string) bool {
 	return relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
 
-// PackDirectory zips a mod folder to destPath.
-//
-// This is how a folder-shaped source becomes installable: the archive extractor
-// reads zips, so anything a source hands the cache as a directory has to become
-// one before the rest of the pipeline can see it.
+// PackDirectory zips a mod folder to destPath. This is how a folder-shaped source becomes
+// installable: the extractor reads zips, so a directory has to become one first.
 func PackDirectory(ctx context.Context, root, destPath string) (*PackResult, error) {
 	entries, err := CollectTree(root)
 	if err != nil {

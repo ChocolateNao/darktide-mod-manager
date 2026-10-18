@@ -354,9 +354,8 @@ func TestCurrentDirs(t *testing.T) {
 			AppName,
 		)
 	}
-	// Logs no longer live under the data directory: each platform has its own
-	// convention (Library/Logs on macOS, XDG_STATE_HOME elsewhere), so the only
-	// invariant left is that the path is absolute and ends in logs/<app>.
+	// Logs live outside the data directory: each platform has its own convention
+	// (Library/Logs on macOS, XDG_STATE_HOME elsewhere), so absoluteness is all.
 	assert.True(t, filepath.IsAbs(dirs.Logs), "Logs dir %q is not absolute", dirs.Logs)
 
 	want := filepath.ToSlash(filepath.Join(AppName, "logs"))

@@ -16,12 +16,8 @@ import (
 )
 
 // newModCommand assembles the `dmm mod` group: everything that acts on a single
-// mod or on the installed set.
-//
-// The group is split across files by subject rather than by size — the mod
-// family owns install state, the hook family owns scripts — because a reader
-// looking for "how does install work" should not have to read the link-format
-// code to find it.
+// mod or on the installed set, split across files by subject so a reader looking
+// for "how does install work" does not have to read the link-format code.
 func newModCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "mod",
@@ -51,12 +47,9 @@ func newModCommand(s *session) *cobra.Command {
 	return group
 }
 
-// modView is the JSON shape of one mod.
-//
-// It is not domain.Mod. A domain struct is the manager's internal
-// representation, with hooks, per-source metadata and install bookkeeping that
-// a script has no use for; the JSON a command prints is a promise, and the
-// promise only needs the fields below.
+// modView is the JSON shape of one mod, not domain.Mod: a domain struct is the
+// manager's internal representation, with hooks and install bookkeeping a script
+// has no use for. The JSON is a promise, and the promise needs fewer fields.
 type modView struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name,omitempty"`
@@ -356,10 +349,8 @@ func newModUpdateCommand(s *session) *cobra.Command {
 			ctx := cmd.Context()
 
 			if len(args) == 1 {
-				// --check has to be honoured here too, not only on the path
-				// with no mod named. A person who asked what is available and
-				// got an install would be right to be annoyed, and a script
-				// polling for updates would be installing them.
+				// --check is honoured here too, not only where no mod is named:
+				// a script polling for updates would otherwise install them.
 				if checkOnly {
 					updates, err := client.CheckModUpdates(ctx)
 					if err != nil {
@@ -402,19 +393,9 @@ func newModUpdateCommand(s *session) *cobra.Command {
 	return command
 }
 
-// reportUpdates prints what a check found, optionally narrowed to one mod.
-//
-// The narrow case exists because `dmm mod update --check <id>` and
-// `dmm mod update --check` are the same question with different scopes, and
-// they have to give the same answer for the same mod.
-//
-// checking says whether this is a report or the tail of an apply, which is the
-// only thing the empty result means differently: a report that found nothing
-// says so, and an apply that changed nothing says so.
-//
-// An id that matched nothing is reported rather than silently producing an
-// empty table: a mod whose source cannot be reached is exactly the mod a person
-// is checking for, and "no updates" would be a lie about it.
+// reportUpdates prints what a check found, optionally narrowed to one mod: the
+// narrow and bare forms are the same question and must answer alike. An id that
+// matched nothing is reported, since "no updates" would be a lie.
 func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, checking bool) error {
 	table := NewTable("MOD", "INSTALLED", "REMOTE", "STATE", "SOURCE")
 	views := make([]updateView, 0, len(updates))
@@ -439,10 +420,8 @@ func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, chec
 	}
 
 	if onlyID != "" && !matched {
-		// MOD_NOT_FOUND, not INVALID_ARGUMENT, because the other path through
-		// this same command — `dmm mod update <id>` — reports a mod that is not
-		// installed with that code, and a script branching on the code should
-		// not get two different answers from one command.
+		// MOD_NOT_FOUND, not INVALID_ARGUMENT, because `dmm mod update <id>`
+		// reports an uninstalled mod with that code and a script branches on it.
 		return appErrors.New(appErrors.ErrCodeModNotFound,
 			"mod %q is not installed", modLabelOf(onlyID))
 	}
@@ -456,11 +435,8 @@ func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, chec
 }
 
 // updateState words the answer to "is there an update" rather than leaving the
-// reader to infer it from two version columns.
-//
-// A dash in the REMOTE column means the source could not be asked, and an
-// unlabelled asterisk would leave both of those cases looking like the same
-// thing. This is the column a person reads.
+// reader to infer it from two version columns. A dash in REMOTE means the source
+// could not be asked, and an unlabelled asterisk would make that look the same.
 func updateState(update api.ModUpdateInfo) string {
 	switch {
 	case strings.TrimSpace(update.RemoteVersion) == "":
@@ -472,12 +448,9 @@ func updateState(update api.ModUpdateInfo) string {
 	}
 }
 
-// applyPendingUpdates updates every mod with an available update.
-//
-// One failure does not abandon the rest: a user running `dmm mod update` with
-// twelve mods installed wants the eleven that worked, plus a list of what did
-// not. The failures are reported at the end, so the exit code still says the
-// command did not fully succeed.
+// applyPendingUpdates updates every mod with an available update. One failure
+// does not abandon the rest: the user wants the ones that worked plus a list of
+// what did not, and the exit code still says the command did not fully succeed.
 func (s *session) applyPendingUpdates(ctx context.Context, updates []api.ModUpdateInfo) error {
 	var failures []error
 
@@ -565,9 +538,8 @@ func newModReorderCommand(s *session) *cobra.Command {
 			fmt.Fprintf(s.env.Out, "load order set to %s\n", plural(len(args), "mod", "mods"))
 
 			if leftOut > 0 {
-				// A mod left out of the order silently loses its place, so
-				// saying how many is the difference between the user knowing
-				// and not knowing why the game loaded them differently.
+				// A mod left out silently loses its place, so saying how many is
+				// the difference between the user knowing and not knowing.
 				fmt.Fprintf(s.env.Out,
 					"%s not in the order, falling back to their priority\n",
 					plural(leftOut, "installed mod is", "installed mods are"))
@@ -754,7 +726,7 @@ func newConflictView(report api.ConflictReport) conflictView {
 	}
 
 	return conflictView{
-		ID:             report.ID(),
+		ID:             report.Identity(),
 		Type:           string(report.Type),
 		Severity:       string(report.Severity),
 		ModA:           first,
@@ -823,7 +795,7 @@ func newModConflictsCommand(s *session) *cobra.Command {
 				}
 
 				table.Add(string(report.Severity), string(report.Type), orDash(both),
-					Clip(report.Details), report.ID())
+					Clip(report.Details), report.Identity())
 				views = append(views, newConflictView(report))
 			}
 
@@ -837,9 +809,8 @@ func newModConflictsCommand(s *session) *cobra.Command {
 	return command
 }
 
-// resolutionNames lists the spellings ParseConflictResolution accepts, for use
-// in a usage message. It is built from the values rather than written out, so a
-// resolution added later appears in the help without a second edit.
+// resolutionNames lists the spellings ParseConflictResolution accepts for a usage
+// message, built from the values so a resolution added later needs no second edit.
 func resolutionNames() string {
 	names := make([]string, 0, 5)
 	for _, resolution := range []api.ConflictResolution{
@@ -877,12 +848,10 @@ func formatStamp(value time.Time) string {
 	return value.UTC().Format(time.RFC3339)
 }
 
-// sourceDataText reads a string out of a mod's source metadata.
-//
-// The type assertion is checked rather than assumed: SourceData comes from
-// JSON written by somebody else's source plugin, so a mod carrying a number
-// where a string was expected is entirely possible, and a bare assertion would
-// take the whole command down over a field nobody asked for.
+// sourceDataText reads a string out of a mod's source metadata. The assertion is
+// checked because SourceData comes from JSON written by somebody else's source
+// plugin, and a bare assertion would take the command down over a field nobody
+// asked for.
 func sourceDataText(data map[string]any, key string) string {
 	if data == nil {
 		return ""
@@ -893,14 +862,10 @@ func sourceDataText(data map[string]any, key string) string {
 	return strings.TrimSpace(text)
 }
 
-// sourceDataInt reads a number out of a mod's source metadata. JSON decodes
-// every number into a float64, but a plugin that put an int there would give an
-// int, so both are accepted.
-//
-// A fractional value is refused rather than truncated. Both mod stores number
-// their files with whole numbers, so a fraction is corruption — and truncating
-// corruption produces an id that names a different, real mod, which is worse
-// than admitting the value is wrong.
+// sourceDataInt reads a number out of a mod's source metadata, accepting int and
+// float64 because JSON decodes every number into a float64. A fractional value is
+// refused rather than truncated: truncating corruption produces an id naming a
+// different real mod, which is worse than admitting the value is wrong.
 func sourceDataInt(data map[string]any, key string) (int64, bool) {
 	if data == nil {
 		return 0, false

@@ -7,15 +7,11 @@ import (
 	"sync"
 )
 
-// ModSource is the plugin contract every mod provider implements. Adding a new
-// provider requires nothing in the core: implement this interface and register
-// a factory.
+// ModSource is the plugin contract every mod provider implements.
 //
-// Two registration scopes exist. A generic factory (RegisterSourceFactory) is
-// available to every game; a game-scoped one (RegisterGameSourceFactory, keyed
-// by SourceKey(gameID, id)) is preferred while that game is active and invisible
-// to the others. The id a source reports is the same either way — game scope is
-// a property of the factory, not of the source.
+// A generic factory (RegisterSourceFactory) is visible to every game; a
+// game-scoped one (RegisterGameSourceFactory) is preferred while its game is
+// active. Scope is a property of the factory, not of the source.
 type ModSource interface {
 	// ID returns the stable identifier used in config and in the CLI ("vortex").
 	ID() string
@@ -47,35 +43,47 @@ type ModSource interface {
 	ValidateCredentials(ctx context.Context) error
 }
 
-// GameScopedSource is implemented by sources that exist for exactly one game —
-// a tool that manages another title's load order, say — so a caller can tell
-// "this source belongs to game X" without knowing the concrete plugin.
+// GameScopedSource lets a caller ask which game a source belongs to without
+// naming the concrete plugin.
 //
-// It is optional, like CredentialForgetter: a shared source (Nexus, GitHub)
-// implements only ModSource, and the registration scope of its factory already
-// decides which games can see it.
+// It is optional, like CredentialForgetter: the registration scope of the factory
+// already decides which games can see the source.
 type GameScopedSource interface {
 	// GameID returns the registry id of the game this source serves.
 	GameID() string
 }
 
-// CredentialForgetter is implemented by sources that can drop the credential
-// they are holding.
+// CredentialForgetter is implemented by sources that can drop the credential they hold.
 //
-// It is optional and deliberately not part of ModSource: a source that takes no
-// credential — a folder of mods on disk — has nothing to forget, and forcing the
-// method on it would make every plugin implement a no-op.
+// It is optional and deliberately not part of ModSource: a folder of mods on disk
+// has nothing to forget.
 //
-// The manager needs it because deleting a key is a two-part operation. Clearing
-// the settings file stops the credential coming back on the next launch, but the
-// source object built during this process keeps the key it was handed at start-up
-// and would go on sending it until the app was restarted. A source that cannot
-// forget is told so rather than quietly left holding a key the user deleted.
+// Deleting a key is two-part. Clearing the settings file stops it coming back on
+// the next launch, but the source built during this process would keep sending it
+// until restart. A source that cannot forget is told so rather than left holding a
+// key the user deleted.
 type CredentialForgetter interface {
 	// ForgetCredentials drops the held credential. It must not contact the
 	// network: the user asked for the key to be gone, and a call that can fail
 	// because a launcher is down cannot promise that.
 	ForgetCredentials()
+}
+
+// PathInspector is implemented by sources that read mods off the filesystem
+// instead of out of an index.
+//
+// It is optional for the same reason CredentialForgetter is: a hosted provider has
+// no folders, so InspectPath could only ever say "not here". The manager needs it
+// because a drag gesture hands over a path, and nothing else in ModSource turns a
+// path into a mod.
+//
+// The boolean is "this source recognises the path", not "the read succeeded":
+// false means ask the next source, true means the Mod is the answer, and false
+// must not come with an error.
+type PathInspector interface {
+	// InspectPath describes the mod at path, or reports that it does not
+	// recognise it.
+	InspectPath(ctx context.Context, path string) (mod *Mod, recognised bool, err error)
 }
 
 // SearchQuery is the provider-agnostic search request. Page is 1-based; PageSize
@@ -146,10 +154,8 @@ func (c AuthCredentials) Has(key string) bool {
 	return ok
 }
 
-// SearchAll fans a query out across sources and merges results. Failures from
-// individual providers are tolerated: the returned slice contains everything
-// that succeeded. Errors are returned only when every provider failed, and the
-// first failure is reported.
+// SearchAll fans a query out across sources and merges results. An error is
+// returned only when every provider failed, and it is the first failure.
 func SearchAll(ctx context.Context, sources []ModSource, query SearchQuery) ([]Mod, error) {
 	if len(sources) == 0 {
 		return nil, nil

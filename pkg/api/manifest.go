@@ -20,20 +20,17 @@ type ModLinkTarget = domain.ModLinkTarget
 // cannot fetch the mod itself.
 type ModLinkFallback = domain.ModLinkFallback
 
-// URLOpener opens a web address in the user's browser.
-//
-// It is the one capability a mod's page needs, declared as its own interface
-// because "open this link" is the only thing the source-link and manifest
-// surfaces do, and a caller that supplies a stub gets to assert on the URL
-// rather than on a real browser appearing.
+// URLOpener opens a web address in the user's browser. Declared as its own
+// interface because "open this link" is all the source-link and manifest surfaces
+// do, and a caller supplying a stub can assert on the URL rather than a real
+// browser.
 type URLOpener interface {
 	OpenURL(ctx context.Context, rawURL string) error
 }
 
-// opener returns the URL opener, or the error to report.
-//
-// Opening a link is a desktop concern, so a client wired without an opener — the
-// CLI in a container, a test — says so rather than silently doing nothing.
+// opener returns the URL opener, or the error to report. Opening a link is a desktop
+// concern, so a client wired without an opener — the CLI in a container, a test — says
+// so rather than silently doing nothing.
 func (c *Client) opener() (URLOpener, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -47,13 +44,10 @@ func (c *Client) opener() (URLOpener, error) {
 	return c.deps.URLs, nil
 }
 
-// ModSourceLink returns every web location an installed mod can be fetched from,
-// and what a user has to do by hand when the manager cannot do it for them.
-//
-// The three URLs are kept rather than rebuilt from source-specific data because
-// "where did this come from" has to survive the source plugin that knew it: a
-// Nexus mod's page is the only route back to the file, since downloading needs
-// credentials the manager will not put into a share link.
+// ModSourceLink returns every web location an installed mod can be fetched from, and
+// what a user must do by hand. The URLs are kept rather than rebuilt from
+// source-specific data because "where did this come from" has to outlive the plugin
+// that knew it.
 func (c *Client) ModSourceLink(ctx context.Context, modID string) (*domain.ModSourceLink, error) {
 	mod, err := c.GetMod(ctx, modID)
 	if err != nil {
@@ -82,15 +76,10 @@ func (c *Client) ModSourceLinks(ctx context.Context) (map[string]domain.ModSourc
 	return links, nil
 }
 
-// OpenModSource opens an installed mod's web location in the user's browser.
-//
-// target selects which of the mod's links to open and accepts the same words the
-// CLI takes: "source", "download", "update", or "auto". A mod with no link of
-// that kind is an error rather than a silent no-op — the caller asked to open
-// something and nothing opened, which is the worst of the three outcomes.
-//
-// A mod with no links at all returns the fallback advice instead, so a caller can
-// show the user what they would have to do rather than only an error string.
+// OpenModSource opens an installed mod's web location in the user's browser. target
+// selects which link and takes the same words the CLI takes: "source", "download",
+// "update" or "auto". A mod with no link of that kind is an error, not a silent
+// no-op; a mod with no links at all returns the fallback advice.
 func (c *Client) OpenModSource(
 	ctx context.Context,
 	modID, target string,
@@ -131,18 +120,11 @@ func (c *Client) OpenModSource(
 	return &fallback, nil
 }
 
-// WriteModManifest rewrites a mod's manifest from what the manager knows about
-// it and returns the path written.
-//
-// This is the "the manifest holds everything the database has" direction: a mod
-// installed from a source the manager can no longer reach still documents its
-// origin, its requirements and its hooks, which is what lets somebody fetch it
-// themselves instead of trusting a peer-to-peer transfer.
-//
-// It overwrites, because refreshing a record is the entire point. A manifest
-// written by hand for a mod the manager has never seen is untouched by this —
-// there is no mod record to refresh from — while one that has drifted from the
-// database is corrected, since the database is what the manager actually acts on.
+// WriteModManifest rewrites a mod's manifest from what the manager knows about it and
+// returns the path written. A mod installed from a source the manager can no longer
+// reach still documents its origin, requirements and hooks. It overwrites, because
+// refreshing a record is the point; a hand-written manifest for a mod the manager
+// has never seen is untouched.
 func (c *Client) WriteModManifest(ctx context.Context, modID string) (string, error) {
 	mod, err := c.GetMod(ctx, modID)
 	if err != nil {

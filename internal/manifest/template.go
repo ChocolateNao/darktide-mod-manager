@@ -3,13 +3,11 @@ package manifest
 // Template is the blank manifest `manifest init` writes: every field present so
 // the format is visible, every value empty so nothing is claimed.
 //
-// It is a literal rather than an encoder output because a starter file is read
-// by a person before it is read by the manager, and the comments are the point.
-// It is built from Names[0] so the file it names is the file Init writes.
-//
-// The result must stay valid TOML — Init round-trips what it writes through
-// Read, so a template that no longer parses fails the test suite rather than
-// the user's first install.
+// It is a literal rather than an encoder output because a starter file is read by
+// a person before it is read by the manager, and the comments are the point. The
+// result must stay valid TOML: Init round-trips what it writes through Read, so a
+// template that no longer parses fails the test suite rather than a user's first
+// install.
 var Template = `# Manifest for a mod folder.
 #
 # Every field here is optional. A folder with no manifest at all is still

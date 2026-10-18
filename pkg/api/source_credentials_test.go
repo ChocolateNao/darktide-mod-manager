@@ -63,9 +63,8 @@ func credentialClient(
 type SourceRegistryForTest struct{ registry *services.SourceRegistry }
 
 func TestAuthenticateSourceStoresWhatTheSourceAccepted(t *testing.T) {
-	// The registry's record of a sign-in dies with the process, so a caller that
-	// authenticated and stopped there would sign in again on every launch. The
-	// key on disk is what the source rebuilds itself from.
+	// The registry's sign-in record dies with the process, so the key on disk is what
+	// the source rebuilds itself from.
 	source := &stubSource{id: "nexus"}
 	cfg := domain.DefaultConfig()
 	client, store, _ := credentialClient(t, source, &cfg)
@@ -104,9 +103,8 @@ func TestAuthenticateSourceStoresWhatTheSourceAccepted(t *testing.T) {
 }
 
 func TestAKeyTheSourceRefusesIsNeverStored(t *testing.T) {
-	// A rejected key left in the settings file is worse than no key: the next
-	// command would try it again and fail again, and the user would have no way
-	// to tell a stored key from a working one.
+	// A rejected key left on disk is worse than none: the next command tries it again
+	// and the user cannot tell it from a working one.
 	source := &failingSource{stubSource: stubSource{id: "nexus"}, code: ErrCodeAuthFailed}
 	cfg := domain.DefaultConfig()
 	client, store, _ := credentialClient(t, source, &cfg)

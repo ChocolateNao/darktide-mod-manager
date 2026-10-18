@@ -21,18 +21,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests here cover the fan-out rather than the code that feeds it: that each
-// sink receives what it should and nothing it should not, that a level change is
-// one store rather than a rebuild, that a secret never arrives, and that
-// rotation, following and closing behave correctly.
+// These tests cover the fan-out: each sink receives what it should, a level
+// change is one store rather than a rebuild, and rotation/following/closing work.
 
 // newService builds a Service over a temporary log directory and closes it when
 // the test ends.
 //
-// Nothing here reaches for the process environment. DMM_LOG_DIR is cleared
-// rather than assumed absent, so a developer with it exported gets the same
-// directory the test asked for; Directory is always absolute, so the resolution
-// under test is the one with nothing else claiming it.
+// DMM_LOG_DIR is cleared rather than assumed absent, so a developer who exports
+// it still gets the directory the test asked for.
 func newService(t *testing.T, cfg Config) *Service {
 	t.Helper()
 	t.Setenv(EnvLogDir, "")
@@ -50,8 +46,7 @@ func newService(t *testing.T, cfg Config) *Service {
 
 // captureStderr runs f with os.Stderr replaced by a pipe and returns what was
 // written. The console sink writes to os.Stderr by design, so this is how a test
-// reaches it without the package offering a way to redirect output — a seam that
-// exists only for tests is a seam production code can then start depending on.
+// reaches it without the package offering a test-only seam.
 func captureStderr(t *testing.T, f func()) string {
 	t.Helper()
 
@@ -273,9 +268,8 @@ func TestEachSinkHonoursItsOwnLevel(t *testing.T) {
 		require.NoError(t, err, "Close: %v", err)
 	})
 
-	// The file is at trace and the GUI stream is at debug, so the only record those
-	// two disagree about is the trace one. The console drops both, because it has
-	// to stay readable at whatever level the file is set to.
+	// The console drops both levels so that it stays readable whatever the file is
+	// set to.
 	got := messagesIn(t, LogPath(dir))
 	assert.True(
 		t,
@@ -353,9 +347,8 @@ func TestTheConsoleCanBeAskedForText(t *testing.T) {
 
 func TestSetLevelIsOneStoreAndTakesEffectImmediately(t *testing.T) {
 	s := newService(t, Config{Level: "info"})
-	// The copy is taken before the change on purpose: it is what a caller that
-	// cached the logger holds on to, so a SetLevel that rebuilt the writer graph
-	// would leave this copy writing to a stack nobody is reading any more.
+	// The copy is taken before the change: a SetLevel that rebuilt the writer graph
+	// would leave it writing to a stack nobody reads.
 	lg := *s.Logger()
 
 	lg.Debug().Msg("before")
@@ -419,9 +412,8 @@ func TestSecretsAreMaskedBeforeAnySinkSeesThem(t *testing.T) {
 }
 
 func TestAFieldNobodyNamedIsLeftAlone(t *testing.T) {
-	// Masking everything would make the log useless, which fails in the same
-	// direction as masking nothing: a reader who cannot tell a masked field from a
-	// real one stops reading the log at all.
+	// Masking everything fails like masking nothing: a reader who cannot tell a masked
+	// field from a real one stops reading the log.
 	const secret = "a-version-number-that-is-not-secret"
 
 	s := newService(t, Config{Level: "info"})
@@ -473,8 +465,7 @@ func TestSetRedactFieldsTakesEffectWithoutARestart(t *testing.T) {
 func TestTheRotationSettingsDecideWhatIsKept(t *testing.T) {
 	s := newService(t, Config{Level: "info", MaxSizeMB: 1, MaxBackups: 2, Compress: true})
 	chunk := strings.Repeat("x", 1024)
-	// Past two megabytes, so there are more generations than MaxBackups allows and
-	// the oldest one is the one that has to go.
+	// Past two megabytes, so there are more generations than MaxBackups allows.
 	for i := 0; i < 2600; i++ {
 		s.Logger().Info().Str("chunk", chunk).Msg("filling the log")
 	}
@@ -777,8 +768,7 @@ func TestDefaultsAreTheDocumentedOnes(t *testing.T) {
 		cfg,
 	)
 	// A partially filled block falls back rather than landing on a policy nobody
-	// chose. For Compress that means "on" even though false is the zero value, the
-	// same convention domain.CacheConfig.VerifyHashes uses.
+	// chose. For Compress that means "on" even though false is the zero value.
 	filled := Config{MaxSizeMB: 25}.Normalize()
 	assert.False(
 		t,
@@ -841,11 +831,8 @@ func TestResolveDirectoryFollowsTheDocumentedPrecedence(t *testing.T) {
 		got,
 		err,
 	)
-	// A relative path scatters logs according to the working directory, which is
-	// the one thing a log file's location must not do. The config file is not
-	// checked, because a value there is as likely to be written by hand as by the
-	// flag parser and refusing to start over it would be worse than a log in an
-	// odd place.
+	// A relative path scatters logs by the working directory, the one thing a log
+	// file's location must not do. Config files are left alone: refusing to start is worse.
 	_, err = ResolveDirectory("relative/logs", "")
 	assert.Error(t, err, "a relative --log-dir was accepted")
 }

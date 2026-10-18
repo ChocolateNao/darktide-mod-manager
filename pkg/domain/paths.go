@@ -5,19 +5,15 @@ import (
 	"strings"
 )
 
-// CleanPath normalises a filesystem path for comparison, storage and display:
-// it collapses redundant separators, resolves "." and ".." segments, and converts
-// backslashes to forward slashes so that Windows and Unix paths compare evenly in
-// logs and in the mod database.
+// CleanPath normalises a path for comparison, storage and display: redundant
+// separators collapse, "." and ".." resolve, and backslashes become forward
+// slashes so a Windows path still matches after the config moves to Linux.
 //
-// Backslashes are always folded, even on Unix where they are legal filename
-// characters. That is safe because the result is never used to open a file: file
-// operations take the raw path, while this function feeds comparison, keying and
-// display. The payoff is that a config written on Windows still matches after
-// being moved to Linux.
+// Backslashes are folded even on Unix, where they are legal filename characters.
+// That is safe because nothing here opens a file: file operations take the raw
+// path, while this feeds comparison, keying and display.
 //
-// It deliberately does not convert case: a case-folded path cannot be used for
-// file operations.
+// Case is never folded, because a case-folded path cannot be used to open one.
 func CleanPath(p string) string {
 	if p == "" {
 		return ""
@@ -52,10 +48,9 @@ func EqualFold(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// PathsEqual reports whether two filesystem paths point at the same location
-// under case-insensitive comparison. This is correct on Windows and macOS and
-// deliberately lenient on Linux; use StrictPathsEqual when a case difference
-// must be treated as a difference.
+// PathsEqual reports whether two paths point at the same location under
+// case-insensitive comparison: correct on Windows and macOS, deliberately lenient
+// on Linux. Use StrictPathsEqual when a case difference is a difference.
 func PathsEqual(a, b string) bool {
 	return strings.EqualFold(CleanPath(a), CleanPath(b))
 }
@@ -95,11 +90,9 @@ func PathWithin(parent, child string) bool {
 	return strings.HasPrefix(c, "/") == strings.HasPrefix(p, "/")
 }
 
-// ModStoragePath returns the directory that holds a mod's version folder:
-// <storage>/<gameID>/<modID>/<version>. Every segment is sanitised so that a
-// hostile id or version string cannot escape the storage root. The game
-// segment keeps two games' mods of the same id apart when one manager
-// installation manages both.
+// ModStoragePath returns the directory holding a mod's version folder:
+// <storage>/<gameID>/<modID>/<version>. Every segment is sanitised so a hostile id
+// cannot escape the root; the game segment keeps two games' same-id mods apart.
 func ModStoragePath(storageRoot, gameID, modID, version string) string {
 	return JoinPath(
 		storageRoot,
@@ -109,18 +102,16 @@ func ModStoragePath(storageRoot, gameID, modID, version string) string {
 	)
 }
 
-// ModVersionRoot is the per-mod parent of a payload folder: the directory
-// that holds every installed version of one mod under a given root. Cleaning
-// it up after the last version is removed is what keeps the mods folder from
-// filling up with empty directories.
+// ModVersionRoot is the per-mod parent of a payload folder, holding every
+// installed version of one mod. Removing it with the last version keeps the mods
+// folder from filling with empty directories.
 func ModVersionRoot(modsRoot, modID string) string {
 	return JoinPath(modsRoot, SanitizeSegment(modID))
 }
 
-// SanitizeSegment reduces an arbitrary string to a single safe path segment.
-// Path separators, drive letters, dot segments and characters that are illegal
-// on Windows are removed; the empty result becomes "_" so callers always get a
-// usable directory name.
+// SanitizeSegment reduces an arbitrary string to a single safe path segment:
+// separators, drive letters, dot segments and characters illegal on Windows are
+// removed, and an empty result becomes "_".
 func SanitizeSegment(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

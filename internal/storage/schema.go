@@ -1,9 +1,6 @@
-// Package storage owns every byte the manager persists: the configuration
-// file, the SQLite database that records installed mods, and the download
-// cache. Nothing here knows about the game, the network or the UI — services
-// depend on the interfaces declared in this package, and the concrete
-// implementations below them are the only things that touch the disk or a
-// database handle.
+// Package storage owns every byte the manager persists: the configuration file, the
+// SQLite database recording installed mods, and the download cache. Nothing here knows
+// about the game, the network or the UI; services depend on this package's interfaces.
 package storage
 
 import (
@@ -15,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,9 +22,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// DriverName is the database/sql driver registered by modernc.org/sqlite. It is
-// a pure-Go build: the manager ships as a single binary with no CGO toolchain
-// requirement.
+// DriverName is the database/sql driver registered by modernc.org/sqlite: a pure-Go
+// build, so the manager ships as one binary with no CGO toolchain requirement.
 const DriverName = "sqlite"
 
 // CurrentSchemaVersion is the value written to PRAGMA user_version after
@@ -65,9 +62,8 @@ type SchemaState struct {
 // IsCurrent reports whether the database carries the schema this build expects.
 func (s SchemaState) IsCurrent() bool { return s.Installed && s.Version == CurrentSchemaVersion }
 
-// InspectSchema reports the schema version of an already-open database. A
-// database with no user_version set is reported as not installed, which is the
-// signal callers use to decide whether to run ApplySchema.
+// InspectSchema reports the schema version of an already-open database. No user_version
+// set means not installed, which is the signal callers use to decide on ApplySchema.
 func InspectSchema(ctx context.Context, db *sql.DB) (SchemaState, error) {
 	if db == nil {
 		return SchemaState{}, appErrors.New(appErrors.ErrCodeConfigIO, "nil database handle")
@@ -81,10 +77,9 @@ func InspectSchema(ctx context.Context, db *sql.DB) (SchemaState, error) {
 	return SchemaState{Version: version, Installed: version > 0}, nil
 }
 
-// ApplySchema creates any missing tables and indexes and stamps the schema
-// version. It is idempotent, and it refuses to touch a database written by a
-// newer build: downgrading would silently leave the newer tables in place and
-// the older code would trip over them.
+// ApplySchema creates any missing tables and indexes and stamps the schema version. It
+// is idempotent, and it refuses to touch a database written by a newer build: the older
+// code would trip over the newer tables it cannot see.
 func ApplySchema(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return appErrors.New(appErrors.ErrCodeConfigIO, "nil database handle")
@@ -105,10 +100,8 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 
 	defer func() { _ = tx.Rollback() }()
 
-	// Upgrades run before the idempotent DDL: the DDL's CREATE INDEX on
-	// game_id would fail against a mods table written by an older build that
-	// does not have the column yet. Cheap PRAGMA probe, guarded so a fresh
-	// database (no mods table) skips it.
+	// Upgrades run before the DDL: CREATE INDEX on game_id would fail against a
+	// mods table written by a pre-multi-game build.
 	if err := addModsGameIDColumn(ctx, tx); err != nil {
 		return err
 	}
@@ -148,23 +141,18 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// addModsGameIDColumn upgrades a mods table created by a pre-multi-game build.
-//
-// The upgrade is a single guarded ALTER rather than a versioned migration: the
-// column carries DEFAULT \'\' so the statement cannot fail on populated tables,
-// and the probe (a PRAGMA table_info call) makes it a no-op on every database
-// that already has the column — which is every database this build creates.
-// The schema version is deliberately NOT bumped for this.
+// addModsGameIDColumn upgrades a mods table created by a pre-multi-game build. A single
+// guarded ALTER rather than a versioned migration: the column carries a DEFAULT so it
+// cannot fail on populated tables, and the probe makes it a no-op on every database
+// this build creates, so the version is never bumped.
 func addModsGameIDColumn(ctx context.Context, tx *sql.Tx) error {
 	return addModsColumn(ctx, tx, "game_id",
 		"ALTER TABLE mods ADD COLUMN game_id TEXT NOT NULL DEFAULT ''")
 }
 
-// addModsColumn adds one column to the mods table if it is not there already.
-//
-// It is shared by every mods-table upgrade so that each one has exactly one
-// copy of the probing logic; a second copy of that is how a migration ends up
-// guarded in one place and not in another.
+// addModsColumn adds one column to the mods table if it is not there already. Shared by
+// every mods-table upgrade so the probing logic has exactly one copy; a second copy is
+// how a migration ends up guarded in one place and not in another.
 func addModsColumn(ctx context.Context, tx *sql.Tx, name, ddl string) error {
 	var table int
 
@@ -200,21 +188,11 @@ func addModsColumn(ctx context.Context, tx *sql.Tx, name, ddl string) error {
 	return nil
 }
 
-// addModsSourceLinkColumns upgrades a mods table written before the manager
-// remembered where a mod came from.
-//
-// The three columns hold the web addresses a mod was found at: the page it was
-// installed from, a direct download when the source offers one, and the page that
-// shows its newest version. Without them a mod installed from a source that
-// cannot be re-queried — Nexus without credentials, say — becomes an unreachable
-// island once the database is moved to another machine, because the manifest
-// written into the mod folder is the only other copy and a share recipient never
-// sees it.
-//
-// The upgrade is three guarded ALTERs rather than a versioned migration, for the
-// same reasons as addModsGameIDColumn: each carries a DEFAULT, so it cannot fail
-// on a populated table, and the probe makes it a no-op on every database this
-// build creates.
+// addModsSourceLinkColumns upgrades a mods table written before the manager remembered where a
+// mod came from. Without these columns a mod from a source that cannot be re-queried becomes
+// unreachable once the database moves machine: a share recipient never sees the manifest in
+// the mod folder. Three guarded ALTERs rather than a versioned migration, as in
+// addModsGameIDColumn.
 func addModsSourceLinkColumns(ctx context.Context, tx *sql.Tx) error {
 	columns := []struct {
 		name string
@@ -245,15 +223,11 @@ func addModsSourceLinkColumns(ctx context.Context, tx *sql.Tx) error {
 
 // OpenDB opens (creating if necessary) the manager database at path.
 //
-// The empty path and the special value ":memory:" both yield a private in-memory
-// database. An in-memory database lives inside a single connection, so those
-// handles get a pool of exactly one connection with no idle or lifetime
-// eviction; otherwise a pooled second connection would open a brand-new empty
-// database and every read would come back empty.
-//
-// On-disk databases get WAL journalling (concurrent readers alongside one
-// writer), a busy timeout so a competing writer waits instead of failing
-// immediately, and enforced foreign keys.
+// An empty path or ":memory:" yields a database that lives inside one connection, so those
+// handles get a pool of exactly one: a pooled second connection would open a brand-new empty
+// database and every read would come back empty. On-disk databases get WAL journalling
+// (concurrent readers alongside one writer), a busy timeout so a competing writer waits
+// rather than fails, and enforced foreign keys.
 func OpenDB(ctx context.Context, path string) (*sql.DB, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -296,9 +270,8 @@ func OpenDB(ctx context.Context, path string) (*sql.DB, error) {
 	}
 
 	if !inMemory {
-		// journal_mode returns a row, and a database that cannot switch to WAL
-		// (a network share, a read-only mount) still works in its default mode,
-		// so a failure here is reported but not fatal.
+		// A database that cannot switch to WAL (a network share, a read-only
+		// mount) still works in its default mode, so a failure is not fatal.
 		var mode string
 		if err := db.QueryRowContext(ctx, "PRAGMA journal_mode = WAL").Scan(&mode); err != nil {
 			_ = db.Close()
@@ -309,11 +282,10 @@ func OpenDB(ctx context.Context, path string) (*sql.DB, error) {
 	return db, nil
 }
 
-// EnsureParentDir creates the directory that will hold an on-disk database.
-// SQLite refuses to create a file inside a directory that does not exist, and
-// the manager's data directory may legitimately be missing on first run. An
-// existing parent, an existing directory at the parent path, and an in-memory
-// database are all fine.
+// EnsureParentDir creates the directory that will hold an on-disk database: SQLite
+// refuses to create a file inside a missing directory, and the data directory may be
+// absent on first run. An existing parent, an existing directory at the parent path, and
+// an in-memory database are all fine.
 func EnsureParentDir(path string, inMemory bool) error {
 	if inMemory {
 		return nil
@@ -346,8 +318,7 @@ func canceledError(err error) error {
 	return appErrors.Wrap(err, appErrors.ErrCodeOperationCanceled, "operation stopped: %v", err)
 }
 
-// Open initializes the database at path and applies the schema. It is the
-// single call the rest of the program needs.
+// Open initializes the database at path and applies the schema.
 func Open(ctx context.Context, path string) (*sql.DB, error) {
 	db, err := OpenDB(ctx, path)
 	if err != nil {
@@ -365,10 +336,9 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 // MemoryPath is the DSN fragment that asks for a private in-memory database.
 const MemoryPath = ":memory:"
 
-// IsMemoryPath reports whether path names a private in-memory database rather
-// than a file: the empty string, ":memory:", and the URI spelling "file::memory:".
-// Callers in production always pass a real path — the empty case exists for
-// tests and for "--dry-run" flows that must not touch the disk.
+// IsMemoryPath reports whether path names a private in-memory database rather than a
+// file: the empty string, ":memory:", and the URI spelling "file::memory:". Production
+// always passes a real path; the empty case is for tests and "--dry-run" flows.
 func IsMemoryPath(path string) bool {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" || trimmed == MemoryPath {
@@ -383,16 +353,38 @@ func IsMemoryPath(path string) bool {
 	return trimmed == "file:"+MemoryPath
 }
 
+// fileURI renders an absolute filesystem path as the SQLite file: URI.
+//
+// A drive letter is a URI authority by every definition, so a raw Windows path renders as
+// `file://C:%5Cstate%5Cdmm.db` and SQLite answers "invalid uri authority" — invisible on Unix,
+// fatal there. The accepted form is `file:///C:/state/dmm.db`, which is why the caller passes an
+// absolute path. Backslashes are converted because a SQLite DSN is parsed as a URI.
+var windowsDrive = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+
+func fileURI(absolute string) string {
+	// Not filepath.ToSlash: that is a no-op on a build that does not recognise backslash
+	// as a separator, which is the build under test.
+	slashed := strings.ReplaceAll(absolute, `\`, "/")
+
+	// The drive is matched explicitly rather than with filepath.VolumeName, which
+	// only knows volumes of the platform it was compiled for.
+	if windowsDrive.MatchString(absolute) {
+		// `C:\state` -> `/C:/state`. The leading slash is what keeps the
+		// authority empty; without it the drive letter becomes the host.
+		slashed = "/" + slashed
+	}
+
+	u := url.URL{Scheme: "file", Path: slashed}
+
+	return u.String()
+}
+
 // dataSourceName builds the driver DSN, encoding the pragmas that have to be
 // set per connection.
 func dataSourceName(path string, inMemory bool) (string, error) {
 	name := MemoryPath
 
 	if !inMemory {
-		// The path is made absolute first. url.URL with a relative Path renders
-		// the first segment as the URI *authority*, which SQLite then rejects
-		// with "invalid uri authority" — so a relative path would fail in a way
-		// that looks nothing like the mistake it is.
 		absolute, err := filepath.Abs(path)
 		if err != nil {
 			return "", appErrors.Wrap(
@@ -403,22 +395,15 @@ func dataSourceName(path string, inMemory bool) (string, error) {
 			)
 		}
 
-		u := url.URL{Scheme: "file", Path: absolute}
-		name = u.String()
+		name = fileURI(absolute)
 	}
 
 	q := url.Values{}
-	// Every transaction starts as BEGIN IMMEDIATE rather than a deferred BEGIN.
-	// A deferred transaction that reads before it writes can hold a shared lock
-	// and then need to upgrade to a write lock, and SQLite resolves that race by
-	// failing one of the two with SQLITE_BUSY immediately — a busy timeout does
-	// not help, because the loser is not waiting on a busy database but on its
-	// own un-upgradable transaction. Claiming the write lock up front makes
-	// concurrent writers queue on the busy timeout instead.
+	// BEGIN IMMEDIATE up front: a deferred transaction that reads then writes
+	// fails one of two racers with SQLITE_BUSY, which no busy timeout cures.
 	q.Add("_txlock", "immediate")
-	// Per-connection pragmas: foreign_keys is a connection setting, not a
-	// database one, so putting it in the DSN is the only way to guarantee every
-	// pooled connection enforces cascades.
+	// foreign_keys is a per-connection setting, so it can only be guaranteed
+	// for every pooled connection by putting it in the DSN.
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "synchronous(NORMAL)")
@@ -430,13 +415,9 @@ func dataSourceName(path string, inMemory bool) (string, error) {
 	return name + "?" + q.Encode(), nil
 }
 
-// splitStatements breaks the embedded DDL into individual statements.
-//
-// Comment lines are removed *before* the split: a semicolon inside a comment
-// (".../sqlite_schema.sql; keeping it inside...") would otherwise cut a
-// comment in half and leave the tail as a statement. The embedded file has no
-// semicolons inside string literals, so splitting after stripping is enough —
-// and it keeps the driver from having to accept multi-statement Execute.
+// splitStatements breaks the embedded DDL into individual statements. Comment lines are removed
+// *before* the split: a semicolon inside one would otherwise leave its tail as a statement.
+// The embedded file has no semicolons inside string literals, so stripping first is enough.
 func splitStatements(ddl string) []string {
 	var code strings.Builder
 
@@ -473,9 +454,8 @@ func firstLine(s string) string {
 
 func itoa(v int) string { return fmt.Sprintf("%d", v) }
 
-// formatTime renders t for storage. The zero time is rendered as the empty
-// string rather than as year 1, so a caller scanning it into a string can tell
-// "never set" from "set to a real instant".
+// formatTime renders t for storage. The zero time becomes the empty string rather than
+// year 1, so a caller scanning it into a string can tell "never set" from a real instant.
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -484,10 +464,9 @@ func formatTime(t time.Time) string {
 	return t.UTC().Format(timeLayout)
 }
 
-// parseTime reverses formatTime, accepting the RFC3339 variants SQLite and Go
-// may produce. An unparseable or empty value yields the zero time, which is how
-// a row written by an older build with a different layout degrades instead of
-// failing the whole query.
+// parseTime reverses formatTime, accepting the RFC3339 variants SQLite and Go may
+// produce. An unparseable value yields the zero time, so a row written by an older build
+// with a different layout degrades instead of failing the whole query.
 func parseTime(s string) time.Time {
 	s = strings.TrimSpace(s)
 	if s == "" {

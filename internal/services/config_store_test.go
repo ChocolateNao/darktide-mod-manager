@@ -9,9 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// provisionalConfig is the shape a configuration has before anything resolves
-// the active game: no active_game, and whatever the user configured while it
-// was still empty filed under the provisional "" key.
+// provisionalConfig is a configuration before anything resolves the active game.
 func provisionalConfig() *domain.Config {
 	cfg := domain.DefaultConfig()
 

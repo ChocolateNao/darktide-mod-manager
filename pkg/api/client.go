@@ -1,25 +1,16 @@
-// Package api is the mod manager's public Go surface.
+// Package api is the mod manager's public Go surface: a thin, stable facade
+// over the service layer holding a client, the operations a caller needs, an
+// event bus, and the error codes those operations can produce. Nothing here
+// implements behaviour — the services own that — so the API can change shape
+// without the manager changing meaning.
 //
-// It is a thin, stable facade over the service layer: a client, a set of
-// operations grouped the way a caller thinks about them (mods, sources, game,
-// cache, hooks, configuration), an event bus, and the error codes those
-// operations can produce. Nothing in here implements behaviour — the services
-// own that — so the API can change shape without the manager changing meaning.
+// NewClient wires everything and returns a ready client; its options cover the
+// paths that differ between machines, per-source configuration, an event handler
+// and a logger:
 //
-// # Construction
-//
-// NewClient wires everything and returns a ready client. Options cover the three
-// paths that differ between machines, the per-source configuration, an event
-// handler and a logger:
-//
-//	client, err := api.NewClient(ctx,
-//	    api.WithConfigPath("/etc/darktide/config.json"),
-//	    api.WithGamePath("C:/Games/Darktide"),
-//	    api.WithSourceConfig("vortex", map[string]any{"api_key": "…"}),
-//	    api.WithEventHandler(func(e api.Event) { log.Printf("%s %s", e.Type, e.ModID) }),
-//	)
+//	client, err := api.NewClient(ctx, api.WithConfigPath(p), api.WithGamePath(g))
 //	if err != nil {
-//	    return err
+//		return err
 //	}
 //	defer client.Close()
 //
@@ -28,26 +19,12 @@
 // happens once: a second composition root would drift, and the two would end up
 // disagreeing about where the configuration lives.
 //
-// # Errors
-//
-// Every operation returns an error carrying a Code. Branch on the code with
-// IsAppError rather than matching message text:
-//
-//	if api.IsAppError(err, api.ErrCodeModNotFound) {
-//	    // the source does not have it, or it was never installed
-//	}
-//
-// # Context
-//
-// Every method takes a context first and honours its deadline and cancellation.
-// A cancelled operation reports ErrCodeOperationCanceled and leaves no partial
-// state behind: an interrupted install removes its staging directory and writes
-// no database row.
-//
-// # Events
-//
-// Long-running operations publish to the client's bus. Subscribe before doing
-// work; a handler runs on the goroutine that published the event.
+// Every method takes a context first and honours its deadline and cancellation;
+// a cancelled operation reports ErrCodeOperationCanceled and leaves no partial
+// state. Every operation returns an error carrying a Code, so branch with
+// IsAppError rather than matching message text. Long-running operations publish
+// to the client's bus: subscribe before doing work, because a handler runs on
+// the publishing goroutine.
 package api
 
 import (
@@ -61,21 +38,19 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Config is the manager's configuration. It is an alias for the domain type
-// rather than a wrapper, so a value read from here can be handed to any other
-// package that speaks domain.Config without a conversion step.
+// Config is the manager's configuration, an alias for the domain type so a
+// value read from here can be handed to any package that speaks domain.Config.
 type Config = domain.Config
 
 // CacheInfo describes what the download cache currently holds. It is an alias
 // for the domain type for the same reason Config is.
 type CacheInfo = domain.CacheInfo
 
-// Mod is a mod. It is an alias so that a caller never has to import two packages
-// to hold and describe one mod.
+// Mod is a mod, aliased so a caller never imports two packages to hold and
+// describe one mod.
 type Mod = domain.Mod
 
-// ModSourceInfo describes a registered source's capabilities. An alias for the
-// same reason.
+// ModSourceInfo describes a registered source's capabilities. An alias for the same reason.
 type ModSourceInfo = domain.ModSourceInfo
 
 // GameInstallation describes one detected Darktide install.
@@ -88,63 +63,46 @@ type InstallShareOptions struct {
 
 // ClientDeps is the set of services a client drives.
 //
-// The fields are the concrete service types rather than the narrow interfaces
-// the services themselves depend on. That is a deliberate trade: ClientDeps is a
-// wiring type used by the composition root, not a surface a library consumer
-// implements, and narrowing it would mean restating a dozen one-method
-// interfaces that nothing would ever satisfy except the real services. An
-// external consumer builds a client with NewClient instead.
+// The fields are concrete service types rather than the narrow interfaces the
+// services depend on: this is a wiring type for the composition root, not a
+// surface a library consumer implements.
 type ClientDeps struct {
 	Mods    *services.ModService
 	Sources *services.SourceRegistry
 	Game    *services.GameLocator
 	Cache   *services.CacheManager
 	Hooks   *services.HookExecutor
-	// Shares is the deprecated cloud sharing service. It is declared here
-	// rather than behind an interface so the wiring type cannot drift away from
-	// the composition root that fills it; the suppression below is the price of
-	// that, and the deprecation is the reason it is worth paying.
+	// Shares is the deprecated cloud sharing service, declared here rather than behind an
+	// interface so the wiring type cannot drift from the composition root that fills it.
 	//
 	//nolint:staticcheck // deprecation is the point: the field stays reachable until cloud shares can no longer be revoked.
 	Shares *services.ShareService
-	// P2PShares is the peer-to-peer sharing service. It is separate from
-	// Shares because the two answer different questions: Shares moves archives
-	// through a storage provider, P2PShares moves them between two machines.
-	// Either may be nil in a client built by hand.
+	// P2PShares is the peer-to-peer sharing service: Shares moves archives through
+	// a storage provider, P2PShares moves them between two machines.
 	P2PShares *services.P2PShareService
-	// Actions is the table of code-defined per-game actions. Listing actions
-	// needs only this.
+	// Actions is the table of code-defined per-game actions; listing them needs
+	// only this.
 	Actions *actions.Registry
-	// ActionRunner executes those actions. Running one additionally needs a
-	// game locator, a desktop opener and a command runner, so the two are
-	// separate dependencies and a client that only lists actions can leave the
-	// runner nil.
+	// ActionRunner executes those actions. Running one also needs a game locator, a
+	// desktop opener and a command runner, so a listing-only client can leave it nil.
 	ActionRunner *actions.Runner
-	// URLs opens a web address in the user's browser. It is what backs opening a
-	// mod's source page, so a client running without a desktop — a test, a
-	// container — can leave it nil and report that it cannot open links rather
-	// than pretending it did.
+	// URLs opens a web address in the user's browser. A client without a desktop — a test,
+	// a container — can leave it nil and report that it cannot open links, not pretend it did.
 	URLs   URLOpener
 	Config services.ConfigStore
-	// ActiveConfig is the configuration object the wiring loaded and then
-	// mutated (WithGame's override) — the same pointer its closures capture.
-	// UseGame updates it in place so those closures see a switch without a
-	// reload. Clients built by hand can leave it nil; the store is the source
-	// of truth there.
+	// ActiveConfig is the configuration object the wiring loaded and mutated (WithGame's
+	// override) — the same pointer its closures capture; UseGame updates it in place.
 	ActiveConfig *domain.Config
-	// Events receives everything the services publish. When nil the client
-	// creates its own bus, so a caller wiring services by hand still gets
-	// events.
+	// Events receives everything the services publish. When nil the client makes
+	// its own bus, so a caller wiring services by hand still gets events.
 	Events *EventBus
 	// Clock is the services' time source. nil means time.Now.
 	Clock services.Clock
 }
 
-// Client is the manager's handle. It is safe for concurrent use.
-//
-// Every operation checks that the client is open first, so a use-after-Close
-// reports ErrCodeInvalidArgument naming the mistake instead of dereferencing a
-// closed database.
+// Client is the manager's handle, safe for concurrent use. Every operation checks
+// the client is open first, so a use-after-Close reports ErrCodeInvalidArgument
+// instead of dereferencing a closed database.
 type Client struct {
 	deps      ClientDeps
 	logger    Logger
@@ -157,12 +115,9 @@ type Client struct {
 	closed    bool
 }
 
-// NewClientFromServices builds a client over already-constructed services.
-//
-// Only WithEventHandler and WithLogger have any effect here. The path and source
-// options are refused rather than ignored: a client built from services has
-// already opened a configuration file, a database and a cache, and quietly
-// pretending a path option applied would leave the caller believing it did.
+// NewClientFromServices builds a client over already-constructed services. Path
+// and source options are refused, not ignored: the services have already opened a
+// configuration file, a database and a cache.
 func NewClientFromServices(deps ClientDeps, opts ...Option) (*Client, error) {
 	set, err := applyOptions(opts)
 	if err != nil {
@@ -200,10 +155,9 @@ func NewClientFromServices(deps ClientDeps, opts ...Option) (*Client, error) {
 	return c, nil
 }
 
-// Services returns the dependencies the client drives. It is for callers inside
-// the module — internal/commands and the CLI — that need a service this package
-// does not wrap. It hands back the same pointers the client uses, so it is not a
-// way to obtain a second, independent view.
+// Services returns the dependencies the client drives, for callers inside the
+// module that need a service this package does not wrap. It hands back the same
+// pointers the client uses, so it is not a second, independent view.
 func (c *Client) Services() ClientDeps {
 	if c == nil {
 		return ClientDeps{}
@@ -212,8 +166,7 @@ func (c *Client) Services() ClientDeps {
 	return c.deps
 }
 
-// Events returns the client's event bus, so a caller that subscribes later than
-// construction can still reach it.
+// Events returns the client's event bus for a caller that subscribes after construction.
 func (c *Client) Events() *EventBus {
 	if c == nil {
 		return nil
@@ -222,9 +175,8 @@ func (c *Client) Events() *EventBus {
 	return c.events
 }
 
-// Logger returns the configured logger. It is never nil: a client built without
-// WithLogger logs to a sink that discards everything, so a caller can pass the
-// result straight to something that wants a logger.
+// Logger returns the configured logger, never nil: a client built without
+// WithLogger logs to a sink that discards everything.
 func (c *Client) Logger() Logger {
 	if c == nil || c.logger == nil {
 		return discardLogger{}
@@ -242,13 +194,9 @@ func (c *Client) Logf(format string, args ...any) {
 	c.Logger().Printf(format, args...)
 }
 
-// Close releases everything the client opened: the database, the cache, any
-// hook subprocesses, in the reverse of the order they were acquired.
-//
-// It is safe to call twice and from more than one goroutine, which matters
-// because the natural shape is an explicit Close on the error path plus a
-// deferred one. The second call returns the first call's result unchanged so a
-// caller that checks both sees the same answer.
+// Close releases everything the client opened, in reverse acquisition order. Safe
+// to call twice and from multiple goroutines; the second call returns the first
+// call's result unchanged.
 func (c *Client) Close() error {
 	if c == nil {
 		return nil
@@ -276,9 +224,8 @@ func (c *Client) Close() error {
 		case 0:
 			c.closeErr = nil
 		case 1:
-			// Returned unwrapped so a single failure keeps its code: a caller
-			// testing for ErrCodeConfigIO after Close should not have to unwrap a
-			// join to find it.
+			// Unwrapped so a single failure keeps its code: a caller testing for
+			// ErrCodeConfigIO should not have to unwrap a join to find it.
 			c.closeErr = failures[0]
 		default:
 			c.closeErr = errors.Join(failures...)
@@ -303,19 +250,17 @@ func (c *Client) Closed() bool {
 	return c.closed
 }
 
-// errClosed is what every operation on a closed client returns. It says
-// "invalid argument" because that is the closest code this package has, and it
-// says so in the message because a caller reaching it has a lifecycle bug rather
-// than bad data — nothing about their request is wrong.
+// errClosed is what every operation on a closed client returns. "Invalid
+// argument" is the closest code this package has, and the message says so
+// because a caller reaching it has a lifecycle bug, not bad data.
 func errClosed() error {
 	return appErrors.New(appErrors.ErrCodeInvalidArgument,
 		"client is closed; create a new one instead of reusing a closed client")
 }
 
-// ready reports whether the client can be used, and the error to return when it
-// cannot. It covers both the closed case and a nil client, so an operation on a
-// nil *Client reports the same thing instead of panicking — a nil client reaches
-// a caller when a constructor returned an error and the error was ignored.
+// ready reports the error an operation should return when the client cannot be
+// used: closed, or nil because a constructor's error was ignored. Both report the
+// same thing instead of panicking.
 func (c *Client) ready() error {
 	if c == nil {
 		return errClosed()
@@ -342,14 +287,12 @@ func (c *Client) clock() func() time.Time {
 	return c.now
 }
 
-// discardLogger is the logger a client uses when the caller supplied none. It is
-// a type rather than a nil check at every call site so that Logger() can promise
-// to return something usable.
+// discardLogger is the logger a client uses when the caller supplied none, kept as
+// a type so Logger() can promise to return something usable.
 type discardLogger struct{}
 
 func (discardLogger) Printf(string, ...any) {}
 
-// Compile-time proof that the bus satisfies the services' sink. If a future
-// change to either signature breaks this, the failure belongs here rather than
-// at a wiring site.
+// Compile-time proof that the bus satisfies the services' sink, so a signature
+// change fails here rather than at a wiring site.
 var _ services.EventSink = (*EventBus)(nil)

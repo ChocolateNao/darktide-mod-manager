@@ -67,10 +67,8 @@ func steamRoots(p domain.Platform, home string, getenv Env) []string {
 
 // GameCandidates enumerates every location worth probing for an installation
 // of game on a platform, ordered from most likely to least. extras are
-// user-supplied paths, which are probed first; each must be a single path.
-//
-// This is pure path derivation with no filesystem access, so the candidate list
-// for any platform can be asserted from a test on any host.
+// user-supplied paths, which are probed first. No filesystem is touched, so the
+// candidate list for any platform can be asserted from a test on any host.
 func GameCandidates(
 	game domain.GameDefinition,
 	p domain.Platform,
@@ -284,9 +282,8 @@ func GameCandidates(
 }
 
 // ExpandCandidates resolves glob candidates against the filesystem and returns a
-// deterministic, de-duplicated list with Glob cleared. A glob that matches
-// nothing is dropped rather than reported as an error, because most launchers
-// will not be installed at all.
+// deterministic, de-duplicated list with Glob cleared. A glob matching nothing is
+// dropped rather than reported: most launchers will not be installed at all.
 func ExpandCandidates(candidates []Candidate) []Candidate {
 	var out []Candidate
 

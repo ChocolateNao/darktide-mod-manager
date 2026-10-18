@@ -16,10 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file exercise wire.go, which is the only code in the module
-// that opens files and connects services to each other. Everything else in pkg/api
-// is a thin wrapper, so this is where a mistake stops being a wrong error message
-// and becomes a manager that points at the wrong directory.
+// These tests exercise wire.go, the only code in the module that opens files and
+// connects services: a mistake here points the manager at the wrong directory.
 
 // wireWorkspace is a private tree for one test: its own configuration file, cache,
 // storage root, game installation and local-mod folder.
@@ -197,9 +195,8 @@ func TestBundleKeepsTheDatabaseOutOfThePayloadTree(t *testing.T) {
 
 	bundle := mustBundle(t, w.options()...)
 
-	// A database inside <storage> would sit among the mod folders, and a user who
-	// pointed the local source at their own storage tree would be offered a
-	// database file as a mod.
+	// The local source scans folders, so a database inside <storage> would be offered
+	// to the user as a mod.
 	assert.False(t, domain.PathWithin(w.storageRoot, bundle.DatabasePath),
 		"database path %q is inside the storage root %q",
 		bundle.DatabasePath,
@@ -342,9 +339,8 @@ func TestBundleRefusesABadGamePathWithoutPersistingIt(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.saveConfig(t, nil)
 
-	// An empty directory is not a Darktide installation. Failing construction is
-	// the point: a caller that learns it is wrong thirty seconds later, after a
-	// download has started, has learned nothing useful.
+	// Failing construction is the point: learning it is wrong after a download has
+	// started has learned nothing useful.
 	empty := filepath.Join(filepath.Dir(w.gameDir), "empty")
 	require.NoError(t, os.MkdirAll(empty, 0o755), "create %s", empty)
 
@@ -409,9 +405,8 @@ func TestBundleBuildsASourceThatWasOnlyConfiguredThroughAnOption(t *testing.T) {
 	w.saveConfig(t, nil)
 	w.writeModArchive(t, "Better UI 1.2.0.zip")
 
-	// The whole point of naming a source in an option is that it works, so this
-	// asserts the behaviour rather than the configuration: the local source is
-	// offered a folder and must find the archive in it.
+	// Naming a source in an option has to work, so this asserts behaviour: the local
+	// source is offered a folder and must find the archive in it.
 	opts := append(w.options(), WithSourceConfig("local", map[string]any{
 		"paths": []any{w.localDir},
 	}))
@@ -438,10 +433,8 @@ func TestBundleDoesNotPersistSourceOptions(t *testing.T) {
 	)
 	mustBundle(t, opts...)
 
-	// The path overrides are wiring choices for this process; the game's path is
-	// the one thing wire() writes back, because it is the one the user has to
-	// find again next time. A source token supplied by a launcher is the same
-	// kind of thing and must not be written without being asked.
+	// Only the game's path is written back: the overrides are this process's, and a
+	// launcher-supplied token is not ours to persist.
 	reloaded, err := storage.NewConfigStore(w.configPath).Load()
 	require.NoError(t, err, "reload config")
 
@@ -491,9 +484,8 @@ func TestBundleLogsButSurvivesAMisconfiguredSource(t *testing.T) {
 
 	t.Cleanup(func() { services.UnregisterSourceFactory(brokenID) })
 
-	// The diagnostic goes to the log fan-out rather than to the api.Logger, so
-	// the test reads the log the bundle built: that is the channel a user
-	// actually sees, and asserting on it keeps the test honest about it.
+	// The test reads the log the bundle built because that is the channel a user
+	// actually sees.
 	logDir := filepath.Join(t.TempDir(), "logs")
 	opts := append(w.options(), WithLoggingOptions(LoggingOptions{Dir: logDir}))
 	bundle := mustBundle(t, opts...)

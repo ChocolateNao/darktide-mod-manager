@@ -9,14 +9,12 @@ import (
 // ConfigCommands is the settings screen as a frontend sees it.
 //
 // A GUI with no way to read or write the configuration has to reach around
-// itself for the sake of one settings page, and the alternative — having each
-// of the other sets carry a settings method — would scatter one subject across
-// five files. Source settings are reachable from here through the same dotted
-// keys the rest of the manager uses, so no source-specific method is needed.
+// itself for the sake of one settings page. Source settings are reachable from
+// here through the same dotted keys the rest of the manager uses, so no
+// source-specific method is needed.
 type ConfigCommands struct {
-	// base is embedded rather than held as a named field so the lifecycle
-	// methods reach a set directly: a caller holding a single set needs to be
-	// able to shut it down without knowing the shape of the aggregate.
+	// Embedded so the lifecycle methods reach a set directly: a caller holding
+	// one set must be able to shut it down without knowing the aggregate.
 	*base
 }
 
@@ -29,10 +27,9 @@ func newConfigCommands(b *base) *ConfigCommands {
 	return &ConfigCommands{base: b}
 }
 
-// GetConfig returns the whole configuration.
-//
-// It is a copy, so the frontend editing the returned object cannot change what
-// the manager is using until it calls UpdateConfig.
+// GetConfig returns the whole configuration, as a copy, so a frontend editing
+// the returned object cannot change what the manager is using until it calls
+// UpdateConfig.
 func (c *ConfigCommands) GetConfig() (*api.Config, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -65,11 +62,9 @@ func (c *ConfigCommands) UpdateConfig(cfg *api.Config) error {
 }
 
 // GetConfigValue reads one setting by its dotted key, for example
-// "cache.max_size_gb" or "sources.local.enabled".
-//
-// Reading a credential through this is refused rather than answered. A secret a
-// settings screen can read back is a secret a bug report can carry away, and the
-// setting can still be written.
+// "cache.max_size_gb" or "sources.local.enabled". Reading a credential through
+// it is refused rather than answered: a secret a settings screen can read back
+// is a secret a bug report can carry away, and the setting is still writable.
 func (c *ConfigCommands) GetConfigValue(key string) (string, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {

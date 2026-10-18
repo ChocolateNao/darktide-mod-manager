@@ -31,10 +31,8 @@ func execRunner(ctx context.Context, name string, args ...string) error {
 	return exec.CommandContext(ctx, name, args...).Run()
 }
 
-// OpenDirectory reveals dir in the host's file manager.
-//
-// It is used by `dmm logs open` so a user who was told "the log is in ..." can
-// get there in one keystroke instead of copying a path into a file dialog.
+// OpenDirectory reveals dir in the host's file manager, which is how
+// `dmm logs open` gets a user to "the log is in ..." in one keystroke.
 func OpenDirectory(ctx context.Context, p domain.Platform, dir string) error {
 	return OpenDirectoryWith(ctx, p, dir, OSLookPath, execRunner)
 }

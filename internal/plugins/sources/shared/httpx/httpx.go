@@ -1,14 +1,10 @@
 // Package httpx is the shared HTTP plumbing for the network-backed mod sources.
 //
-// The sources differ in their payloads and their auth schemes, but not in how
-// they talk to a server: they need a timeout, a User-Agent (several mod hosts
-// reject requests without one), JSON encode/decode, and a mapping from HTTP
-// status codes onto the manager's typed error codes. Keeping that in one place
-// means a status code is interpreted the same way by every source, and a test
-// can assert the mapping once.
-//
-// Nothing here is exported to pkg/api: it is an implementation detail of the
-// bundled sources.
+// The sources differ in their payloads and auth schemes, but not in how they talk
+// to a server: a timeout, a User-Agent (several mod hosts reject requests without
+// one), JSON encode/decode, and a mapping from HTTP status onto the manager's
+// typed error codes. One place means a status is interpreted the same way by every
+// source and a test can pin the mapping once. None of it reaches pkg/api.
 package httpx
 
 import (
@@ -55,10 +51,9 @@ const (
 	snippetLimit = 256
 )
 
-// Kind is the operation being performed. The status-to-code mapping depends on
-// it: a 404 while listing mods means "no such mod", but a 404 while searching
-// means the endpoint moved, and reporting the first as a missing mod would send
-// the user looking for a typo they did not make.
+// Kind is the operation being performed. The status-to-code mapping depends on it:
+// a 404 while listing mods means "no such mod", but a 404 while searching means the
+// endpoint moved, and reporting the first sends the user after a typo they did not make.
 type Kind int
 
 const (
@@ -132,11 +127,9 @@ func (c *Client) WithUserAgent(userAgent string) *Client {
 	return &out
 }
 
-// WithTimeout returns a copy of c whose per-request timeout is d. A
-// non-positive value is ignored for the same reason New ignores it: a source
-// reading a timeout of zero out of a config file means "unset", not "wait
-// forever". The copy is required because a source builds its client once and
-// several options may each want to tune it.
+// WithTimeout returns a copy of c whose per-request timeout is d. A non-positive
+// value is ignored for the same reason New ignores it. The copy is required because
+// a source builds its client once and several options may each want to tune it.
 func (c *Client) WithTimeout(d time.Duration) *Client {
 	out := *c
 	if d > 0 {
@@ -170,19 +163,10 @@ type Request struct {
 
 // encodeBody renders a request body as JSON.
 //
-// It refuses the two types whose encoding is not what a caller means by them,
-// and does so before the request is built rather than by checking what came
-// back. The failure this prevents is expensive: json.Marshal of a []byte is a
-// base64 string, so a source that encoded its own body and handed the result
-// here sent a JSON string where the API expected an object, and the API's answer
-// named a shape the caller had never heard of. Reading that answer costs a round
-// trip and a debugging session; refusing the type costs none.
-//
-// The check is on the value's kind rather than its type so that a plugin's own
-// `type payload []byte` is caught as well, and it deliberately exempts
-// json.RawMessage: that type exists precisely to say "these bytes are already
-// JSON", and passing it through json.Marshal is a pass-through rather than a
-// second encoding.
+// httpx owns JSON encoding, so handing it bytes would double-encode the value and
+// draw a 422 naming a request shape the caller never wrote. It refuses the two
+// types json.Marshal would quote rather than render, and exempts json.RawMessage,
+// which exists precisely to say "these bytes are already JSON".
 func encodeBody(kind Kind, body any) ([]byte, error) {
 	if alreadyEncoded(body) {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -198,11 +182,9 @@ func encodeBody(kind Kind, body any) ([]byte, error) {
 	return encoded, nil
 }
 
-// alreadyEncoded reports whether body is a type that json.Marshal would wrap in
-// a JSON string instead of rendering as a document.
-//
-// A nil body is not in the category: there is nothing to encode and the caller
-// gets an empty payload either way.
+// alreadyEncoded reports whether body is a type json.Marshal would wrap in a JSON
+// string instead of rendering as a document. A nil body is not in that category:
+// there is nothing to encode and the caller gets an empty payload either way.
 func alreadyEncoded(body any) bool {
 	if body == nil {
 		return false
@@ -249,13 +231,11 @@ func (r *Response) OK() bool {
 	return r != nil && r.Status >= 200 && r.Status < 300
 }
 
-// Do executes req and returns the response for any status the status-to-code
-// rules do not claim as an error.
-//
-// The response body is read into memory and capped. A body that exceeds the cap
-// is an error rather than a truncated success: a half-read JSON document cannot
-// be decoded, and silently returning the fragment would turn a clear failure
-// into a confusing one.
+// Do executes req and returns the response for any status the status-to-code rules
+// do not claim as an error. The body is read into memory and capped; a body over
+// the cap is an error rather than a truncated success, since a half-read JSON
+// document cannot be decoded and the fragment would turn a clear failure into a
+// confusing one.
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -309,10 +289,8 @@ func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
 	}
 
 	httpReq.Header.Set("User-Agent", c.userAgent)
-	// The Content-Type has to be set explicitly. net/http only guesses it for a
-	// *bytes.Buffer; a strings.Reader (which is what url.Values.Encode feeds to)
-	// gets no type at all, and a form post without one is parsed as nothing by
-	// most servers.
+	// The Content-Type has to be set explicitly: net/http guesses it only for a
+	// *bytes.Buffer, and the strings.Reader url.Values.Encode feeds to gets none.
 	if hasBody {
 		if req.Form != nil {
 			httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -429,9 +407,8 @@ func buildURL(rawURL string, query url.Values) (string, error) {
 	return u.String(), nil
 }
 
-// statusError turns a non-2xx status into the typed error the manager expects.
-//
-// The rules are ordered from most specific to least:
+// statusError turns a non-2xx status into the typed error the manager expects. The
+// rules are ordered from most specific to least:
 //
 //	401, 403 -> auth required/failed   the key is wrong, missing or expired
 //	404     -> not found                (KindSearch: the endpoint, not the mod)
@@ -440,11 +417,10 @@ func buildURL(rawURL string, query url.Values) (string, error) {
 //	other 4xx -> rejected               the request itself was refused
 //	anything else -> the kind's fallback
 //
-// The 4xx rule is separate because of what it is *not*. A 422 with "Invalid JSON
-// input" is not an unreachable service: the service is up, read the request, and
-// disliked it. Reporting that as SOURCE_UNAVAILABLE sends the user looking for a
-// network problem they do not have, and invites a retry loop against a source
-// that is working exactly as intended.
+// The 4xx rule is separate because of what it is not: a 422 "Invalid JSON input"
+// means the service is up and disliked the request, and reporting that as
+// SOURCE_UNAVAILABLE sends the user after a network problem they do not have and
+// invites a retry loop against a source that is working as intended.
 func statusError(kind Kind, status int, target string, body []byte) error {
 	snippet := strings.TrimSpace(string(body))
 	if len(snippet) > snippetLimit {
@@ -488,10 +464,9 @@ func statusError(kind Kind, status int, target string, body []byte) error {
 		return appErrors.New(appErrors.ErrCodeSourceUnavailable,
 			"%s to %s returned status %d%s", kind, target, status, suffix)
 	case status >= 400:
-		// Reached the far end, which read the request and refused it. The usual
-		// cause is a payload the endpoint does not accept, so the status and the
-		// problem document are both quoted: the detail names the field, and a field
-		// name is the only thing that identifies which side is wrong.
+		// The far end read the request and refused it, so both the status and the problem
+		// document are quoted: a field name is the only thing that identifies which side
+		// is wrong.
 		return appErrors.New(appErrors.ErrCodeSourceRejected,
 			"%s refused %s with status %d%s", kind, target, status, suffix)
 	default:
@@ -506,11 +481,9 @@ func statusError(kind Kind, status int, target string, body []byte) error {
 	}
 }
 
-// Download streams rawURL into destPath and returns the number of bytes written.
-//
-// The file is written to a sibling temporary name and renamed into place, so a
-// cancelled or failed transfer never leaves a file that looks complete. That
-// matters here because the extractor is happy to unpack a truncated archive.
+// Download streams rawURL into destPath and returns the number of bytes written. The
+// file is staged under a temporary name and renamed into place, so a cancelled or
+// failed transfer never leaves something the extractor would happily unpack whole.
 func (c *Client) Download(
 	ctx context.Context,
 	rawURL, destPath string,
@@ -659,10 +632,9 @@ func (c *Client) Download(
 	return written, nil
 }
 
-// verifyDigest compares the streamed digest against what the source promised. A
-// blank expectation skips the check: plenty of hosts publish no checksum, and
-// refusing to install unverified content would be worse than trusting the
-// transport.
+// verifyDigest compares the streamed digest against what the source promised. A blank
+// expectation skips the check: plenty of hosts publish no checksum, and refusing to
+// install unverified content would be worse than trusting the transport.
 func verifyDigest(destPath, tmpName, expectSHA, got string) error {
 	want := strings.ToLower(strings.TrimSpace(expectSHA))
 	if want == "" {
@@ -707,9 +679,9 @@ func ctxError(err error) error {
 	return appErrors.Wrap(err, appErrors.ErrCodeOperationCanceled, "request stopped: %v", err)
 }
 
-// JoinErrors combines several failures into one. It keeps the first error's code
-// so callers can still branch on it, and lists the rest as text. RegisterAll uses
-// it to report every broken source at once instead of only the first.
+// JoinErrors combines several failures into one. It keeps the first error's code so
+// callers can still branch on it, and lists the rest as text so RegisterAll can
+// report every broken source at once instead of only the first.
 func JoinErrors(errs []error) error {
 	var kept []error
 

@@ -11,18 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file records what the command line looks like from the outside.
-//
-// The transcripts live in testdata and are rewritten with
-// `go test ./cmd/cli/commands/ -update`. Every one of them is produced by
-// running the real command against a real container over a real database, a
-// real archive and a real mod folder, so a change in the wiring shows up here
-// rather than in a user's terminal.
-//
-// Two things are deliberately kept out of the transcripts: the temporary
-// directories (scrubbed to placeholders by the harness) and timestamps
-// (scrubbed to <time>). Everything else is pinned, including the wording of
-// every message, because the wording is the interface.
+// This file records what the command line looks like from the outside. The
+// transcripts live in testdata; each is produced by running the real command
+// against a real container, so a change in the wiring shows up here rather than
+// in a user's terminal.
 
 func TestModLifecycle(t *testing.T) {
 	w := newWorkspace(t)
@@ -35,10 +27,8 @@ func TestModLifecycle(t *testing.T) {
 	g.run(w, "mod", "install", "local", modID)
 	g.run(w, "mod", "list")
 	g.run(w, "mod", "list", "--json")
-	// Padding around an id is corrected for: it comes from a copy-paste and the
-	// user cannot see it. Case is not, and the transcript pins that too — two
-	// mods may differ only in case on a case-sensitive volume, so folding it
-	// would be a guess about which one is meant.
+	// Padding around an id is corrected for, since it comes from a copy-paste.
+	// Case is not: two mods may differ only in case, so folding it would guess.
 	g.run(w, "mod", "show", "  "+modID+"  ")
 	g.run(w, "mod", "show", strings.ToUpper(modID))
 	g.run(w, "mod", "path", modID)
@@ -57,9 +47,8 @@ func TestModLifecycle(t *testing.T) {
 }
 
 func TestModInstallWithoutAGameStaysDisabled(t *testing.T) {
-	// The interesting case: a mod installed before the game has been found is
-	// installed but not enabled, and every command that follows has to report
-	// that honestly rather than pretending the deploy happened.
+	// A mod installed before the game has been found is installed but not
+	// enabled, and the commands after it must report that honestly.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 	modID := w.writeModArchive(t, "Better UI", "1.2.0")
@@ -75,8 +64,8 @@ func TestModInstallWithoutAGameStaysDisabled(t *testing.T) {
 }
 
 func TestModInstallFlags(t *testing.T) {
-	// Every install flag is a decision the user makes deliberately, so each one
-	// is exercised against a real install and its effect is in the transcript.
+	// Every install flag is a decision the user makes deliberately, so each is
+	// exercised against a real install and its effect is in the transcript.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -89,10 +78,8 @@ func TestModInstallFlags(t *testing.T) {
 	g.run(w, "mod", "install", "local", first)
 	g.run(w, "mod", "install", "local", first, "--force")
 	g.run(w, "mod", "install", "local", second, "--version", "3.0.0")
-	// A local archive is named by its file name with the version suffix stripped
-	// and its version is always 0.0.0, so the version a user would type from the
-	// file name is the one that does not match. Both directions are recorded: a
-	// check that only ever failed would look like a check that cannot pass.
+	// A local archive's version is always 0.0.0, so the version a user would
+	// type from the file name is the one that does not match.
 	g.run(w, "mod", "install", "local", second, "--version", "2.0.0")
 	g.run(w, "mod", "install", "local", second, "--version", "0.0.0")
 	g.run(w, "cache", "info")
@@ -128,8 +115,7 @@ func TestModHooksEditing(t *testing.T) {
 	g.run(w, "mod", "hooks", "list", modID)
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "pre_enable", "--index", "9")
 	// --index 0 is here because the flag's zero value is also what the flag set
-	// holds when the flag was never given. Reading the value instead of asking
-	// the flag set would make this silently clear the whole phase.
+	// holds when the flag was never given; reading the value would clear the phase.
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "pre_enable", "--index", "0")
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "pre_enable", "--all", "--index", "1")
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "not_a_phase", "--all")
@@ -196,13 +182,6 @@ func TestModHooksFromAFile(t *testing.T) {
 func TestModShareAndImport(t *testing.T) {
 	// share and import are two halves of one feature, so both the refusals and
 	// the accepted forms belong in one transcript.
-	//
-	// No accepted link is imported here. A link is only worth importing when the
-	// provider answers, so a transcript containing one records whether the
-	// machine running the test had a working route to nexusmods.com and to
-	// vortex.com — which makes the file fail somewhere else for no reason. The
-	// accepted forms are covered exhaustively in modlink_test.go, and the fetch
-	// itself is the source plugins' own tested responsibility.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -223,12 +202,8 @@ func TestModShareAndImport(t *testing.T) {
 }
 
 func TestModUpdate(t *testing.T) {
-	// A local mod is the awkward case for an update check, and the awkwardness
-	// is worth recording rather than hiding: the local source names an archive
-	// mod after the file and strips the version suffix, so the mod's version is
-	// 0.0.0 and there is never an update to offer. The transcript says "up to
-	// date" because that is the truth, and a reader who disagrees has the
-	// evidence in front of them.
+	// A local mod is the awkward case for an update check: the local source
+	// always versions it 0.0.0, so "up to date" is the truth.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -241,8 +216,8 @@ func TestModUpdate(t *testing.T) {
 	g.run(w, "mod", "update", "--check", "nothing-here")
 	g.run(w, "mod", "update", "--check")
 	g.run(w, "mod", "update", "--check", "--json")
-	// --check must not install anything, whether or not a mod is named. Both
-	// of these would have applied the update if the flag were ignored.
+	// --check must not install anything, whether or not a mod is named; both of
+	// these would have applied the update if the flag were ignored.
 	g.run(w, "mod", "list")
 	g.run(w, "mod", "update", modID)
 	g.run(w, "mod", "update", "nothing-here")
@@ -252,8 +227,7 @@ func TestModUpdate(t *testing.T) {
 
 func TestTwoLocalVersionsOfOneModCollide(t *testing.T) {
 	// Both files resolve to the same id, and the local source refuses rather
-	// than picking one: letting install order decide would mean the payload
-	// under a deployed mod changed without anybody asking.
+	// than picking one: install order deciding would change a deployed mod's payload.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -295,9 +269,8 @@ func TestModRelinkAndStatusWithoutDamage(t *testing.T) {
 }
 
 func TestModReorderWithUnlistedMods(t *testing.T) {
-	// A mod that is not in the list loses its place. The command has to say how
-	// many, or the user has no way to know the order they set is not the order
-	// the game will use.
+	// A mod that is not in the list loses its place, so the command has to say how
+	// many or the user cannot tell the order they set from the one the game uses.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -316,9 +289,8 @@ func TestModReorderWithUnlistedMods(t *testing.T) {
 }
 
 func TestSourceListingAndSearch(t *testing.T) {
-	// The three network sources are switched off in the settings file, so
-	// nothing here reaches the internet. That is also what makes the "disabled"
-	// column in the transcript worth reading.
+	// The three network sources are switched off in the settings file, so nothing
+	// here reaches the internet, and that is what makes the "disabled" column worth reading.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 	w.writeModArchive(t, "Better UI", "1.2.0")
@@ -359,15 +331,8 @@ func TestSourceEnableDisable(t *testing.T) {
 }
 
 func TestSourceAuthentication(t *testing.T) {
-	// A key typed on a command line is visible in the process list and lands in
-	// shell history, so the flag set is deliberately awkward and each refusal
-	// has to explain itself.
-	//
-	// The Nexus source is pointed at a stub. Every refusal below is decided by
-	// this program, and the one line that is not — whether Nexus accepts the
-	// key — has to come from somewhere this test controls, or the transcript
-	// records the mood of somebody else's server instead of this program's
-	// behaviour.
+	// A key typed on a command line is visible in the process list, so the flag
+	// set is deliberately awkward. Nexus is pointed at a stub the test controls.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	probe := w.newCredentialProbe(t, 200, `{"data":{"mods":[]}}`)
@@ -385,9 +350,8 @@ func TestSourceAuthentication(t *testing.T) {
 	// about the one line that matters.
 	g.run(w, "config", "get", "sources.nexus.api_key")
 
-	// A key the service rejects has to come back as a rejected credential
-	// rather than as "the service is down", and a rejected key must not be left
-	// in the settings file for the next command to try again.
+	// A rejected key has to come back as a rejected credential rather than as "the
+	// service is down", and must not be left in the settings file for the next command.
 	probe.answer(
 		401,
 		`{"title":"Unauthorized","status":401,"detail":"Please provide a valid API Key"}`,
@@ -402,11 +366,8 @@ func TestSourceAuthentication(t *testing.T) {
 }
 
 func TestSourceCredentialsSurviveWithoutTheSourceAndCanBeTakenBack(t *testing.T) {
-	// A key stored without being checked is still a key: the machine may simply
-	// not be able to reach Nexus yet. So the user has to be able to see that one
-	// is stored, and take it back out again, and neither may depend on the source
-	// answering -- otherwise "sign in when you are back online" is impossible and
-	// a key pasted by mistake can only be removed by hand-editing JSON.
+	// A key stored without being checked is still a key: the machine may not
+	// reach Nexus yet, so it has to survive the source being unreachable.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	probe := w.newCredentialProbe(t, 200, `{"data":{"mods":[]}}`)
@@ -423,15 +384,13 @@ func TestSourceCredentialsSurviveWithoutTheSourceAndCanBeTakenBack(t *testing.T)
 	g.run(w, "source", "auth", "nexus", "--forget")
 	g.run(w, "source", "test", "nexus")
 	// A key typed alongside --forget is a contradiction, not something to ignore:
-	// the user would otherwise be left with whichever of the two they did not
-	// mean.
+	// the user would be left with whichever of the two they did not mean.
 	g.run(w, "source", "auth", "nexus", "--forget", "--api-key", "k")
 	g.run(w, "source", "auth", "nexus", "--forget", "--no-verify")
 	g.run(w, "source", "auth", "local", "--forget")
 	g.want()
 
-	// Nothing above may reach the source: the whole point is that storing,
-	// listing and forgetting are local operations.
+	// Nothing above may reach the source: storing, listing and forgetting are local.
 	for _, key := range probe.seen() {
 		assert.NotEqual(
 			t,
@@ -457,11 +416,8 @@ func TestSourceTestChecksEverySource(t *testing.T) {
 }
 
 func TestGameCommands(t *testing.T) {
-	// The game commands answer different questions: the registry (list,
-	// current, use), the machine (detect), and the configured installation
-	// (info, path, validate). `info` is allowed to warn about an unresolvable
-	// mods folder without failing: the installation itself was found and is
-	// worth reporting.
+	// The game commands answer different questions: the registry (list, current,
+	// use), the machine (detect), and the configured installation (info, path, validate).
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -488,8 +444,7 @@ func TestGameCommands(t *testing.T) {
 	g.run(w, "game", "validate", "  ")
 	g.run(w, "game", "validate")
 	// `game set` does not exist — the path is configuration — and a user who
-	// types it must be told so without changing anything. The pair is recorded
-	// with a config read either side so a change slipping through is visible.
+	// types it must be told so without anything changing.
 	g.run(w, "game", "set", w.gameDir)
 	g.run(w, "config", "get", "game.path")
 	g.run(w, "game", "set", w.localDir)
@@ -498,10 +453,8 @@ func TestGameCommands(t *testing.T) {
 }
 
 func TestGameCommandsWithNothingFound(t *testing.T) {
-	// No installation and no configured path: every command has to say so
-	// rather than print an empty table, and none of them may exit non-zero for
-	// a state that is not a failure. The registry answers (list, current) do
-	// not depend on an installation at all and must work regardless.
+	// No installation and no configured path: every command has to say so rather
+	// than print an empty table, and none may exit non-zero for a non-failure.
 	w := newWorkspace(t)
 	cfg := defaultConfigFor(t)
 	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "" })
@@ -583,8 +536,7 @@ func TestConfigCommands(t *testing.T) {
 
 func TestCommandsAgainstAnUnreadableSettingsFile(t *testing.T) {
 	// A settings file that is not JSON is the failure a user is most likely to
-	// cause by hand, and every command has to report it the same way rather
-	// than each rediscovering it in its own words.
+	// cause by hand, and every command has to report it the same way.
 	w := newWorkspace(t)
 	require.NoError(
 		t,
@@ -598,9 +550,8 @@ func TestCommandsAgainstAnUnreadableSettingsFile(t *testing.T) {
 	g.run(w, "game", "info")
 	g.run(w, "cache", "info")
 	g.run(w, "config", "get", "game.path")
-	// The two commands that build no container still work, because a person
-	// whose settings file is broken still needs to read the version and the
-	// help.
+	// The two commands that build no container still work: a person whose settings
+	// file is broken still needs the version and the help.
 	g.run(w, "version")
 	g.want()
 }
@@ -608,7 +559,6 @@ func TestCommandsAgainstAnUnreadableSettingsFile(t *testing.T) {
 func TestCommandsWithNoPathsAtAll(t *testing.T) {
 	// No --config, no --cache, no --storage: the manager falls back to the
 	// platform directories, which the harness has pointed at a temporary home.
-	// Nothing here may touch the real user's files.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 

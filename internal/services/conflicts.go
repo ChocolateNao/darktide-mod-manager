@@ -17,15 +17,11 @@ import (
 const requiredVersionsKey = "required_versions"
 
 // DetectConflicts reports every conflict it can find among the installed mods.
-//
-// Only enabled mods are examined. A disabled mod's files are not in the game
-// folder, so reporting that it collides with an enabled one would be noise the
-// user cannot act on without first enabling the mod.
-//
-// The result is ordered — by type, then mod id — so a CLI listing and a UI list
-// agree, and so two consecutive calls can be diffed. Detection never fails
-// because of one bad mod: a single unreadable inventory narrows the report, it
-// does not abort the sweep.
+// Only enabled mods are examined: a disabled mod's files are not in the game
+// folder, so reporting a collision with one is noise the user cannot act on
+// without enabling it first. The result is ordered by type and mod id so a CLI
+// listing and a UI list agree, and one unreadable inventory narrows the report
+// instead of aborting the sweep.
 func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictReport, error) {
 	if s == nil || s.deps.Index == nil {
 		return nil, appErrors.New(
@@ -62,23 +58,28 @@ func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictRepo
 	reports = append(reports, dependencyConflicts(ctx, s.deps.Index, enabled, byID)...)
 	reports = append(reports, versionMismatchConflicts(enabled, byID)...)
 
+	stampReportIDs(reports)
 	sortReports(reports)
 
 	return reports, nil
 }
 
+// stampReportIDs fills the identity field on every report the detectors produced.
+// One stamp site rather than one per detector, because the identity is derived:
+// a detector that set it by hand and one that forgot would differ only in whether
+// the frontend's "resolve" button works.
+func stampReportIDs(reports []domain.ConflictReport) {
+	for i := range reports {
+		reports[i].ID = reports[i].Identity()
+	}
+}
+
 // duplicateIDConflicts finds two distinct mod ids whose storage folders collide.
-//
-// The index keys mods by id, so a literal duplicate id cannot be stored. What
-// *can* happen is two ids that sanitise to the same folder — "my mod" and
-// "my-mod" both become "my-mod" — and those two would overwrite each other's
-// payload on install and undeploy each other's files on disable. That is a real
-// data-loss bug, so it is reported as an error.
-//
-// The comparison folds case where the filesystem does. Windows and macOS mount
-// case-insensitive volumes by default, so "MyMod" and "mymod" are one folder
-// there; on Linux they are two, and reporting them as clashing would be a false
-// alarm the user cannot act on.
+// The index keys mods by id, so a literal duplicate cannot be stored; what can
+// happen is two ids that sanitise to the same folder, and those would overwrite
+// each other's payload on install and undeploy each other's files on disable.
+// Case is folded only where the filesystem folds it, so a Linux report stays free
+// of clashes that do not exist there.
 func (s *ModService) duplicateIDConflicts(mods []domain.Mod) []domain.ConflictReport {
 	fold := s.deps.Platform == domain.PlatformWindows || s.deps.Platform == domain.PlatformDarwin
 	key := func(folder string) string {
@@ -88,9 +89,8 @@ func (s *ModService) duplicateIDConflicts(mods []domain.Mod) []domain.ConflictRe
 
 		return folder
 	}
-	// owner remembers the first mod to claim a folder plus every id that has
-	// since folded into it. Without the id list the third mod's report could not
-	// say which two ids it collided with, and "a, b and b" is worse than useless.
+	// owner remembers the first mod to claim a folder plus every id that has since
+	// folded into it, so the third mod's report can name which two ids collided.
 	type owner struct {
 		ids   []string
 		first domain.Mod
@@ -114,9 +114,8 @@ func (s *ModService) duplicateIDConflicts(mods []domain.Mod) []domain.ConflictRe
 
 		collided := quoteJoin(prev.ids)
 		if prev.used {
-			// Already reported against this folder; a third mod folding into the
-			// same folder gets its own report against the first one rather than
-			// silently extending the pair.
+			// Already reported against this folder; a third mod folding into it
+			// gets its own report against the first rather than extending the pair.
 			out = append(out, domain.ConflictReport{
 				Type:     domain.ConflictDuplicateID,
 				ModA:     &prev.first,
@@ -151,7 +150,7 @@ func (s *ModService) duplicateIDConflicts(mods []domain.Mod) []domain.ConflictRe
 	return out
 }
 
-// quoteJoin renders ids as `"a", "b", "c"`. The ids are quoted because they
+// quoteJoin renders ids as `"a", "b", "c"`. They are quoted because they
 // routinely contain spaces and slashes, and an unquoted "a b, ab" cannot be
 // split back apart to tell the user which mod to rename.
 func quoteJoin(ids []string) string {
@@ -204,10 +203,8 @@ func (s *ModService) declaredConflicts(mods []domain.Mod) []domain.ConflictRepor
 	return out
 }
 
-// inventories loads every enabled mod's file inventory.
-//
-// A mod whose inventory cannot be read simply contributes no files. It still
-// takes part in every other kind of conflict check, which do not need files.
+// inventories loads every enabled mod's file inventory. A mod whose inventory
+// cannot be read contributes no files but still takes part in the other checks.
 func (s *ModService) inventories(
 	ctx context.Context,
 	mods []domain.Mod,
@@ -226,13 +223,9 @@ func (s *ModService) inventories(
 }
 
 // fileOverlapConflicts finds enabled mods that expose the same file name into
-// the game's mods folder.
-//
-// The comparison is on the top-level entry name, because that is what actually
-// lands in the game folder: two mods whose files share a name are both loading
-// the same game-side file, whatever their contents are. Reporting one conflict
-// per colliding pair rather than one per file keeps the list readable; the
-// details name the file and the count.
+// the game's mods folder. The comparison is on the top-level entry name, since
+// that is what lands in the game folder whatever the contents are; one report per
+// colliding pair rather than per file keeps the list readable.
 func fileOverlapConflicts(
 	mods []domain.Mod,
 	inventories map[string][]domain.ModFile,
@@ -303,8 +296,7 @@ func fileOverlapConflicts(
 			Severity: domain.SeverityWarning,
 			Details:  overlapDetails(files),
 			// Whichever file wins is decided by load order, which the user
-			// controls; the collision itself is a warning rather than an error
-			// because mods legitimately ship a shared config file.
+			// controls; a warning rather than an error, since mods share files.
 			Recommendation: "disable one mod or give the shared file a unique name",
 		})
 	}
@@ -360,8 +352,8 @@ func dependencyConflicts(
 
 			installed, ok := byID[dep]
 			if !ok {
-				// ModB stays nil: the dependency is not installed, so there is no
-				// mod to point at and no "disable mod B" action to offer.
+				// No ModB: the dependency is not installed, so there is no mod to
+				// point at and no "disable mod B" action to offer.
 				out = append(out, domain.ConflictReport{
 					Type:     domain.ConflictLoadOrder,
 					ModA:     &m,
@@ -412,11 +404,8 @@ func dependencyConflicts(
 }
 
 // loadOrderConflicts reports an explicit load order that puts a mod before one of
-// its dependencies.
-//
-// The set of reports is bounded by the number of mods: an order can only be
-// wrong in one direction per (mod, dependency) pair, so this cannot blow up the
-// way a per-file comparison would.
+// its dependencies. The report count is bounded by the number of mods: an order
+// can be wrong in one direction per (mod, dependency) pair.
 func loadOrderConflicts(
 	ctx context.Context,
 	index ModIndex,
@@ -465,10 +454,9 @@ func loadOrderConflicts(
 }
 
 // findDependencyCycle returns the first cycle it can prove among the enabled
-// mods, or nil.
-//
-// A dependency on a mod that is not installed cannot close a cycle — the edge
-// simply does not exist in the enabled graph — so only enabled ids are followed.
+// mods, or nil. A dependency on a mod that is not installed cannot close a cycle
+// — the edge does not exist in the enabled graph — so only enabled ids are
+// followed.
 func findDependencyCycle(mods []domain.Mod) []string {
 	graph := make(map[string][]string, len(mods))
 
@@ -512,7 +500,7 @@ func findDependencyCycle(mods []domain.Mod) []string {
 				}
 			case grey:
 				// Trim everything before the repeated node so the report names
-				// the cycle rather than the path that led into it.
+				// the cycle, not the path that led into it.
 				for i, seen := range stack {
 					if seen == next {
 						found = append(append([]string(nil), stack[i:]...), next)
@@ -547,13 +535,10 @@ func findDependencyCycle(mods []domain.Mod) []string {
 }
 
 // versionMismatchConflicts reports dependencies whose installed version does not
-// satisfy what the dependent mod asks for.
-//
-// The requirement comes from SourceData["required_versions"], a map of
-// dependency id → expression. Both the map[string]string a source might hand over
-// directly and the map[string]any a JSON round trip produces are accepted: the
-// mod travels through the database, so which one arrives depends on where it was
-// built.
+// satisfy what the dependent mod asks for. The requirement comes from
+// SourceData["required_versions"], a map of dependency id → expression; both the
+// map[string]string a source hands over and the map[string]any a JSON round trip
+// produces are accepted, since the mod travels through the database.
 func versionMismatchConflicts(
 	mods []domain.Mod,
 	byID map[string]domain.Mod,
@@ -565,8 +550,8 @@ func versionMismatchConflicts(
 		for dep, expr := range requiredVersions(m.SourceData) {
 			installed, ok := byID[dep]
 			if !ok {
-				// A missing dependency is already reported by the load-order
-				// pass; saying "version unknown" on top of it helps nobody.
+				// A missing dependency is already reported by the load-order pass;
+				// saying "version unknown" on top of it helps nobody.
 				continue
 			}
 
@@ -601,8 +586,7 @@ func versionMismatchConflicts(
 
 // requiredVersions extracts the dependency → version expression map from a mod's
 // source data. A malformed entry is skipped rather than reported: the value came
-// from a third-party API and refusing to scan a mod over it would be worse than
-// missing one check.
+// from a third-party API, and refusing to scan a mod over it would be worse.
 func requiredVersions(data map[string]any) map[string]string {
 	if len(data) == 0 {
 		return nil
@@ -653,15 +637,10 @@ func sortReports(reports []domain.ConflictReport) {
 	})
 }
 
-// ResolveConflict applies a resolution to a currently reported conflict.
-//
-// The id is ConflictReport.ID(), and the resolution is an explicit argument,
-// so a caller cannot accidentally resolve a conflict by passing the wrong thing.
-//
-// The report is re-detected first. Resolving a conflict that no longer exists is
-// reported as ErrCodeNotFound rather than silently succeeding: the caller has a
-// stale view, and telling them so is more useful than a no-op they will read as
-// success.
+// ResolveConflict applies a resolution to a currently reported conflict. The
+// report is re-detected first, and one that no longer exists is reported as
+// ErrCodeNotFound rather than silently succeeding: the caller is working from a
+// stale view, and a no-op would read as success.
 func (s *ModService) ResolveConflict(
 	ctx context.Context,
 	reportID string,
@@ -692,7 +671,7 @@ func (s *ModService) ResolveConflict(
 	var report *domain.ConflictReport
 
 	for i := range reports {
-		if reports[i].ID() == id {
+		if reports[i].Identity() == id {
 			report = &reports[i]
 			break
 		}

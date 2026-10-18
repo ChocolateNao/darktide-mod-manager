@@ -9,10 +9,9 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Aliases for the hook vocabulary. A caller building a hook editor needs the
-// script and phase types without importing pkg/domain separately, and the
-// lifecycle phase names are part of this package's contract rather than an
-// implementation detail.
+// Aliases for the hook vocabulary. A caller building a hook editor needs the script
+// and phase types without importing pkg/domain separately, and the phase names are
+// part of this package's contract rather than an implementation detail.
 type (
 	// HookScript is one hook: what to run, how long it may run, and the
 	// environment it may see.
@@ -62,11 +61,9 @@ func HookPhases() []string {
 	return out
 }
 
-// SupportsHookType reports whether this build can execute the given script
-// language. The parameter keeps its name for the frontend contract.
-//
-// A hook editor must ask before offering a choice: it must not let a user
-// author a mod in a language this build cannot run.
+// SupportsHookType reports whether this build can execute the given script language.
+// A hook editor must ask before offering a choice: it must not let a user author a
+// mod in a language this build cannot run.
 func (c *Client) SupportsHookType(ctx context.Context, hookType string) bool {
 	if err := c.ready(); err != nil {
 		return false
@@ -85,12 +82,9 @@ func (c *Client) SupportsHookType(ctx context.Context, hookType string) bool {
 }
 
 // ValidateHookScript checks one hook script without storing it, so an editor can
-// reject a bad script as it is typed instead of at enable time.
-//
-// mod may be nil, which checks everything that does not depend on the mod's
-// folder. A script with a working directory outside the mod's and the game's
-// folders cannot be checked that way, and is accepted here for the mod service to
-// reject when it has the mod in hand.
+// reject a bad script as it is typed. mod may be nil, which checks everything not
+// dependent on the mod's folder; a script with a working directory outside the
+// mod's and game's folders is accepted here for the mod service to reject.
 func (c *Client) ValidateHookScript(ctx context.Context, script HookScript, mod *Mod) error {
 	if err := c.ready(); err != nil {
 		return err
@@ -105,9 +99,8 @@ func (c *Client) ValidateHookScript(ctx context.Context, script HookScript, mod 
 }
 
 // HookTimeout returns how long a script would be allowed to run for the given
-// mod: its own timeout clamped into the effective floor and ceiling (the
-// configured default and the smallest of MaxTimeout and the permission cap for
-// this mod). A zero result means the client has no hook executor.
+// mod: its own timeout clamped into the effective floor and ceiling. A zero result
+// means the client has no hook executor.
 func (c *Client) HookTimeout(ctx context.Context, script HookScript, mod *Mod) time.Duration {
 	if c == nil || c.deps.Hooks == nil {
 		return 0
@@ -116,15 +109,10 @@ func (c *Client) HookTimeout(ctx context.Context, script HookScript, mod *Mod) t
 	return c.deps.Hooks.Timeout(script, mod)
 }
 
-// HookPermissions returns the effective capability set for one mod under one
-// game: the mod's scope over the game's over the default, first true win per
-// capability, first non-zero timeout.
-//
-// gameID and modID are explicit rather than resolved here because the caller
-// is usually asking about something other than the live active game — a
-// settings screen showing what a mod would get, or a CLI query for a game the
-// process is not switched to. Blank names resolve the same way they do inside
-// the executor: an empty game id falls through to the default scope.
+// HookPermissions returns the effective capability set for one mod under one game:
+// the mod's scope over the game's over the default, first true win per capability,
+// first non-zero timeout. gameID and modID are explicit because the caller is
+// usually asking about something other than the live game.
 func (c *Client) HookPermissions(
 	ctx context.Context,
 	gameID, modID string,
@@ -151,18 +139,11 @@ func (c *Client) HookPermissions(
 	return cfg.Hooks.Permissions.For(strings.TrimSpace(gameID), strings.TrimSpace(modID)), nil
 }
 
-// RunHookScripts executes scripts under the same containment rules the mod
-// lifecycle uses.
-//
-// It is exposed because a caller maintaining a mod needs to run a hook by hand —
-// "does this script actually work?" is the question a mod author asks first, and
-// making them install the mod to find out is a poor answer.
-//
-// The containment is the point: a script's working directory is resolved against
-// the mod's and the game's folders and refused if it escapes both, its
-// environment is filtered to an allowlist, and it is killed at its timeout.
-// Those rules are the reason this is a method on Client rather than a bare
-// hook executor handed out.
+// RunHookScripts executes scripts under the same containment rules the mod lifecycle
+// uses. A method on Client rather than a bare executor: a script's working
+// directory is resolved against the mod's and game's folders and refused if it
+// escapes both, its environment is filtered to an allowlist, and it is killed at
+// its timeout.
 func (c *Client) RunHookScripts(ctx context.Context, scripts []HookScript, mod *Mod) error {
 	if err := c.ready(); err != nil {
 		return err

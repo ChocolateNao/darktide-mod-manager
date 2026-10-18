@@ -13,10 +13,7 @@ import (
 )
 
 // command is one method of the command surface, reduced to a single call. The
-// table exists so a method added later cannot be forgotten: it is the only thing
-// that keeps "every method reports a broken wiring rather than panicking" a
-// statement about the whole surface instead of about the methods someone
-// remembered.
+// table exists so a method added later cannot be forgotten.
 type command struct {
 	call func(*App) error
 	name string
@@ -132,11 +129,9 @@ func everyCommand() []command {
 	}
 }
 
-// TestEveryCommandReportsAMissingClient is the nil-safety net. A command set
-// built without a client is a wiring mistake, and the reaction has to be an error
-// the frontend can render: a panic here happens inside a call the frontend made,
-// which in a desktop window means a window that cannot draw the message
-// explaining why.
+// TestEveryCommandReportsAMissingClient is the nil-safety net: a panic here
+// happens inside a call the frontend made, which in a window means a window that
+// cannot draw the message explaining why.
 func TestEveryCommandReportsAMissingClient(t *testing.T) {
 	app := New(Deps{})
 
@@ -242,14 +237,10 @@ func TestLifecycleMethodsTolerateANilApp(t *testing.T) {
 	}
 }
 
-// TestUninitialisedSetAccessors checks the remaining nil-receiver paths on a set.
-//
-// The receiver here is non-nil with nothing assigned, which is the shape a
-// half-built aggregate has. A nil *ModCommands is deliberately not covered: the
-// lifecycle methods reach the embedded state, so calling one on a nil set
-// dereferences the nil before the shared state can notice it. That is Go's rule
-// for a promoted method, it can only arise from a caller's own nil variable, and
-// hiding it behind twenty-five forwarding methods would be worse than saying so.
+// TestUninitialisedSetAccessors checks the nil-receiver paths on a set with
+// nothing assigned. A nil *ModCommands is deliberately not covered: a promoted
+// method dereferences the nil before the shared state can notice it, and hiding
+// that behind twenty-five forwarding methods would be worse than saying so.
 func TestUninitialisedSetAccessors(t *testing.T) {
 	mods := &ModCommands{}
 	mods.Shutdown()
@@ -272,10 +263,9 @@ func TestUninitialisedSetAccessors(t *testing.T) {
 	}
 }
 
-// TestSupportsHookTypeNeedsAClient: this one answers with a bool rather than an
-// error, because "this build cannot run go hooks" is the question a hook editor
-// asks while drawing, not a failure. It still has to be false when there is no
-// client, since an answer invented without one would be a guess.
+// TestSupportsHookTypeNeedsAClient: this one answers with a bool because "this
+// build cannot run go hooks" is a question the hook editor asks while drawing. It
+// still has to be false without a client, since an invented answer is a guess.
 func TestSupportsHookTypeNeedsAClient(t *testing.T) {
 	assert.False(
 		t,
@@ -317,10 +307,9 @@ func TestEverySetSharesOneScope(t *testing.T) {
 	)
 }
 
-// TestCancelAllReachesAnOperationInFlight is the reason the scope exists. The
-// stub signals when it is genuinely inside the call, so the assertion that it was
-// still blocked cannot pass by accident, and the cancellation is the only thing
-// that can release it.
+// TestCancelAllReachesAnOperationInFlight is the reason the scope exists: the
+// stub signals when it is genuinely inside the call, so "still blocked" cannot
+// pass by accident and the cancellation is the only thing that releases it.
 func TestCancelAllReachesAnOperationInFlight(t *testing.T) {
 	const sourceID = "commands-blocking"
 
@@ -354,9 +343,8 @@ func TestCancelAllReachesAnOperationInFlight(t *testing.T) {
 	case err := <-done:
 		require.Error(t, err, "a cancelled operation reported success")
 		// The code has to survive the registry's lookup and the source's own
-		// error: a cancellation that arrives as a generic failure is one a
-		// frontend reports to the user as "something went wrong" instead of
-		// quietly dropping the request the user just stopped.
+		// error: a cancellation arriving as a generic failure is reported as
+		// "something went wrong" instead of a request the user just stopped.
 		assert.True(
 			t,
 			appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled),
@@ -417,7 +405,6 @@ func TestCancelAllDoesNotReviveAShutDownSurface(t *testing.T) {
 	}
 }
 
-// TestShutdownCancelsTheScopeAndIsIdempotent.
 func TestShutdownCancelsTheScopeAndIsIdempotent(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)

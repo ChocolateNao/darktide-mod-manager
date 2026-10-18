@@ -16,9 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakePrompter answers a prompt without a terminal, which is the only reason
-// keyPrompter is an interface at all: term.ReadPassword needs a real descriptor,
-// and the behaviour around it does not.
+// fakePrompter answers a prompt without a terminal.
 type fakePrompter struct {
 	err     error
 	answer  string
@@ -91,8 +89,7 @@ func TestPromptForKeyTakesEnterAsTheConfirmation(t *testing.T) {
 	)
 }
 
-// askedPrompt returns the question the fake was asked, so a test can read it
-// without having to model a terminal's output.
+// askedPrompt returns the question the fake was asked.
 func (f *fakePrompter) askedPrompt(t *testing.T) string {
 	t.Helper()
 
@@ -102,8 +99,7 @@ func (f *fakePrompter) askedPrompt(t *testing.T) string {
 }
 
 // A cancelled prompt must not be reportable as a missing argument: the exit code
-// is what tells "I stopped" apart from "this failed", and a script wrapping this
-// branches on exactly that.
+// is what tells "I stopped" apart from "this failed".
 func TestPromptForKeyReportsAnAbandonedLineAsCancellation(t *testing.T) {
 	for _, answer := range []string{"", "   ", "\t\n"} {
 		key, err := promptForKey(t.Context(), io.Discard, &fakePrompter{answer: answer}, "nexus")
@@ -124,17 +120,15 @@ func TestPromptForKeyReportsAnAbandonedLineAsCancellation(t *testing.T) {
 	}
 }
 
-// An interrupted read — Ctrl-C is a signal, so the read itself fails — must be
-// reported the same way an empty line is: nobody entered a key, and nothing was
-// sent to the source before they stopped.
+// An interrupted read must be reported the same way an empty line is: nobody
+// entered a key, and nothing was sent to the source before they stopped.
 func TestPromptForKeyPropagatesAnInterruptedRead(t *testing.T) {
 	interrupted := errors.New("read: interrupted by signal")
 
 	key, err := promptForKey(t.Context(), io.Discard, &fakePrompter{err: interrupted}, "nexus")
 	assert.Equal(t, "", key, "an interrupted read returned a key %q", key)
-	// promptForKey passes the read's own error on rather than wrapping it again:
-	// the prompter that reports OperationCanceled is the one that knows a
-	// terminal was involved, and a second wrapper would bury its complaint.
+	// promptForKey passes the read's own error on: the prompter that reports
+	// OperationCanceled is the one that knows a terminal was involved.
 	assert.True(
 		t,
 		errors.Is(err, interrupted),
@@ -176,10 +170,8 @@ func TestPromptForKeyStopsWhenTheRunIsCancelled(t *testing.T) {
 	)
 }
 
-// The line reader is exercised through a pipe rather than a terminal: what it
-// does with the bytes it is given does not depend on where they came from, and a
-// test cannot portably have a terminal. The mode the terminal is put into is the
-// part that cannot be covered here.
+// The line reader is exercised through a pipe rather than a terminal: a test
+// cannot portably have a terminal.
 func TestReadLineUnderstandsTheKeysAPersonPresses(t *testing.T) {
 	for _, tc := range []struct {
 		err   error
@@ -235,8 +227,7 @@ func TestReadLineUnderstandsTheKeysAPersonPresses(t *testing.T) {
 	}
 }
 
-// A line is accumulated in memory, so a stuck key cannot be allowed to grow it
-// without limit. The bound is far above any real key.
+// A line is accumulated in memory, so a stuck key cannot grow it without limit.
 func TestReadLineRefusesALineLongerThanAnyKey(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	require.NoError(t, err, "create a pipe")
@@ -259,9 +250,8 @@ func TestReadLineRefusesALineLongerThanAnyKey(t *testing.T) {
 	_ = reader.Close()
 }
 
-// A closed terminal delivers no bytes and no error, which a reader that waits
-// for either would wait on forever. The person closed their terminal, so the
-// prompt has to come back and say so.
+// A closed terminal delivers no bytes and no error; a reader that waits for
+// either would wait on forever.
 func TestReadLineReturnsWhenTheTerminalSaysNothingMore(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	require.NoError(t, err, "create a pipe")
@@ -275,12 +265,8 @@ func TestReadLineReturnsWhenTheTerminalSaysNothingMore(t *testing.T) {
 	assert.Equal(t, "", got, "readLine = %q, want nothing typed", got)
 }
 
-// terminalPrompterFor is nil unless standard input is a terminal. A nil result
-// must mean "not interactive" rather than a value to dereference.
-// terminalPrompterFor returns the interface for this reason, and this is the test
-// that keeps it that way: a *terminalPrompter that is nil, boxed into the
-// interface, is an interface that is not nil, and every call through it
-// dereferences nothing.
+// A nil *terminalPrompter boxed into the interface is an interface that is not
+// nil, and every call through it dereferences nothing.
 func TestTerminalPrompterForIsNilUnlessStandardInputIsATerminal(t *testing.T) {
 	// A strings.Reader is what a test and an embedder both supply; neither has a
 	// descriptor, so neither is interactive.
@@ -292,9 +278,8 @@ func TestTerminalPrompterForIsNilUnlessStandardInputIsATerminal(t *testing.T) {
 
 	ask = terminalPrompterFor(nil, &bytes.Buffer{})
 	assert.Nil(t, ask, "a nil reader was taken for a terminal")
-	// A regular file has a descriptor but no grid and no line discipline, which is
-	// the case a descriptor check alone would get wrong: prompting on one would
-	// read a file as though a person were typing into it.
+	// A regular file has a descriptor but no grid, the case a descriptor check
+	// alone would get wrong.
 	file, err := os.CreateTemp(t.TempDir(), "not-a-terminal")
 	require.NoError(t, err, "create a file")
 
@@ -304,9 +289,8 @@ func TestTerminalPrompterForIsNilUnlessStandardInputIsATerminal(t *testing.T) {
 	assert.Nil(t, ask, "a regular file was taken for a terminal")
 }
 
-// A pipe is finite and ends on its own, so it is read to the end and whatever is
-// in it is the key. That behaviour has to survive alongside the prompt, because
-// this is the path every script uses.
+// A pipe is finite and ends on its own, so it is read to the end; this is the
+// path every script uses.
 func TestReadKeyReadsAPipeToTheEnd(t *testing.T) {
 	var out, errOut bytes.Buffer
 
@@ -335,9 +319,8 @@ func TestReadKeyReadsAPipeToTheEnd(t *testing.T) {
 	)
 }
 
-// An unbounded read of `dmm ... < /dev/zero` ends by exhausting memory rather
-// than by complaining, so the read is bounded. The bound is far above any real
-// key, which is why hitting it is worth an error rather than a truncation.
+// An unbounded read of `dmm ... < /dev/zero` exhausts memory rather than
+// complaining, so the read is bounded.
 func TestReadKeyBoundsWhatAPipeCanHandIt(t *testing.T) {
 	flooded := strings.Repeat("k", maxKeyFromStdin+1024)
 
@@ -366,16 +349,13 @@ func TestReadKeyReportsAFailedPipe(t *testing.T) {
 	), "error = %v, want ErrCodeInvalidArgument", err)
 }
 
-// brokenReader fails on the first read, standing in for a pipe that closes with
-// an error rather than at end of file.
+// brokenReader fails on the first read.
 type brokenReader struct{}
 
 func (brokenReader) Read([]byte) (int, error) { return 0, errors.New("pipe closed") }
 
-// An explicit choice is never second-guessed by a prompt. Somebody who named a
-// source of the key has said where it is; quietly reading a different one would
-// make the flag's name a lie, and a prompt they have to dismiss instead of
-// answer is not an answer.
+// An explicit choice is never second-guessed by a prompt: somebody who named a
+// source of the key has said where it is.
 func TestResolveAPIKeyPrefersAnExplicitChoiceOverTheTerminal(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -428,8 +408,7 @@ func TestResolveAPIKeyRefusesContradictoryFlags(t *testing.T) {
 }
 
 // A named environment variable that is empty is a mistake to report, not a gap
-// to fill: the flag said where the key is, so reading anywhere else would be a
-// different key than the one that was asked for.
+// to fill: the flag said where the key is.
 func TestResolveAPIKeyReportsANamedVariableThatIsEmpty(t *testing.T) {
 	t.Setenv("DMM_TEST_EMPTY_KEY", "")
 
@@ -452,9 +431,8 @@ func TestResolveAPIKeyReportsANamedVariableThatIsEmpty(t *testing.T) {
 	)
 }
 
-// Without a terminal and without a flag there is nothing to read, and the message
-// has to name the environment variable to set: that is the one instruction a
-// script can act on.
+// Without a terminal and without a flag there is nothing to read, and the
+// message has to name the environment variable to set.
 func TestResolveAPIKeyNamesTheVariableWhenThereIsNothingToRead(t *testing.T) {
 	t.Setenv("DMM_NEXUS_API_KEY", "")
 

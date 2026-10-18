@@ -19,8 +19,8 @@ import (
 
 // Transfer errors. Integrity failures get their own sentinel because the
 // recipient's only correct response to one is to discard the bytes and use the
-// source links, and that response is different enough from "the connection
-// dropped" to deserve its own path through the UI.
+// source links, and that is different enough from "the connection dropped" to
+// deserve its own path through the UI.
 var (
 	// ErrIntegrity reports a file whose received bytes do not hash to the
 	// value published in the offer, or a frame whose contents disagree with
@@ -55,7 +55,7 @@ const (
 // Session is one end of a share: the connection, the secret both halves derive
 // the handshake key from, and the offer they agreed on.
 //
-// It is a value rather than four arguments because the three are genuinely one
+// It is a value rather than three arguments because the three are genuinely one
 // thing. Passing the secret separately from the offer is the mistake that lets a
 // caller derive a handshake key from the offer id — which travels in the clear
 // inside the link — instead of from the capability secret, and a transfer that
@@ -69,11 +69,10 @@ type Session struct {
 	Offer domain.P2PShareOffer
 }
 
-// handshakeKey derives the key that authenticates the handshake.
-//
-// It is derived on each call rather than cached in the struct: a session
-// performs exactly two handshakes, so the saving would be two HMACs, and a
-// cached key would be a secret living in a struct that gets copied around.
+// handshakeKey derives the key that authenticates the handshake. It is derived on
+// each call rather than cached in the struct: a session performs exactly two
+// handshakes, so the saving would be two HMACs, and a cached key would be a
+// secret living in a struct that gets copied around.
 func (s Session) handshakeKey() ([]byte, error) {
 	return SessionKeyFor(s.Secret)
 }
@@ -85,12 +84,10 @@ func (s Session) handshakeKey() ([]byte, error) {
 // by publishing the session record and letting the frontend poll or subscribe.
 type ProgressFunc func(domain.P2PTransferProgress)
 
-// kindOf is FrameTypeOf without its error.
-//
-// The call sites below are dispatching, not validating: a payload that is too
-// short to have a type byte has no type, and the frame's own decoder is what
-// will report that precisely. Discarding the error here keeps every dispatch on
-// one line instead of a two-line preamble repeated eight times.
+// kindOf is FrameTypeOf without its error. The call sites are dispatching, not
+// validating: a payload too short to have a type byte has no type, and the
+// frame's own decoder reports that precisely. Discarding the error keeps every
+// dispatch on one line.
 func kindOf(payload []byte) FrameType {
 	kind, _ := FrameTypeOf(payload)
 
@@ -101,8 +98,8 @@ func kindOf(payload []byte) FrameType {
 //
 // stageDir is where the archives named by the offer's files were staged. They are
 // read in offer order, because the offer is the contract: the recipient sizes its
-// progress bar and reserves its disk from that order, and a sender that
-// reordered them would make every FILE_START look like an out-of-order arrival.
+// progress bar and reserves its disk from that order, so a sender that reordered
+// them would make every FILE_START look like an out-of-order arrival.
 func Send(ctx context.Context, session Session, stageDir string, onProgress ProgressFunc) error {
 	sender := &sender{session: session, stageDir: stageDir, onProgress: onProgress}
 
@@ -115,8 +112,8 @@ func Send(ctx context.Context, session Session, stageDir string, onProgress Prog
 //
 // destDir must exist. Archives are written under the names the offer gives them,
 // which the sender derives from mod ids, so the result maps one-to-one onto the
-// offer's inventory and the caller can install without trusting anything the
-// peer said about what the files contain.
+// offer's inventory and the caller can install without trusting anything the peer
+// said about what the files contain.
 func Receive(ctx context.Context, session Session, destDir string, onProgress ProgressFunc) error {
 	receiver := &receiver{session: session, destDir: destDir, onProgress: onProgress}
 
@@ -131,16 +128,15 @@ const flushGrace = 5 * time.Second
 
 // Reject answers an offer and declines it.
 //
-// The decline travels over the same data channel as a transfer would, rather than
-// being signalled by the recipient simply never connecting, because a sender
-// waiting on a silent peer cannot tell "they declined" from "they went to lunch".
-// Sending ABORT as the very first frame is what makes the decision legible: the
-// sender is still in its handshake at that point and treats ABORT there as a
-// refusal rather than as a protocol violation.
+// The decline travels over the same data channel a transfer would, rather than
+// being signalled by never connecting, because a sender waiting on a silent peer
+// cannot tell "they declined" from "they went to lunch". ABORT as the very first
+// frame makes the decision legible: the sender is still in its handshake and
+// treats ABORT there as a refusal rather than a protocol violation.
 //
-// The secret is still required. A recipient who cannot open the link has not
-// proved anything about themselves, and refusing to talk to an unauthenticated
-// peer is the whole point of the capability.
+// The secret is still required. A recipient who cannot open the link has proved
+// nothing about themselves, and refusing to talk to an unauthenticated peer is the
+// whole point of the capability.
 func Reject(ctx context.Context, session Session, reason string) error {
 	defer shutdown(session.Peer, ctx)
 
@@ -160,19 +156,16 @@ func Reject(ctx context.Context, session Session, reason string) error {
 	return session.Peer.Send(ctx, payload, defaultFlowControlThreshold)
 }
 
-// shutdown drains whatever is still queued and then closes the peer.
-//
-// The drain is what makes the last frame of a transfer arrive. A hard close
-// discards bytes the other end has not read out of its socket buffer, and the
-// symptom on that end is a truncated transfer rather than a closed connection —
-// so a sender that finished correctly would still be reported as having lost the
-// tail of its largest mod.
+// shutdown drains whatever is still queued and then closes the peer. The drain is
+// what makes the last frame of a transfer arrive: a hard close discards bytes the
+// other end has not read out of its socket buffer, and the symptom on that end is
+// a truncated transfer rather than a closed connection.
 //
 // The context passed to a transfer is routinely already cancelled by the time the
 // defer runs, which is the normal case for a user who closed a window, so the
-// drain gets a fresh bounded one instead. Best effort throughout: nothing here can
-// turn a failed transfer into a successful one, and the errors are dropped rather
-// than replacing the one the caller is about to see.
+// drain gets a fresh bounded one. Best effort throughout: nothing here can turn a
+// failed transfer into a successful one, and the errors are dropped rather than
+// replacing the one the caller is about to see.
 func shutdown(peer *Peer, ctx context.Context) {
 	grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), flushGrace)
 	defer cancel()
@@ -183,7 +176,7 @@ func shutdown(peer *Peer, ctx context.Context) {
 
 // encodableFrame is the shape every frame the protocol sends shares. Encoding is
 // fallible — a size the wire cannot carry is refused rather than truncated — so
-// the call site has to handle it rather than ignore it.
+// the call site has to handle it.
 type encodableFrame interface {
 	Encode() ([]byte, error)
 }
@@ -225,13 +218,11 @@ type openFile struct {
 	written int64
 }
 
-// run performs the handshake and then the transfer.
-//
-// The order is fixed, and is the reason this is a protocol rather than "open a
-// data channel and send bytes": the peer proves it holds the link secret before
-// a single file is created, so somebody who intercepted the link but cannot
-// complete the handshake cannot use the share to write arbitrary bytes onto this
-// machine.
+// run performs the handshake and then the transfer. The order is fixed, and is
+// the reason this is a protocol rather than "open a data channel and send bytes":
+// the peer proves it holds the link secret before a single file is created, so
+// somebody who intercepted the link but cannot complete the handshake cannot use
+// the share to write arbitrary bytes onto this machine.
 func (r *receiver) run(ctx context.Context) error {
 	if err := r.peer().WaitOpen(ctx); err != nil {
 		return fmt.Errorf("waiting for the sender to connect: %w", err)
@@ -248,13 +239,12 @@ func (r *receiver) run(ctx context.Context) error {
 	return r.readFiles(ctx)
 }
 
-// handshake exchanges HELLO and HELLO_ACK.
-//
-// The answer carries a MAC over the sender's nonce plus one of the receiver's
-// choosing. Echoing the sender's nonce alone would prove nothing against an
-// attacker who could replay a recorded HELLO; binding both nonces means a
-// recorded exchange cannot be replayed into a fresh data channel, because the
-// receiver's half would have to be regenerated against the new sender nonce.
+// handshake exchanges HELLO and HELLO_ACK. The answer carries a MAC over the
+// sender's nonce plus one of the receiver's choosing. Echoing the sender's nonce
+// alone would prove nothing against an attacker who could replay a recorded
+// HELLO; binding both means a recorded exchange cannot be replayed into a fresh
+// data channel, because the receiver's half would have to be regenerated against
+// the new sender nonce.
 func (r *receiver) handshake(ctx context.Context) error {
 	key, err := r.session.handshakeKey()
 	if err != nil {
@@ -308,14 +298,11 @@ func (r *receiver) handshake(ctx context.Context) error {
 }
 
 // expectManifest checks the sender's manifest against the offer this receiver
-// accepted.
-//
-// The manifest is redundant with the offer on purpose. The offer travelled
-// through a chat window and could have been pasted here from a different share;
-// the manifest travels over the authenticated channel and comes from the peer
-// that has just proved it holds the key. Comparing them means the recipient
-// installs exactly the inventory its peer promised, and a mismatch is caught
-// before a single byte is written to disk.
+// accepted. The manifest is redundant with the offer on purpose: the offer travelled
+// through a chat window and could have been pasted here from a different share,
+// while the manifest travels over the authenticated channel from the peer that has
+// just proved it holds the key. Comparing them means the recipient installs exactly
+// the inventory its peer promised, and a mismatch is caught before a byte is written.
 func (r *receiver) expectManifest(ctx context.Context) error {
 	raw, err := r.next(ctx)
 	if err != nil {
@@ -380,12 +367,10 @@ func compareInventory(want, got []domain.P2PSharedFile) error {
 	return nil
 }
 
-// readFiles consumes frames until COMPLETE.
-//
-// The loop's exit condition is the complete frame rather than a frame count: a
-// sender that dies half way through leaves the receiver blocked in next() until
-// the connection fails, which is the right outcome, whereas counting frames
-// would let a truncated transfer look complete.
+// readFiles consumes frames until COMPLETE. The loop's exit condition is the
+// complete frame rather than a frame count: a sender that dies half way through
+// leaves the receiver blocked in next() until the connection fails, which is the
+// right outcome, whereas counting frames would let a truncated transfer look complete.
 func (r *receiver) readFiles(ctx context.Context) error {
 	for {
 		raw, err := r.next(ctx)
@@ -407,11 +392,10 @@ func (r *receiver) readFiles(ctx context.Context) error {
 	}
 }
 
-// handleFrame advances the state machine by one frame.
-//
-// This is a dispatch rather than a chain of conditionals inside the read loop so
-// that each frame type's rules sit together, and a new frame type becomes one
-// entry rather than an edit to a loop with three nesting levels.
+// handleFrame advances the state machine by one frame. A dispatch rather than a
+// chain of conditionals inside the read loop, so that each frame type's rules sit
+// together and a new frame type becomes one entry rather than an edit to a loop
+// with three nesting levels.
 func (r *receiver) handleFrame(ctx context.Context, payload []byte) error {
 	switch kind := kindOf(payload); kind {
 	case FrameFileStart:
@@ -431,12 +415,11 @@ func (r *receiver) handleFrame(ctx context.Context, payload []byte) error {
 	}
 }
 
-// onFileStart opens the archive the sender is about to stream.
-//
-// The expected size and hash come from the offer, not from this frame. A frame
-// announcing a different size would be the peer asking the receiver to reserve
-// space it had not agreed to, so the frame's numbers are checked rather than
-// adopted — and the file is never created until they match.
+// onFileStart opens the archive the sender is about to stream. The expected size
+// and hash come from the offer, not from this frame: a frame announcing a different
+// size would be the peer asking the receiver to reserve space it had not agreed to,
+// so the frame's numbers are checked rather than adopted, and the file is never
+// created until they match.
 func (r *receiver) onFileStart(payload []byte) error {
 	frame, err := DecodeFileStart(payload)
 	if err != nil {
@@ -470,10 +453,10 @@ func (r *receiver) onFileStart(payload []byte) error {
 			ErrIntegrity, shortSum(frame.SHA256), frame.FileID, shortHex(expected.HashSHA256))
 	}
 
-	// 0600 rather than the usual 0644: a staging file holds somebody else's
-	// bytes until it has been verified, and a world-readable archive sitting
-	// in a temporary directory is a window where a local process can read a
-	// mod that has not passed its hash check yet.
+	// 0600 rather than the usual 0644: a staging file holds somebody else's bytes
+	// until it has been verified, and a world-readable archive in a temporary
+	// directory is a window where a local process can read a mod that has not
+	// passed its hash check yet.
 	path := filepath.Join(r.destDir, expected.Name)
 
 	handle, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -491,13 +474,11 @@ func (r *receiver) onFileStart(payload []byte) error {
 	return nil
 }
 
-// onChunk appends one slice of the open archive.
-//
-// Offsets are checked rather than used. The receiver could seek to whatever
-// offset it liked, which would make a duplicated or reordered chunk look fine
-// until the hash failed at the end; demanding that chunks arrive in order turns
-// any such mistake into an error at the moment it happens, naming the frame that
-// caused it.
+// onChunk appends one slice of the open archive. Offsets are checked rather than
+// used: the receiver could seek to whatever offset it liked, which would make a
+// duplicated or reordered chunk look fine until the hash failed at the end, whereas
+// demanding that chunks arrive in order turns any such mistake into an error at the
+// moment it happens, naming the frame that caused it.
 func (r *receiver) onChunk(payload []byte) error {
 	frame, err := DecodeChunk(payload)
 	if err != nil {
@@ -508,10 +489,9 @@ func (r *receiver) onChunk(payload []byte) error {
 		return fmt.Errorf("%w: CHUNK outside a FILE_START", ErrUnexpectedFrame)
 	}
 
-	// written only ever grows by the length of a payload that was checked
-	// against the announced size, so a negative total is impossible — but it is
-	// checked rather than cast, because a wrong offset is the one corruption a
-	// digest alone would still catch late rather than early.
+	// written only grows by a payload checked against the announced size, so a negative
+	// total is impossible — but it is checked, because a wrong offset is one corruption
+	// a digest alone would catch late.
 	expected, err := putSize(r.open.written)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrIntegrity, err)
@@ -527,8 +507,8 @@ func (r *receiver) onChunk(payload []byte) error {
 		return fmt.Errorf("write %s: %w", r.open.path, err)
 	}
 
-	// A short write would leave a hole in the archive and is not something the
-	// hash check at the end should be the one to notice.
+	// A short write would leave a hole in the archive, and the hash check at the
+	// end should not be the one to notice.
 	if written != len(frame.Payload) {
 		return fmt.Errorf("%w: wrote %d of %d bytes of chunk for %q",
 			ErrSizeMismatch, written, len(frame.Payload), r.open.file.FileID)
@@ -571,10 +551,10 @@ func (r *receiver) onFileDone(payload []byte) error {
 			ErrSizeMismatch, frame.FileID, frame.Size, expected.Size)
 	}
 
-	// The hash in FILE_DONE is the sender's claim about what it just sent; the
-	// offer's hash is what the recipient agreed to receive. Both are compared,
-	// because a disagreement between them means the peer and the link came
-	// apart somewhere, which is worth knowing even when the bytes were fine.
+	// FILE_DONE's hash is the sender's claim about what it just sent; the offer's
+	// is what the recipient agreed to receive. Both are compared, because a
+	// disagreement means the peer and the link came apart somewhere, which is
+	// worth knowing even when the bytes were fine.
 	if len(frame.SHA256) == sha256.Size &&
 		!equalHash(decodeHash(expected.HashSHA256), frame.SHA256) {
 		return fmt.Errorf("%w: %q hashed %s in FILE_DONE, the offer published %s",
@@ -589,12 +569,10 @@ func (r *receiver) onFileDone(payload []byte) error {
 }
 
 // onComplete checks the totals, confirms them to the sender and ends the
-// transfer.
-//
-// The confirmation is not politeness. It is what lets the sender close its half
-// of the connection without discarding bytes the receiver has not read yet, and
-// it is the last moment at which the receiver can say "these are not the files I
-// agreed to" while the sender is still listening.
+// transfer. The confirmation is not politeness: it is what lets the sender close
+// its half of the connection without discarding bytes the receiver has not read
+// yet, and it is the last moment at which the receiver can say "these are not the
+// files I agreed to" while the sender is still listening.
 func (r *receiver) onComplete(ctx context.Context, payload []byte) error {
 	frame, err := DecodeComplete(payload)
 	if err != nil {
@@ -670,12 +648,10 @@ func (r *receiver) onError(payload []byte) error {
 	return fmt.Errorf("sender reported an error: %s", reason)
 }
 
-// closeOpen finalises the open archive and verifies its hash.
-//
-// The file is removed before an integrity error is returned. Leaving a file that
-// failed its hash in the staging directory would mean the next install attempt
-// picks it up as though it were good, which is exactly the failure the hash
-// exists to prevent.
+// closeOpen finalises the open archive and verifies its hash. The file is removed
+// before an integrity error is returned: leaving a file that failed its hash in
+// the staging directory would mean the next install attempt picks it up as though
+// it were good, which is exactly the failure the hash exists to prevent.
 func (r *receiver) closeOpen() error {
 	if r.open == nil {
 		return nil
@@ -699,11 +675,10 @@ func (r *receiver) closeOpen() error {
 		ErrIntegrity, open.file.FileID, shortHex(sum), shortHex(open.file.HashSHA256), removeErr)
 }
 
-// discardPartial removes a half-written archive when a transfer ends badly.
-//
-// It is best effort by design: the error that brought us here is already going
-// to be returned, and losing the removal error would lose nothing while gaining
-// a second error to report.
+// discardPartial removes a half-written archive when a transfer ends badly. It is
+// best effort by design: the error that brought us here is already going to be
+// returned, and losing the removal error would lose nothing while gaining a second
+// error to report.
 func (r *receiver) discardPartial() {
 	if r.open == nil {
 		return
@@ -794,11 +769,8 @@ func (s *sender) peer() *Peer {
 func (s *sender) run(ctx context.Context) error {
 	s.chunkSize = s.peer().ChunkSize()
 
-	// The wait is explicit rather than left to the first Send. A share whose
-	// answer never arrives — a wrong link pasted, a peer behind a symmetric NAT
-	// with no STUN reachable — otherwise fails with "send frame" on the first
-	// frame, which reads like a protocol fault instead of a connection that
-	// never formed.
+	// The wait is explicit: otherwise a share whose answer never arrives fails with
+	// "send frame", which reads like a protocol fault rather than a dead connection.
 	if err := s.peer().WaitOpen(ctx); err != nil {
 		return fmt.Errorf("waiting for the recipient to connect: %w", err)
 	}
@@ -842,11 +814,10 @@ func (s *sender) handshake(ctx context.Context) error {
 
 	kind := kindOf(raw)
 
-	// ABORT is legal here and nowhere else. It is how a recipient says "no"
-	// using the only channel it has, and the sender is at this exact point in
-	// its handshake, having just authenticated itself. Reading it as an
-	// unexpected frame would turn a deliberate refusal into a protocol bug
-	// report, which is precisely backwards.
+	// ABORT is legal here and nowhere else. It is how a recipient says "no" using
+	// the only channel it has, and the sender is at this exact point in its
+	// handshake, having just authenticated itself. Reading it as an unexpected frame
+	// would turn a deliberate refusal into a protocol bug report.
 	if kind == FrameAbort {
 		return decodeAbort(raw, "waiting for hello ack")
 	}
@@ -917,12 +888,11 @@ func (s *sender) sendFiles(ctx context.Context) error {
 	return nil
 }
 
-// awaitConfirmation waits for the receiver's TRANSFER_COMPLETE.
-//
-// Until this arrives the sender has written bytes and heard nothing about
-// whether they were the right ones, and it must not close the connection:
-// tearing down a data channel discards whatever the far end has not yet read,
-// which is indistinguishable from a truncated transfer on the other side.
+// awaitConfirmation waits for the receiver's TRANSFER_COMPLETE. Until it arrives
+// the sender has written bytes and heard nothing about whether they were the right
+// ones, and it must not close the connection: tearing down a data channel discards
+// whatever the far end has not yet read, which is indistinguishable from a
+// truncated transfer on the other side.
 func (s *sender) awaitConfirmation(ctx context.Context, sent *CompleteFrame) error {
 	raw, err := s.next(ctx)
 	if err != nil {
@@ -964,11 +934,9 @@ func (s *sender) awaitConfirmation(ctx context.Context, sent *CompleteFrame) err
 	return nil
 }
 
-// reportFailure tells the receiver why the transfer stopped.
-//
-// Best effort and deliberately so: the sender is already returning the real
-// error, and a receiver left guessing is far better off than one told the
-// transfer succeeded.
+// reportFailure tells the receiver why the transfer stopped. Best effort and
+// deliberately so: the sender is already returning the real error, and a
+// receiver left guessing is far better off than one told the transfer succeeded.
 func (s *sender) reportFailure(ctx context.Context, cause error) {
 	frame := &StatusFrame{Code: 1, Reason: cause.Error()}
 
@@ -1014,9 +982,8 @@ func (s *sender) sendFile(ctx context.Context, index int, file domain.P2PSharedF
 
 	// The digest is computed while streaming rather than in a separate pass, so
 	// a few hundred megabytes of mods is read once instead of twice. The buffer
-	// is reused across reads for the same reason: a fresh allocation per chunk
-	// hands the collector the allocation rate of a very large download, which is
-	// the one thing a sender that is otherwise idle should not be doing.
+	// is reused for the same reason: a fresh allocation per chunk hands the
+	// collector the allocation rate of a very large download.
 	digest := sha256.New()
 	buf := make([]byte, s.chunkSize)
 
@@ -1108,11 +1075,10 @@ func (s *sender) progress(index int, file domain.P2PSharedFile) domain.P2PTransf
 	return p
 }
 
-// decodeAbort turns an ABORT frame into the refusal error.
-//
-// A malformed abort is reported as an unexpected frame rather than swallowed: a
-// peer that sent something undecodable at this point is either broken or not
-// speaking this protocol, and neither should be reported as a polite decline.
+// decodeAbort turns an ABORT frame into the refusal error. A malformed abort is
+// reported as an unexpected frame rather than swallowed: a peer that sent
+// something undecodable at this point is either broken or not speaking this
+// protocol, and neither should be reported as a polite decline.
 func decodeAbort(raw []byte, at string) error {
 	frame, err := DecodeStatus(raw, FrameAbort)
 	if err != nil {
@@ -1127,12 +1093,10 @@ func decodeAbort(raw []byte, at string) error {
 	return fmt.Errorf("%w: %s", ErrPeerRejected, reason)
 }
 
-// decodeHash turns a hex digest back into bytes.
-//
-// It returns nil for anything that is not a full SHA-256, which the frame
-// decoders treat as "this frame did not claim a hash" rather than as an error: a
-// hash is checked when it is present and simply absent otherwise, so that a
-// protocol version which omitted it still transfers.
+// decodeHash turns a hex digest back into bytes. It returns nil for anything that
+// is not a full SHA-256, which the frame decoders treat as "this frame did not
+// claim a hash" rather than as an error: a hash is checked when present and simply
+// absent otherwise, so a protocol version which omitted it still transfers.
 func decodeHash(hexDigest string) []byte {
 	raw, err := hex.DecodeString(hexDigest)
 	if err != nil {
@@ -1142,12 +1106,10 @@ func decodeHash(hexDigest string) []byte {
 	return raw
 }
 
-// equalHash compares two digests without leaking where they differ.
-//
-// Constant-time because the digests being compared are chosen by a peer that
-// has not been trusted yet: a comparison that returned early on the first
-// differing byte would report, through its timing, how much of a forged digest
-// was correct.
+// equalHash compares two digests without leaking where they differ. Constant-time
+// because the digests come from a peer that has not been trusted yet: a comparison
+// that returned early on the first differing byte would report, through its timing,
+// how much of a forged digest was correct.
 func equalHash(a, b []byte) bool {
 	return crypto.EqualConstantTime(normaliseDigest(a), normaliseDigest(b))
 }

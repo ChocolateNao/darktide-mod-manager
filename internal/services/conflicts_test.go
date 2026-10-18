@@ -13,14 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// conflictMod builds an enabled mod with no payload on disk. Conflict detection
-// only ever looks at the record and its inventory, so the payload is irrelevant
-// and leaving it out keeps the fixtures readable.
+// conflictMod builds an enabled mod with no payload on disk: conflict detection
+// only ever looks at the record and its inventory.
 func conflictMod(id string) domain.Mod {
 	return domain.Mod{ID: id, Name: id, Version: "1.0.0", SourceID: "test", Enabled: true}
 }
 
-// withFiles records an inventory whose top-level entries are the given names.
+// withFiles records an inventory whose top-level entries are the given names:
 // filesFor("a.dll", "textures/hud.dds") models a mod that puts a.dll and the
 // whole textures directory into the game folder.
 func withFiles(t *testing.T, h *harness, id string, names ...string) *harness {
@@ -142,13 +141,10 @@ func TestDetectConflictsPropagatesIndexFailure(t *testing.T) {
 	}
 }
 
-// --- duplicate ids -----------------------------------------------------------
-
 func TestDetectConflictsDuplicateIDsThatShareAPayloadFolder(t *testing.T) {
 	h := newHarness(t)
-	// "a b" and "ab" are distinct keys in the index but SanitizeSegment drops the
-	// space, so both land in the folder "ab" and their payloads overwrite each
-	// other.
+	// "a b" and "ab" are distinct keys, but SanitizeSegment drops the space, so
+	// both land in the folder "ab".
 	h.index.put(&domain.Mod{ID: "a b", Version: "1.0.0", Enabled: true})
 	h.index.put(&domain.Mod{ID: "ab", Version: "2.0.0", Enabled: true})
 
@@ -244,8 +240,6 @@ func TestDetectConflictsIgnoresCollidingIDOfADisabledMod(t *testing.T) {
 	}
 }
 
-// --- declared incompatibilities ---------------------------------------------
-
 func TestDetectConflictsDeclaredIncompatibilityIsSymmetric(t *testing.T) {
 	h := newHarness(t)
 	a := conflictMod("alpha")
@@ -289,9 +283,7 @@ func TestDetectConflictsDeclaredIncompatibilityDeclaredByTheSecondMod(t *testing
 
 	report := reportFor(reports, domain.ConflictDeclaredIncompatibility)
 	require.NotNil(t, report, "expected a declared conflict, got %v", reportTypes(reports))
-	// ModIDs() sorts the pair, so the declaring side has to be read off ModA.
-	// The declaring mod is always ModA, whichever side of the scan found it, so
-	// the report reads "beta declares ..." rather than naming the victim first.
+	// The declaring mod is always ModA, whichever side of the scan found it.
 	assert.False(
 		t,
 		report.ModA == nil || report.ModA.ID != "beta",
@@ -315,8 +307,6 @@ func TestDetectConflictsDeclaredIncompatibilityIgnoresSelf(t *testing.T) {
 		assert.Nil(t, r, "a mod listing itself is odd but not a conflict between two mods: %+v", r)
 	}
 }
-
-// --- file overlap ------------------------------------------------------------
 
 func TestDetectConflictsFileOverlap(t *testing.T) {
 	h := newHarness(t)
@@ -519,8 +509,6 @@ func TestOverlapDetailsDoesNotMutateItsArgument(t *testing.T) {
 		files,
 	)
 }
-
-// --- dependencies and load order --------------------------------------------
 
 func TestDetectConflictsMissingDependencyHasNoModB(t *testing.T) {
 	h := newHarness(t)
@@ -795,8 +783,6 @@ func TestDetectConflictsLoadOrderFailureIsNotFatal(t *testing.T) {
 	assert.Empty(t, reports, "expected no reports, got %v", reportTypes(reports))
 }
 
-// --- version mismatches ------------------------------------------------------
-
 func TestDetectConflictsVersionMismatch(t *testing.T) {
 	h := newHarness(t)
 	a := conflictMod("alpha")
@@ -947,8 +933,6 @@ func TestRequiredVersionsShapes(t *testing.T) {
 	assert.Equal(t, ">=1", src["a"], "requiredVersions aliased the caller's map")
 }
 
-// --- ordering and identity ---------------------------------------------------
-
 func TestDetectConflictsIsOrdered(t *testing.T) {
 	h := newHarness(t)
 	a := conflictMod("alpha")
@@ -980,12 +964,12 @@ func TestDetectConflictsIsOrdered(t *testing.T) {
 		for j := range got {
 			require.False(
 				t,
-				got[j].ID() != first[j].ID() || got[j].Type != first[j].Type,
+				got[j].Identity() != first[j].Identity() || got[j].Type != first[j].Type,
 				"run %d differs at %d: %q vs %q",
 				i,
 				j,
-				got[j].ID(),
-				first[j].ID(),
+				got[j].Identity(),
+				first[j].Identity(),
 			)
 		}
 	}
@@ -1054,16 +1038,23 @@ func TestConflictReportIDIsSymmetric(t *testing.T) {
 	reverse := domain.ConflictReport{Type: domain.ConflictFileOverlap, ModA: &b, ModB: &a}
 	assert.Equal(
 		t,
-		reverse.ID(),
-		forward.ID(),
+		reverse.Identity(),
+		forward.Identity(),
 		"a report found with the mods swapped must keep its id: %q vs %q",
-		forward.ID(),
-		reverse.ID(),
+		forward.Identity(),
+		reverse.Identity(),
 	)
 
 	{
 		want := "file_overlap:alpha:beta"
-		assert.Equal(t, want, forward.ID(), "ID() = %q, want %q", forward.ID(), want)
+		assert.Equal(
+			t,
+			want,
+			forward.Identity(),
+			"Identity() = %q, want %q",
+			forward.Identity(),
+			want,
+		)
 	}
 }
 
@@ -1073,7 +1064,14 @@ func TestConflictReportIDHandlesAMissingSide(t *testing.T) {
 	report := domain.ConflictReport{Type: domain.ConflictLoadOrder, ModA: &a}
 	{
 		want := "load_order:alpha:"
-		assert.Equal(t, want, report.ID(), "ID() = %q, want %q", report.ID(), want)
+		assert.Equal(
+			t,
+			want,
+			report.Identity(),
+			"Identity() = %q, want %q",
+			report.Identity(),
+			want,
+		)
 	}
 	// The missing side sorts last, so the id reads "load_order:alpha:".
 	first, second, both := report.ModIDs()
@@ -1099,13 +1097,11 @@ func TestConflictReportIDCountsTypesApart(t *testing.T) {
 	}
 	assert.NotEqual(
 		t,
-		declared.ID(),
-		overlap.ID(),
+		declared.Identity(),
+		overlap.Identity(),
 		"two different conflicts between the same mods need different ids",
 	)
 }
-
-// --- resolution --------------------------------------------------------------
 
 func TestResolveConflictRequiresAnIDAndAResolution(t *testing.T) {
 	h := newHarness(t)
@@ -1166,7 +1162,7 @@ func TestResolveConflictTrimsTheID(t *testing.T) {
 	{
 		err := h.svc.ResolveConflict(
 			context.Background(),
-			"  "+reports[0].ID()+"\t",
+			"  "+reports[0].Identity()+"\t",
 			ResolutionKeepBoth,
 		)
 		assert.NoError(t, err, "a padded id should still match: %v", err)
@@ -1187,7 +1183,7 @@ func TestResolveConflictKeepBothDoesNothingButSaySo(t *testing.T) {
 	{
 		err := h.svc.ResolveConflict(
 			context.Background(),
-			reports[0].ID(),
+			reports[0].Identity(),
 			ResolutionKeepBoth,
 		)
 		require.NoError(t, err, "ResolveConflict: %v", err)
@@ -1233,7 +1229,7 @@ func TestResolveConflictDisableFirstAndSecondSide(t *testing.T) {
 			{
 				err := h.svc.ResolveConflict(
 					context.Background(),
-					reports[0].ID(),
+					reports[0].Identity(),
 					tc.how,
 				)
 				require.NoError(t, err, "ResolveConflict: %v", err)
@@ -1274,7 +1270,7 @@ func TestResolveConflictUninstallsEitherSide(t *testing.T) {
 			{
 				err := h.svc.ResolveConflict(
 					context.Background(),
-					reports[0].ID(),
+					reports[0].Identity(),
 					tc.how,
 				)
 				require.NoError(t, err, "ResolveConflict: %v", err)
@@ -1305,7 +1301,7 @@ func TestResolveConflictRefusesOneSidedReports(t *testing.T) {
 		require.False(t, both, "setup: expected a one-sided report, got %v", reportTypes(reports))
 	}
 
-	err = h.svc.ResolveConflict(context.Background(), reports[0].ID(), ResolutionDisableModB)
+	err = h.svc.ResolveConflict(context.Background(), reports[0].Identity(), ResolutionDisableModB)
 	assert.True(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
@@ -1329,7 +1325,7 @@ func TestResolveConflictRejectsAnUnknownResolution(t *testing.T) {
 	{
 		err := h.svc.ResolveConflict(
 			context.Background(),
-			reports[0].ID(),
+			reports[0].Identity(),
 			ConflictResolution(99),
 		)
 		assert.True(t, appErrors.IsAppError(
@@ -1427,8 +1423,7 @@ func TestConflictResolutionStrings(t *testing.T) {
 }
 
 // TestConflictInventoryUsesStoredNames guards the wiring between the deployer and
-// detection: a mod recorded with a Windows-style backslash path must still be
-// compared on the name the game will see.
+// detection: a Windows-style path must still compare on the name the game sees.
 func TestConflictInventoryUsesStoredNames(t *testing.T) {
 	h := newHarness(t)
 	h.index.putValue(conflictMod("alpha"))

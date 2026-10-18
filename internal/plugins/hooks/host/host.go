@@ -1,11 +1,9 @@
 // Package host is the restricted capability surface a hook script runs against.
 //
-// Every language binding (JavaScript, Lua) exposes exactly the same operations,
-// and every operation resolves through this one Host type: there is a single
-// construction site (New), the permission check happens here before the
-// provider is touched, and the providers themselves are injected, so a script
-// can never reach the network, a subprocess, or the process environment
-// outside what the executor prepared.
+// Every language binding exposes the same operations and every one resolves
+// through this Host type: a single construction site (New), the permission check
+// before a provider is touched, and injected providers, so a script can never
+// reach the network, a subprocess or the process environment.
 package host
 
 import (
@@ -26,15 +24,14 @@ const (
 	maxReadBytes = 4 << 20
 
 	// permissionsKeyPrefix is the config namespace scripts may never write,
-	// regardless of their config_write grant: the permission model is not
-	// script-editable.
+	// whatever their config_write grant: the permission model is not editable.
 	permissionsKeyPrefix = "hooks.permissions"
 )
 
 const (
-	// MaxLogLines and MaxLogLineLength bound the per-run log buffer so a
-	// chatty script cannot grow memory without limit. Both bindings expose
-	// them so a script can ask how much of its output survives.
+	// MaxLogLines and MaxLogLineLength bound the per-run log buffer so a chatty
+	// script cannot grow memory without limit; both bindings expose them so a
+	// script can ask how much of its output survives.
 	MaxLogLines      = 200
 	MaxLogLineLength = 4096
 )
@@ -140,8 +137,8 @@ func (h *Host) Permissions() domain.ScriptPermissions { return h.permissions }
 // ContextValue returns the hook context exposed to the script.
 func (h *Host) ContextValue() domain.HookContext { return h.hook }
 
-// Log records one line in the run's log buffer and forwards it to the
-// provider logger. Buffer bounds apply to every language identically.
+// Log records one line in the run's log buffer and forwards it to the provider
+// logger. The buffer bounds apply to every language identically.
 func (h *Host) Log(level, msg string) {
 	msg = truncate(msg, MaxLogLineLength)
 
@@ -480,9 +477,9 @@ func (h *Host) EnvGet(key string) (string, error) {
 	return "", nil
 }
 
-// resolve turns a script-supplied path into an absolute path inside the
-// allowed roots. allowTempOnly is unused by callers today but keeps the
-// distinction visible where a write target needs a tighter rule.
+// resolve turns a script-supplied path into an absolute path inside the allowed
+// roots. allowTempOnly is unused by callers today but keeps a tighter rule for a
+// write target visible in the one place that decides.
 func (h *Host) resolve(path string, _ bool) (string, error) {
 	raw := strings.TrimSpace(path)
 	if raw == "" {
@@ -516,9 +513,8 @@ func (h *Host) resolve(path string, _ bool) (string, error) {
 		"path %q is outside the allowed roots", raw)
 }
 
-// allowedRoots is the set of directories a script may touch: the mod folder,
-// the game folder, the mods folder, and the cache, temp and storage roots.
-// Empty entries are skipped.
+// allowedRoots is the set of directories a script may touch: the mod, game and
+// mods folders and the cache, temp and storage roots. Empty entries are skipped.
 func (h *Host) allowedRoots() []string {
 	candidates := []string{
 		h.hook.Mod.Path,

@@ -1,10 +1,8 @@
 package local
 
 // This file holds the parts of the local source that are about a mod *folder*
-// rather than about where it came from: the id a folder gets when it has no
-// manifest to name it, the small string rules the discovery code needs, and
-// the tree copy that installs a payload. The manifest itself is read through
-// internal/manifest, which owns the format.
+// rather than about where it came from: the id a folder gets without a manifest,
+// the string rules discovery needs, and the tree copy that installs a payload.
 
 import (
 	"io"
@@ -62,11 +60,9 @@ func looksLikeVersion(s string) bool {
 	return true
 }
 
-// copyTree copies a folder tree, refusing to follow a symlink out of it.
-//
-// A local mod folder is user-owned, so links inside it are expected; a link whose
-// target escapes the tree would let a "copy" read arbitrary files and then index
-// them as mod content. Such an entry is skipped and reported rather than copied.
+// copyTree copies a folder tree, refusing to follow a symlink out of it. A local mod
+// folder is user-owned, so links inside it are expected; one whose target escapes the
+// tree would let a "copy" read arbitrary files and index them as mod content.
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

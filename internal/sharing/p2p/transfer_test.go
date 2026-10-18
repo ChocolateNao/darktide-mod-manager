@@ -16,14 +16,11 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// loopbackConfig is a peer configuration that works without touching the
-// network.
+// loopbackConfig is a peer configuration that works without touching the network.
 //
-// No STUN server and no mDNS, with loopback candidates included. The two peers
-// in these tests live in one process on one host, so every candidate they need
-// is a loopback one; asking a public STUN server to reflect a loopback address
-// would be pointless, and a test that depends on the network is a test that
-// fails in a sandbox.
+// No STUN and no mDNS, with loopback candidates included: the peers in these tests
+// live in one process on one host, so asking a public STUN server to reflect a
+// loopback address is pointless and a network-dependent test fails in a sandbox.
 func loopbackConfig(t *testing.T) p2p.Config {
 	t.Helper()
 
@@ -43,8 +40,7 @@ func loopbackConfig(t *testing.T) p2p.Config {
 	return cfg
 }
 
-// writeArchive stages a file of the given size with recognisable content and
-// returns its descriptor.
+// writeArchive stages a file of the given size with recognisable content.
 func writeArchive(t *testing.T, dir, name string, size int) domain.P2PSharedFile {
 	t.Helper()
 
@@ -125,9 +121,7 @@ func connectPeers(t *testing.T, ctx context.Context) (*p2p.Peer, *p2p.Peer) {
 	return sender, receiver
 }
 
-// TestTransferRoundTrip is the end-to-end case: a share of two archives crosses
-// a real WebRTC data channel and arrives byte-for-byte, with the receiver's
-// hashes matching what the offer published.
+// TestTransferRoundTrip is the end-to-end case: two archives cross a data channel byte-for-byte.
 func TestTransferRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -246,8 +240,7 @@ func TestTransferRoundTrip(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsWrongSecret covers the handshake's whole purpose: a peer
-// that does not hold the link secret must not be able to write a single byte.
+// TestReceiveRejectsWrongSecret covers a peer without the link secret writing no bytes.
 func TestReceiveRejectsWrongSecret(t *testing.T) {
 	t.Parallel()
 
@@ -308,9 +301,7 @@ func TestReceiveRejectsWrongSecret(t *testing.T) {
 	}
 }
 
-// TestReceiveDetectsCorruptedFile covers the integrity check: an archive that
-// arrives with the wrong bytes must be removed rather than left for an install
-// to pick up.
+// TestReceiveDetectsCorruptedFile covers an archive arriving with wrong bytes being removed.
 func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	t.Parallel()
 
@@ -322,10 +313,8 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 
 	file := writeArchive(t, stage, "mod.zip", 4096)
 
-	// The offer publishes the hash of what was actually staged, so the sender
-	// and the offer agree; the corruption is introduced on disk after the
-	// offer was built, which is exactly the case the receiver's own digest
-	// has to catch.
+	// The offer publishes the hash of what was staged, so the corruption is
+	// introduced on disk afterwards — exactly what the receiver's digest must catch.
 	offer := domain.P2PShareOffer{
 		OfferID: "offer-integrity",
 		GameID:  "darktide",
@@ -384,9 +373,7 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsForeignManifest covers a peer that holds the key but
-// describes a different transfer: the manifest is compared against the offer, so
-// the inventory a recipient agreed to is the one it gets.
+// TestReceiveRejectsForeignManifest covers a peer holding the key but describing another transfer.
 func TestReceiveRejectsForeignManifest(t *testing.T) {
 	t.Parallel()
 
@@ -448,9 +435,7 @@ func TestReceiveRejectsForeignManifest(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsMismatchedOfferID covers the frame-level check: a peer that
-// authenticates against a different offer must not be able to pour its bytes
-// into this share.
+// TestReceiveRejectsMismatchedOfferID covers a peer authenticating against another offer.
 func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 	t.Parallel()
 
@@ -497,9 +482,7 @@ func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 	}
 }
 
-// TestSendHonoursContextCancellation covers a user who closes the window
-// mid-transfer: the send must return promptly rather than sit in a flow-control
-// wait forever.
+// TestSendHonoursContextCancellation covers a closed window returning without draining.
 func TestSendHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -531,9 +514,7 @@ func TestSendHonoursContextCancellation(t *testing.T) {
 	}
 }
 
-// TestConfigValidation covers the guards on peer configuration, which are what
-// stop a mistyped STUN URL from turning into a connection that silently gathers
-// nothing.
+// TestConfigValidation covers the guards that stop a mistyped STUN URL gathering nothing silently.
 func TestConfigValidation(t *testing.T) {
 	t.Parallel()
 
@@ -602,9 +583,7 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-// TestDefaultSTUNServers pins the promise the documentation makes: Google's
-// public STUN server, and nothing else. Adding a default TURN server here would
-// start relaying mod data through a third party.
+// TestDefaultSTUNServers pins Google's public STUN and nothing else; default TURN relays mod data.
 func TestDefaultSTUNServers(t *testing.T) {
 	t.Parallel()
 
@@ -625,8 +604,7 @@ func hashFile(path string) (string, error) {
 	return domain.ComputeSHA256Hex(body), nil
 }
 
-// linkSecret generates a capability secret the way the link codec does, so the
-// tests exercise the same derivation the protocol will see in production.
+// linkSecret generates a secret the way the link codec does, so tests see production derivation.
 func linkSecret() (string, error) {
 	link, err := p2p.LinkOffer(domain.P2PShareOffer{OfferID: "probe", GameID: "probe"}, "v=0\r\n")
 	if err != nil {

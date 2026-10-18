@@ -226,9 +226,7 @@ func fsFileMode(t *testing.T, path string) os.FileMode {
 	return info.Mode().Perm()
 }
 
-// mkfifo creates a named pipe so the walk can be shown to skip it. It is a
-// wrapper rather than a syscall so the windows branch of the test can skip
-// without the import being unused.
+// mkfifo wraps syscall.Mkfifo so the windows branch can skip it cleanly.
 func mkfifo(path string) error {
 	return syscall.Mkfifo(path, 0o600)
 }

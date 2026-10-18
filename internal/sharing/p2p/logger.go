@@ -4,18 +4,11 @@ import (
 	"github.com/pion/logging"
 )
 
-// pion expects a logger and nothing more: a factory it can ask for one logger per
-// subsystem, and a level-based interface it decides what to say at which level.
-//
-// This process has exactly one logger (internal/logging), and the adapter that
-// bridges pion's interface to it lives there, so that pion's volume — which is
-// large and lands at debug — is filtered by the same configuration as everything
-// else. Writing pion's output anywhere else would be the second logging path in
-// the program, and the second one is how the first one stops being findable.
-//
-// Config.PionLogger supplies that logger. A nil one means a caller that wants no
-// logging at all — a library user, or a test asserting on behaviour — and is not
-// an error: the share protocol has no business logging into somebody else's log.
+// pion wants a logger factory: one logger per subsystem, at whatever level pion
+// decides. This process has exactly one logger (internal/logging) and pion's large,
+// debug-heavy output is filtered like everything else; a second logging path is how
+// the first stops being findable. A nil Config.PionLogger is not an error: this
+// protocol has no business logging into somebody else's log.
 
 // logFactory hands the same logger to every subsystem pion asks for.
 //
@@ -32,10 +25,9 @@ func (f logFactory) NewLogger(string) logging.LeveledLogger {
 	return f.logger
 }
 
-// loggerFactoryFor adapts a logger to pion's factory, substituting a logger that
-// says nothing when there is none. pion logs unconditionally from paths this
-// package does not control, so a nil logger has to become silence rather than a
-// panic.
+// loggerFactoryFor adapts a logger to pion's factory, substituting silence for
+// none. pion logs unconditionally from paths this package does not control, so a
+// nil logger has to become a logger that says nothing rather than a panic.
 func loggerFactoryFor(logger logging.LeveledLogger) logging.LoggerFactory {
 	if logger == nil {
 		return logFactory{logger: discardLogger{}}
@@ -46,8 +38,8 @@ func loggerFactoryFor(logger logging.LeveledLogger) logging.LoggerFactory {
 
 // discardLogger is the zero-configuration default: every pion call is accepted
 // and dropped. It exists so a caller that has not configured logging still gets a
-// working share, and so the tests can assert on behaviour without capturing the
-// noise a real connection produces.
+// working share, and so tests can assert on behaviour without the noise a real
+// connection produces.
 type discardLogger struct{}
 
 func (discardLogger) Trace(string)          {}

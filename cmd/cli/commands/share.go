@@ -9,12 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cloudShareNotice is printed alongside every cloud share result.
-//
-// The cloud path still works and is not removed, but it is on its way out: every
-// mod it moves passes through a third party's storage, and that is exactly what
-// the peer-to-peer path exists to avoid. Saying so on the command that would use
-// it is cheaper than a surprise later.
+// cloudShareNotice is printed alongside every cloud share result. The cloud path
+// still works but is on its way out: every mod it moves passes through a third
+// party's storage, which is what the peer-to-peer path exists to avoid.
 const cloudShareNotice = "cloud sharing is deprecated: " +
 	"it stores the mods on a third-party provider. Use `dmm share p2p` instead."
 
@@ -42,20 +39,14 @@ func newShareCommand(s *session) *cobra.Command {
 		newShareUpdateCommand(s),
 	)
 
-	// The group itself is deliberately NOT marked Deprecated. Cobra hides a
-	// deprecated command together with everything under it, so marking `share`
-	// would hide `share p2p` — the replacement — behind the very notice telling
-	// users to find it. The deprecation belongs on the cloud leaves, where it
-	// costs nothing to carry.
-
+	// The group is deliberately NOT marked Deprecated: cobra hides a deprecated
+	// command with everything under it, so `share` would hide `share p2p` too.
 	return group
 }
 
-// warnCloudShare writes the deprecation notice where the user will actually see
-// it: next to the result, not only in the help text they may never have read.
-//
-// It goes to stderr because stdout is the machine-readable channel here — a
-// script reading JSON must not have to strip a sentence out of it first.
+// warnCloudShare writes the deprecation notice where the user will see it: next
+// to the result, not only in help text they may never have read. It goes to stderr
+// so a script reading JSON does not have to strip a sentence out of it.
 func warnCloudShare(s *session) {
 	fmt.Fprintln(s.env.Err, "// warning: "+cloudShareNotice)
 }

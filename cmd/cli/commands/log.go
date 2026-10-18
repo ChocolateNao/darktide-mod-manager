@@ -19,19 +19,13 @@ import (
 // the help text and any listing read in the same direction the levels do.
 var logLevels = []string{"trace", "debug", "info", "warn", "error"}
 
-// defaultTailLines is how many records `dmm logs tail` shows without -n.
-//
-// 100 rather than 20: the tail is most often run to answer "what just happened",
-// and the answer is usually above the last twenty lines but inside a hundred.
+// defaultTailLines is how many records `dmm logs tail` shows without -n: 100
+// rather than 20, because the tail is run to answer "what just happened".
 const defaultTailLines = 100
 
-// logView is the JSON shape of one log record.
-//
-// It is a separate type from logging.LogLine for the reason every table in this
-// package has a --json form: the domain struct's field names are not a promise a
-// shell script can rely on, and the log reader is the one place where the JSON
-// and the text output have very different shapes (the text view folds the
-// timestamp down to the second and inlines the fields).
+// logView is the JSON shape of one log record, separate from logging.LogLine for
+// the reason every table here has a --json form, and because the text view folds
+// the timestamp down to the second and inlines the fields.
 type logView struct {
 	Fields    any    `json:"fields,omitempty"`
 	Timestamp string `json:"timestamp"`
@@ -65,12 +59,9 @@ func newLogCommand(s *session) *cobra.Command {
 	return group
 }
 
-// logService returns the log service the manager was built with.
-//
-// It goes through the session's container rather than constructing one of its own
-// so `dmm logs level debug` changes the level of the logger the rest of the
-// invocation is using, and so the directory reported by `logs dir` is the one the
-// running process resolved rather than a second, slightly different answer.
+// logService returns the log service the manager was built with. It goes through
+// the session's container so `dmm logs level debug` changes the level of the
+// logger this invocation is already using and `logs dir` reports one answer.
 func (s *session) logService(ctx context.Context) (*logging.Service, error) {
 	container, err := s.acquire(ctx)
 	if err != nil {
@@ -123,9 +114,7 @@ func newLogTailCommand(s *session) *cobra.Command {
 
 			if level := strings.TrimSpace(levelName); level != "" {
 				// Validated rather than handed to logging.ParseLevel, which falls
-				// back to info: a misspelled filter would otherwise print a
-				// different set of records than the one asked for, and would look
-				// like the log had lost lines.
+				// back to info: a misspelled filter would print a different set of records.
 				name, err := logLevelName(level)
 				if err != nil {
 					return err
@@ -152,9 +141,8 @@ func newLogTailCommand(s *session) *cobra.Command {
 			}
 
 			if !follow {
-				// Nothing was written at all is reported rather than left as
-				// silence: a tail that printed nothing is indistinguishable from a
-				// broken one, and "no records yet" is the actual answer.
+				// "no records yet" is reported rather than left as silence: a
+				// tail that printed nothing is indistinguishable from a broken one.
 				if len(lines) == 0 {
 					_, err = fmt.Fprintf(s.env.Err, "no log records yet in %s\n", path)
 					return err
@@ -174,13 +162,9 @@ func newLogTailCommand(s *session) *cobra.Command {
 	return command
 }
 
-// followLogs streams new records until the context is cancelled.
-//
-// A cancelled context is the ordinary way this ends — cobra hands the command
-// the process context, and ctrl-c cancels it — and it is reported as success
-// rather than as an error: a user who stopped a tail asked for exactly what
-// happened, and an exit code of 1 would make `tail -f` in a script look like it
-// had failed.
+// followLogs streams new records until the context is cancelled. A cancelled
+// context is the ordinary ending and reported as success, so `tail -f` in a
+// script does not look like it failed.
 func (s *session) followLogs(ctx context.Context, path string, minLevel zerolog.Level) error {
 	stream, err := logging.Follow(ctx, path)
 	if err != nil {
@@ -193,15 +177,12 @@ func (s *session) followLogs(ctx context.Context, path string, minLevel zerolog.
 			return nil
 		case line, ok := <-stream:
 			if !ok {
-				// The channel closed on its own. Treated as the end of the log
-				// rather than a failure; a tail with nothing more to print and a
-				// tail whose stream broke look identical, and only one of them
-				// should stop a script.
+				// A closed channel is the end of the log, not a failure: only
+				// one of "nothing more" and "the stream broke" should stop a script.
 				return nil
 			}
-			// The same filter the backlog was filtered by, applied to the stream:
-			// a follower that started filtered and then printed everything would
-			// be worse than one that ignores the flag.
+			// The backlog's filter applies to the stream too: a follower that
+			// started filtered and then printed everything would be worse than none.
 			if level := logging.ParseLevel(line.Level); level < minLevel {
 				continue
 			}
@@ -213,11 +194,8 @@ func (s *session) followLogs(ctx context.Context, path string, minLevel zerolog.
 	}
 }
 
-// writeLogLine renders one record in the format the flags asked for.
-//
-// JSON goes to standard output one object per line rather than as an array: a
-// follower streams, and a document that is only valid once the stream ends is
-// useless for the case that matters.
+// writeLogLine renders one record in the format the flags asked for. JSON is one
+// object per line rather than an array because a follower streams.
 func (s *session) writeLogLine(line logging.LogLine) error {
 	if s.opts.asJSON {
 		return writeJSON(s.env.Out, logView{
@@ -236,11 +214,8 @@ func (s *session) writeLogLine(line logging.LogLine) error {
 }
 
 // describeLogLine renders a record the way a person reads a log: the time, the
-// severity, and what happened.
-//
-// The fields are appended rather than hidden. The severity is spelled out in
-// full instead of being abbreviated to three letters because the abbreviation is
-// the sort of thing people misread, and a log is not the place to be terse.
+// severity, and what happened. Fields are appended rather than hidden and the
+// severity spelled out, because a log is not the place to be terse.
 func describeLogLine(line logging.LogLine) string {
 	var out strings.Builder
 	if stamp := formatLogTime(line.Timestamp); stamp != "" {
@@ -327,9 +302,8 @@ func describeLogFields(fields map[string]any) string {
 	return strings.Join(pairs, " ")
 }
 
-// appField is the tag every record carries. It is dropped from the text view
-// because it is the same on every line and only makes the row wider; the JSON
-// view keeps it, since a script filtering on it may want it.
+// appField is the tag every record carries, dropped from the text view because
+// it is the same on every line; the JSON view keeps it for scripts filtering on it.
 const appField = "app"
 
 func renderLogValue(value any) string {
@@ -426,9 +400,8 @@ func newLogListCommand(s *session) *cobra.Command {
 			}
 
 			if table.Empty() {
-				// An empty directory is stated rather than printed as nothing:
-				// a bare prompt after `logs list` reads as a command that found no
-				// answer, when the answer is "nothing has been logged yet".
+				// An empty directory is stated rather than printed as nothing: a
+				// bare prompt reads as "no answer" when the answer is "nothing logged yet".
 				_, err := fmt.Fprintf(s.env.Out, "no log files in %s\n", dir)
 				return err
 			}
@@ -436,9 +409,8 @@ func newLogListCommand(s *session) *cobra.Command {
 			if err := table.Render(s.env.Out); err != nil {
 				return err
 			}
-			// The total comes after the table because it is about the directory
-			// rather than about any one file. In the JSON form it rides along as
-			// a field instead, so a script still gets it.
+			// The total comes after the table because it is about the directory,
+			// not any one file; in the JSON form it rides along as a field instead.
 			_, err = fmt.Fprintf(s.env.Out, "%s in %s\n", humanSize(total), dir)
 
 			return err
@@ -530,9 +502,8 @@ func newLogLevelCommand(s *session) *cobra.Command {
 			}
 
 			service.SetLevel(logging.ParseLevel(name))
-			// The level is saved through the settings store rather than the file,
-			// so the value is validated and formatted the same way `dmm config set
-			// logging.level` would format it.
+			// Saved through the settings store rather than the file, so the
+			// value is validated and formatted as `dmm config set logging.level` would.
 			client, err := s.client(cmd.Context())
 			if err != nil {
 				return err
@@ -553,12 +524,9 @@ func newLogLevelCommand(s *session) *cobra.Command {
 	}
 }
 
-// logLevelName validates a level a person typed.
-//
-// Validation rather than logging.ParseLevel, which falls back to info: a
-// misspelled level would otherwise be accepted as a silent change to a different
-// verbosity, and the user would only find out by noticing what stopped being
-// logged.
+// logLevelName validates a level a person typed. Validation rather than
+// logging.ParseLevel, which falls back to info: a misspelled level would be
+// accepted as a silent change to a different verbosity.
 func logLevelName(value string) (string, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(value))
 	for _, level := range logLevels {

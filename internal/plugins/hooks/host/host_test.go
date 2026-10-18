@@ -180,7 +180,7 @@ func TestConfigSetRejectsPermissionsKeysEvenWithConfigWrite(t *testing.T) {
 			"key %q must be refused even with config_write", key)
 	}
 
-	// An ordinary key goes through.
+	// An ordinary key goes through, so the guard above is not a blanket refusal.
 	require.NoError(t, h.ConfigSet("storage.path", "/x"), "ordinary key")
 	assert.Equal(t, []string{"storage.path=/x"}, cfg.sets, "sets recorded")
 }

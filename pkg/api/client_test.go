@@ -23,12 +23,9 @@ type clientOperation struct {
 	name string
 }
 
-// everyOperation lists each operation that has to notice a closed client.
-//
-// The list is written out rather than discovered by reflection because the whole
-// point is that adding a method without adding it here is visible in a diff. A
-// method that forgot the guard would nil-panic in production the first time a
-// caller used a client after Close.
+// everyOperation lists each operation that has to notice a closed client. Written out
+// rather than discovered by reflection so that adding a method without adding it here
+// is visible in a diff; a method missing the guard would nil-panic in production.
 func everyOperation() []clientOperation {
 	ctx := context.Background()
 
@@ -143,9 +140,9 @@ func TestEveryOperationReportsAClosedClient(t *testing.T) {
 	}
 }
 
-// The methods that report through a value rather than an error cannot announce a
-// closed client, so they are checked separately: returning nil is the honest
-// answer for "no sources" and "no logger".
+// Methods that report through a value cannot announce a closed client, so they are
+// checked separately: returning nil is the honest answer for "no sources" and "no
+// logger".
 func TestClosedClientAccessorsDegradeQuietly(t *testing.T) {
 	client, err := NewClientFromServices(ClientDeps{})
 	require.NoError(t, err, "NewClientFromServices")
@@ -172,9 +169,8 @@ func TestClosedClientAccessorsDegradeQuietly(t *testing.T) {
 }
 
 func TestNilClientIsUsableForGuards(t *testing.T) {
-	// A constructor that returns (nil, err) is easy to misuse by ignoring the
-	// error. Every method here has to answer rather than panic, so the mistake
-	// surfaces as a message instead of a crash in the caller's start-up.
+	// A constructor returning (nil, err) is easy to misuse by ignoring the error, so
+	// every method here answers instead of panicking.
 	var client *Client
 	for _, op := range everyOperation() {
 		assert.Error(t, op.call(client), "%s on a nil client returned no error", op.name)
@@ -199,8 +195,8 @@ func TestNilClientIsUsableForGuards(t *testing.T) {
 }
 
 func TestCloseRunsCleanupsInReverseOrder(t *testing.T) {
-	// Reverse order is the point: the database has to close before the cache that
-	// might still be flushing into it, exactly as the graph was built forwards.
+	// Reverse order: the database closes before the cache that might still be
+	// flushing into it, exactly as the graph was built forwards.
 	client, err := NewClientFromServices(ClientDeps{})
 	require.NoError(t, err, "NewClientFromServices")
 
@@ -220,7 +216,7 @@ func TestCloseRunsCleanupsInReverseOrder(t *testing.T) {
 
 func TestCloseIsIdempotentAndSkipsNilCleanups(t *testing.T) {
 	// The natural shape is an explicit Close on the error path plus a deferred
-	// one, so a second call must do nothing rather than closing a database twice.
+	// one, so a second call must do nothing.
 	client, err := NewClientFromServices(ClientDeps{})
 	require.NoError(t, err, "NewClientFromServices")
 
@@ -253,8 +249,8 @@ func TestCloseReturnsASingleFailureUnwrapped(t *testing.T) {
 		"Close returned %v, want a config-io error",
 		err,
 	)
-	// A second Close reports the same answer, so a deferred Close after an
-	// explicit one does not surprise the caller.
+	// A second Close reports the same answer, so a deferred Close after an explicit
+	// one does not surprise the caller.
 	second := client.Close()
 	assert.True(
 		t,
@@ -275,8 +271,8 @@ func TestCloseJoinsSeveralFailures(t *testing.T) {
 
 	err = client.Close()
 	require.Error(t, err, "Close reported success with two failing cleanups")
-	// errors.Join's own message is unhelpful, so the check is that both causes are
-	// reachable: unwrapping the join yields the individual errors.
+	// errors.Join's own message is unhelpful, so the check is that both causes
+	// are reachable by unwrapping.
 	assert.Contains(
 		t,
 		err.Error(),
@@ -300,7 +296,7 @@ func TestCloseJoinsSeveralFailures(t *testing.T) {
 
 func TestNewClientFromServicesRefusesToBeRepointed(t *testing.T) {
 	// Silently ignoring a path option would leave the caller believing the client
-	// was built against their path when it was built against someone else's.
+	// was built against their path when it was not.
 	cases := map[string]Option{
 		"WithConfigPath":  WithConfigPath("/etc/dmm.json"),
 		"WithGamePath":    WithGamePath("/games/darktide"),
@@ -399,8 +395,8 @@ func TestClientServicesRoundTrip(t *testing.T) {
 		client.Services().Sources,
 		"Services returned a different registry than the client was given",
 	)
-	// The accessor hands back the live pointers, not copies, so it is a way to
-	// reach a service this package does not wrap — not a second view of the graph.
+	// The accessor hands back the live pointers, so it reaches a service this
+	// package does not wrap rather than giving a second view of the graph.
 	assert.Equal(
 		t,
 		deps.Sources,
@@ -410,7 +406,7 @@ func TestClientServicesRoundTrip(t *testing.T) {
 }
 
 func TestOperationsReportAMissingService(t *testing.T) {
-	// A client built from a partial graph must say which service is missing rather
+	// A client built from a partial graph must name the missing service rather
 	// than nil-panic on first use.
 	client, err := NewClientFromServices(ClientDeps{})
 	require.NoError(t, err, "NewClientFromServices")
@@ -476,8 +472,8 @@ func TestOperationsReportAMissingService(t *testing.T) {
 	)
 }
 
-// The source operations are the ones that can be exercised without a real graph,
-// because the registry is cheap to build and a stub source answers them.
+// The source operations are the ones exercisable without a real graph: the
+// registry is cheap to build and a stub source answers them.
 func TestSearchSourceRejectsASourceThatCannotSearch(t *testing.T) {
 	registry := services.NewSourceRegistry()
 	require.NoError(t, registry.Register(&noSearchSource{stubSource{id: "offline"}}), "Register")
@@ -492,7 +488,7 @@ func TestSearchSourceRejectsASourceThatCannotSearch(t *testing.T) {
 		"SearchSource on a source that cannot search returned %v, want source-unavailable",
 		err,
 	)
-	// The distinction matters: an empty list would read as "nothing matched".
+	// An empty list would read as "nothing matched".
 	if err != nil {
 		assert.NotEmpty(t, err.Error(), "the refusal carries no message")
 	}
@@ -575,9 +571,8 @@ func TestAuthenticateSourceHandsOverEveryCredential(t *testing.T) {
 	require.NoError(t, registry.Register(source), "Register")
 
 	cfg := domain.DefaultConfig()
-	// A sign-in has to land somewhere: without a store there is nowhere, and
-	// AuthenticateSource says so rather than reporting a login that a restart
-	// throws away.
+	// Without a store a sign-in has nowhere to land, and AuthenticateSource says so
+	// rather than reporting a login a restart throws away.
 	client, err := NewClientFromServices(ClientDeps{
 		Sources: registry,
 		Config:  &configStoreStub{cfg: &cfg},
@@ -606,8 +601,8 @@ func TestAuthenticateSourceHandsOverEveryCredential(t *testing.T) {
 }
 
 func TestAuthenticateSourceClearsAFailedLogin(t *testing.T) {
-	// A stale green badge is worse than none: the user would believe the credential
-	// works and only find out at download time.
+	// A stale green badge is worse than none: the user would believe the
+	// credential works and only find out at download time.
 	registry := services.NewSourceRegistry()
 	require.NoError(t, registry.Register(&stubSource{id: "stub"}), "Register")
 
@@ -716,8 +711,7 @@ func TestSetSourceAuthenticatedOverridesTheRegistry(t *testing.T) {
 		"SetSourceAuthenticated did not clear the flag",
 	)
 	// An id the registry does not know is not this method's problem: the registry
-	// is where the source list lives, and a flag for a source that is not
-	// registered is never surfaced by Infos.
+	// owns the source list, and a flag for an unregistered source is never surfaced.
 	client.SetSourceAuthenticated("unknown", true)
 }
 
@@ -741,9 +735,8 @@ func TestSourceInfoDescribesARegisteredSource(t *testing.T) {
 	assert.True(t, info.SupportsSearch, "source info reports search")
 	assert.True(t, info.SupportsAuth, "source info reports auth")
 
-	// The four bundled sources are in the registry too — importing this package
-	// pulls in the plugins whose init functions announce them — so the list is
-	// searched rather than counted.
+	// The bundled sources are registered too — importing this package pulls in the
+	// plugins whose init functions announce them — so the list is searched.
 	var found bool
 
 	for _, info := range client.ListSources(ctx) {
@@ -813,8 +806,8 @@ func TestSearchFansOutToEverySearchableSource(t *testing.T) {
 
 	defer client.Close()
 
-	// The registry skips a source that cannot search; the caller sees an empty
-	// result rather than an error, because the other sources answered fine.
+	// The registry skips a source that cannot search, and the caller sees an empty
+	// result rather than an error because the other sources answered fine.
 	mods, err := client.Search(context.Background(), SearchQuery{Query: "ui"})
 	require.NoError(t, err, "Search")
 
@@ -910,9 +903,8 @@ func TestValidateHookScriptChecksTheScript(t *testing.T) {
 }
 
 func TestRunHookScriptsCarriesTheContainmentRules(t *testing.T) {
-	// The reason this is a client method rather than a bare executor: the working
-	// directory is resolved and confined by the executor, so a script cannot name
-	// a path outside the mod's and the game's folders.
+	// The executor resolves and confines the working directory, so a script cannot escape
+	// the mod's and the game's folders.
 	executor := services.NewHookExecutor(services.HookExecutorDeps{
 		Platform: domain.PlatformLinux,
 	})
@@ -941,7 +933,7 @@ func TestRunHookScriptsCarriesTheContainmentRules(t *testing.T) {
 
 func TestErrorsAreReExportedWithStableCodes(t *testing.T) {
 	// The point of re-exporting is that a caller can branch without importing
-	// pkg/errors, so the values have to be identical, not copies.
+	// pkg/errors, so the values must be identical, not copies.
 	assert.Equal(
 		t,
 		appErrors.ErrCodeModNotFound,
@@ -985,7 +977,7 @@ func TestErrorsAreReExportedWithStableCodes(t *testing.T) {
 	)
 
 	// Wrapping keeps the cause reachable, which is what a caller needs to inspect
-	// the transport error underneath an install failure.
+	// the transport error under an install failure.
 	cause := errors.New("dial tcp: connection refused")
 
 	wrapped := Wrap(cause, ErrCodeInstallFailed, "could not install %q", "better_ui")

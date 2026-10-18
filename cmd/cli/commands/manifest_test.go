@@ -14,10 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// runManifestInit runs `dmm manifest init` the way a person would, and fails
-// the test if anything asks for the container: scaffolding a mod needs no
-// database, no game and no configured source, and a command that started
-// building one would be a step that can fail for no reason.
+// runManifestInit runs `dmm manifest init` and fails if anything asks for the container.
 func runManifestInit(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 

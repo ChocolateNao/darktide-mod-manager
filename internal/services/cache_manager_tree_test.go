@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// folderDownloader writes a folder instead of a file, the way the local source
-// does when the mod's path points at a directory rather than at an archive.
+// folderDownloader writes a folder instead of a file, as the local source does
+// when a mod's path names a directory rather than an archive.
 type folderDownloader struct {
 	files map[string]string
 	path  string
@@ -48,9 +48,8 @@ func (d *folderDownloader) Download(
 
 func (d *folderDownloader) Verify(context.Context, *domain.Mod, string) error { return nil }
 
-// A local mod path may name a folder or an archive. Both have to install, and
-// both have to land in the cache as the one thing the rest of the pipeline can
-// read: a zip.
+// A local mod path may name a folder or an archive; both have to land in the
+// cache as the one thing the rest of the pipeline can read, a zip.
 func TestGetOrDownloadTurnsAFolderDownloadIntoAnArchive(t *testing.T) {
 	m, cache := newRealCache(t)
 	m = withDownloader(t, m, &folderDownloader{files: map[string]string{
@@ -99,7 +98,7 @@ func TestGetOrDownloadTurnsAFolderDownloadIntoAnArchive(t *testing.T) {
 	_, statErr := os.Stat(staging)
 	assert.True(t, os.IsNotExist(statErr), "the staging folder survived: %s", staging)
 
-	// And the index has to describe the archive, not the folder it replaced.
+	// The index has to describe the archive, not the folder it replaced.
 	key, err := CacheKey(mod)
 	require.NoError(t, err, "cache key")
 
@@ -111,8 +110,7 @@ func TestGetOrDownloadTurnsAFolderDownloadIntoAnArchive(t *testing.T) {
 	assert.Equal(t, info.Size(), entry.SizeBytes, "the index records the wrong size")
 }
 
-// A second install must not redo the work: the blob is already a zip, so the
-// normalisation has to leave it alone.
+// A second install must not redo the work: the blob is already a zip.
 func TestGetOrDownloadServesAFolderModFromCacheOnASecondCall(t *testing.T) {
 	m, _ := newRealCache(t)
 	d := &folderDownloader{files: map[string]string{"mod.toml": "id = \"tree\"\n"}}
@@ -128,8 +126,7 @@ func TestGetOrDownloadServesAFolderModFromCacheOnASecondCall(t *testing.T) {
 	assert.Equal(t, first, second)
 }
 
-// An empty folder has nothing to pack. Reporting it as "empty" is more useful
-// than reporting a packing failure.
+// An empty folder has nothing to pack, and saying so beats reporting a packing failure.
 func TestGetOrDownloadRejectsAnEmptyFolderDownload(t *testing.T) {
 	m, _ := newRealCache(t)
 	m = withDownloader(t, m, &folderDownloader{files: map[string]string{}})

@@ -1,11 +1,9 @@
 // Package hooks wires the concrete hook runners into a services.HookExecutor.
 //
-// The runners live in sub-packages so that each one owns its concerns (the
-// JavaScript VM, the Lua state) and can be replaced without touching the
-// executor. This package is the only place that knows the full set: a new
+// The runners live in sub-packages so each owns its own concerns (the JavaScript
+// VM, the Lua state). This is the only place that knows the full set: a new
 // language is added by registering it here and in domain.ScriptLanguage.Valid.
-// Both runners share the host package for every capability, so the surface a
-// script sees is identical whichever language it is written in.
+// Both share the host package, so a script sees an identical surface in either.
 package hooks
 
 import (
@@ -22,13 +20,9 @@ import (
 var errNilExecutor = appErrors.New(appErrors.ErrCodeInvalidArgument,
 	"cannot register hook runners on a nil executor")
 
-// RegisterAll installs the built-in runners on an executor.
-//
-// providers are the injected capabilities both runners hand to their scripts;
-// a runner never reaches for anything else. Registration failures are returned,
-// not swallowed: a missing runner means a mod's hook silently does nothing,
-// which is worse than a startup error. A nil executor is rejected rather than
-// dereferenced.
+// RegisterAll installs the built-in runners on an executor. providers are the
+// injected capabilities both runners hand to their scripts; a runner never
+// reaches for anything else. Registration failures are returned, not swallowed.
 func RegisterAll(exec *services.HookExecutor, providers host.Providers) error {
 	if exec == nil {
 		return errNilExecutor
@@ -47,9 +41,8 @@ func RegisterAll(exec *services.HookExecutor, providers host.Providers) error {
 	return nil
 }
 
-// Types lists the script languages RegisterAll installs runners for, in a
-// stable order. Tests assert against this so that forgetting a runner is a
-// test failure rather than a runtime surprise.
+// Types lists the script languages RegisterAll installs runners for, in a stable
+// order. Tests assert against this so a forgotten runner is a test failure.
 func Types() []domain.ScriptLanguage {
 	return domain.ScriptLanguages()
 }

@@ -44,14 +44,11 @@ func (c *Client) p2pService() (*services.P2PShareService, error) {
 	return c.deps.P2PShares, nil
 }
 
-// CreateP2PShare packs the given mods and produces a link to hand out.
-//
-// The work happens here rather than when the recipient accepts: the archives are
-// packed and hashed, and the peer's connection details are gathered, so the link
-// the sender receives is already a working offer.
-//
-// Expiry is optional — a share with no expiry is permanent, and the recipient
-// sees the expiry inside the link when one was set.
+// CreateP2PShare packs the given mods and produces a link to hand out. The work
+// happens here rather than when the recipient accepts: the archives are packed and
+// hashed and the peer's connection details gathered, so the link the sender receives
+// is already a working offer. Expiry is optional — a share with no expiry is
+// permanent, and the recipient sees the expiry inside the link when one was set.
 func (c *Client) CreateP2PShare(
 	ctx context.Context,
 	mods []domain.Mod,
@@ -65,11 +62,10 @@ func (c *Client) CreateP2PShare(
 	return service.CreateShare(ctx, mods, opts)
 }
 
-// PreviewP2PShare describes an offer without connecting to the sender.
-//
-// This is what lets a recipient decide whether to trust the link: it opens the
-// sealed link locally, reports the mods, the sizes and the fallback download
-// locations, and says whether the link has already expired.
+// PreviewP2PShare describes an offer without connecting to the sender. This is what
+// lets a recipient decide whether to trust the link: it opens the sealed link
+// locally, reports the mods, the sizes and the fallback download locations, and says
+// whether the link has already expired.
 func (c *Client) PreviewP2PShare(
 	ctx context.Context,
 	link string,
@@ -100,18 +96,16 @@ func (c *Client) AcceptP2PShare(
 	return service.AcceptOffer(ctx, link, receiverName)
 }
 
-// RejectP2PShare declines an offer and falls back to the source links.
+// RejectP2PShare declines an offer and falls back to the source links. It returns
+// the answer link, which has to be handed back to the sender: the sender holds the
+// connection offer, so a refusal cannot reach it until a channel opens, and a channel
+// does not open without an answer. The call returns as soon as that link exists —
+// blocking would leave the caller with nothing to show the sender — and
+// AwaitRejectedP2PShare waits for the outcome.
 //
-// It returns the answer link, which has to be handed back to the sender: the
-// sender holds the connection offer, so the refusal cannot reach it until a
-// channel opens, and a channel does not open without an answer. The call
-// returns as soon as that link exists — blocking here would leave the caller
-// with nothing to show the sender — and AwaitRejectedP2PShare waits for the
-// outcome.
-//
-// The fallback is the point: the preview already carried a Nexus or GitHub page
-// for every mod that has one, and a sender who is told "I would rather take it
-// from there" learns something a silent timeout never would.
+// The fallback is the point: the preview already carried a Nexus or GitHub page for
+// every mod that has one, and a sender told "I would rather take it from there"
+// learns something a silent timeout never would.
 func (c *Client) RejectP2PShare(
 	ctx context.Context,
 	link string,
@@ -125,11 +119,8 @@ func (c *Client) RejectP2PShare(
 	return service.RejectOffer(ctx, link, reason)
 }
 
-// AwaitRejectedP2PShare waits for a refusal to reach the sender.
-//
-// It is the counterpart to RejectP2PShare: that call returns as soon as the
-// answer link exists, so the caller can show it, and this call reports whether
-// handing it to the sender actually worked.
+// AwaitRejectedP2PShare waits for a refusal to reach the sender, reporting whether
+// handing over the answer link actually worked.
 func (c *Client) AwaitRejectedP2PShare(ctx context.Context, offerID string) error {
 	service, err := c.p2pService()
 	if err != nil {
@@ -161,11 +152,10 @@ func (c *Client) AwaitP2PShare(ctx context.Context, offerID string) error {
 	return service.AwaitShare(ctx, offerID)
 }
 
-// InstallP2PShare installs the verified archives of a completed share.
-//
-// It is a separate step from receiving on purpose: the bytes are on disk and
-// hashed, but installing them changes the user's game folder, and a recipient
-// who only wanted the files should be able to stop short of that.
+// InstallP2PShare installs the verified archives of a completed share. It is a
+// separate step from receiving on purpose: the bytes are on disk and hashed, but
+// installing them changes the user's game folder, and a recipient who only wanted the
+// files should be able to stop short of that.
 func (c *Client) InstallP2PShare(
 	ctx context.Context,
 	offerID string,
@@ -228,12 +218,10 @@ func (c *Client) DiscardP2PShare(ctx context.Context, offerID string) error {
 	return service.DiscardShare(ctx, offerID)
 }
 
-// DefaultSTUNServers lists the STUN servers a share would use by default.
-//
-// The CLI prints it next to every link it hands out. STUN carries no mod data —
-// only a reflexive address, so the peers can find each other — but it is still
-// a third party the user's traffic touches, and saying so is cheaper than
-// having to explain it afterwards.
+// DefaultSTUNServers lists the STUN servers a share would use by default. The CLI
+// prints it next to every link it hands out: STUN carries no mod data — only a
+// reflexive address, so the peers can find each other — but it is still a third party
+// the user's traffic touches, and saying so is cheaper than explaining it afterwards.
 func (c *Client) DefaultSTUNServers() []string {
 	service, err := c.p2pService()
 	if err != nil {

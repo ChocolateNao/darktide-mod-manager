@@ -1,17 +1,10 @@
 // Package di wires the manager's services for an entry point.
 //
-// There is exactly one wiring path, and it is not this package: pkg/api owns it
-// (api.NewBundle). This package is the adapter that the GUI and the CLI use,
-// because both need the individual services rather than the api.Client that
-// wraps them — the Wails bindings expose one method per operation, and the cobra
-// commands print the services' own types.
-//
-// The temptation to rebuild the graph here is worth naming, because it is the
-// mistake this file is shaped to prevent. Constructing the pieces directly would
-// work until the day pkg/api learned a new step (a source that needs the cache,
-// a hook context that needs the config store) and only one of the two paths got
-// it. A second wiring path is drift you discover in production; this file maps
-// options and reads the result instead.
+// The graph itself is built by pkg/api (api.NewBundle); this package is the
+// adapter the GUI and the CLI use, because both need the individual services
+// rather than the api.Client that wraps them. Building a second wiring path here
+// is drift nobody discovers until pkg/api learns a new step and only one of the
+// two gets it.
 package di
 
 import (
@@ -30,9 +23,8 @@ import (
 // Container is a wired graph plus the client that wraps it.
 //
 // The service fields are pointers rather than interfaces on purpose: there is one
-// implementation of each and the interfaces they satisfy are already the seams
-// the services themselves are tested through. An interface field here would only
-// hide which concrete type a nil is supposed to mean.
+// implementation of each, and the interfaces they satisfy are already the seams
+// the services are tested through.
 type Container struct {
 	Store          services.ConfigStore
 	EventBus       *api.EventBus
@@ -55,65 +47,51 @@ type Container struct {
 
 // Options is what an entry point may say about the manager before it starts.
 //
-// It is deliberately smaller than api's option set. Anything here that api does
-// not already accept would mean this package inventing policy that the public
-// API then disagrees with; the fields that are here are the ones an entry point
-// genuinely decides at launch.
+// It is deliberately smaller than api's option set: anything here api does not
+// already accept would mean this package inventing policy the public API then
+// disagrees with.
 type Options struct {
-	// ConfigPath is the configuration file. Empty means the platform default
-	// (see platform.CurrentDirs), which is what a normal launch wants.
+	// ConfigPath is the configuration file. Empty means the platform default.
 	ConfigPath string
-	// GamePath overrides the configured game folder and is validated before it
-	// is stored, so a wrong path fails start-up instead of the first install.
+	// GamePath overrides the configured game folder, validated before it is
+	// stored so a wrong path fails start-up instead of the first install.
 	GamePath string
-	// GameID selects the active game by its registry id for this process. An
-	// unknown id fails start-up rather than silently running against the
-	// configured game; switching the stored default is UseGame's job, not a
-	// launch flag's.
+	// GameID selects the active game for this process; an unknown id fails
+	// start-up. Changing the stored default is UseGame's job.
 	GameID string
 	// CachePath overrides where archives are cached.
 	CachePath string
-	// StoragePath overrides where mod payloads are kept. A headless run (a test,
-	// a scripted install) needs a private tree, and without it such a run would
-	// write into the user's real storage.
+	// StoragePath overrides where mod payloads are kept. A headless run needs a
+	// private tree, or it writes into the user's real storage.
 	StoragePath string
 	// SourceConfigs configures individual sources, keyed by source id. A block
-	// merges into the configuration file's block rather than replacing it, so
-	// supplying a token for one source leaves the others alone.
+	// merges into the file's block, so one source's token leaves the others alone.
 	SourceConfigs map[string]map[string]any
 	// EventHandler is subscribed to the event bus at construction. The GUI uses
 	// it to refresh a view; the CLI ignores it.
 	EventHandler api.EventHandler
-	// Logger receives start-up diagnostics, above all the report of a source
-	// that could not be configured. It is also handed to the client, so a caller
-	// that logs through api.Client.Logf and the wiring phase's own complaint both
-	// end up in the same place.
+	// Logger receives start-up diagnostics, above all the report of a source that
+	// could not be configured. It is handed to the client too, so Client.Logf and
+	// the wiring phase's own complaint land in the same place.
 	Logger api.Logger
-	// LogLevel overrides logging.level for this run ("debug", "info", ...).
-	//
-	// It is an override rather than a setting because an entry point decides it
-	// from the command line, and a flag is a request for this process rather than
-	// a preference to store.
+	// LogLevel overrides logging.level for this run ("debug", "info", ...). It is
+	// an override rather than a setting because a flag is a request for this
+	// process rather than a preference to store.
 	LogLevel string
-	// LogDir overrides where dmm.log is written. It must be absolute; a relative
-	// path would depend on whatever directory the user happened to run from, and
-	// two runs would quietly keep different logs.
+	// LogDir overrides where dmm.log is written. It must be absolute: a relative
+	// path would depend on the directory the user happened to run from.
 	LogDir string
-	// LogConsole mirrors log output to stderr as well as to the file. The CLI
-	// turns it on for --verbose, where the point is to watch what happens.
+	// LogConsole mirrors log output to stderr as well as to the file.
 	LogConsole bool
 	// NoLogFile disables the file sink, leaving a console-only run. It is what
-	// makes a log-heavy command safe to run on a machine where the log
-	// directory is not writable.
+	// makes a log-heavy command safe where the log directory is not writable.
 	NoLogFile bool
 }
 
 // loggingOptions maps this package's logging fields onto the public API's.
 //
-// It is a method rather than a field translation done at the call site so there
-// is one place that knows how an entry point's flags reach the log service: a
-// GUI that sets the same options as the CLI should not need to remember a second
-// spelling of the same intent.
+// It is a method so there is one place that knows how an entry point's flags
+// reach the log service, rather than a second spelling per surface.
 func (o Options) loggingOptions() api.LoggingOptions {
 	opts := api.LoggingOptions{
 		Level:   o.LogLevel,
@@ -121,24 +99,16 @@ func (o Options) loggingOptions() api.LoggingOptions {
 		Console: o.LogConsole,
 		NoFile:  o.NoLogFile,
 	}
-	// The log directory is not trimmed-and-ignored like the paths above. It is
-	// resolved against the filesystem, so a value of nothing but spaces has to be
-	// reported rather than silently falling back to the default directory — the
-	// user asked for somewhere specific and deserves to be told that they did not
-	// get it.
+	// Unlike the paths above, an all-spaces log dir must be reported, not replaced.
 	return opts
 }
 
 // NewContainer wires the manager and returns it.
 //
-// A nil context is tolerated (treated as context.Background) rather than
-// refused: it is the sort of mistake made once at launch, and a start-up that
-// fails with "context must not be nil" teaches the caller nothing the panic
-// would not have.
-//
-// Nothing is returned unless everything was wired. A half-built container is
-// worse than none — its fields would look usable while, say, the database was
-// already closed — so every failure closes what it had opened before returning.
+// A nil context is treated as context.Background rather than refused: it is the
+// sort of mistake made once at launch, and "context must not be nil" teaches the
+// caller nothing. Nothing is returned unless everything was wired, because a
+// half-built container looks usable while, say, the database is already closed.
 func NewContainer(ctx context.Context, opts Options) (*Container, error) {
 	apiOptions, err := opts.apiOptions()
 	if err != nil {
@@ -152,9 +122,8 @@ func NewContainer(ctx context.Context, opts Options) (*Container, error) {
 
 	client, err := api.NewClientFromServices(bundle.Deps, opts.clientOptions()...)
 	if err != nil {
-		// The client refused the services — the only way that happens today is a
-		// re-pointing option, which clientOptions never supplies, but the bundle
-		// owns open handles either way.
+		// The client refused the services, but the bundle owns open handles either
+		// way.
 		_ = bundle.Close()
 		return nil, err
 	}
@@ -180,21 +149,13 @@ func NewContainer(ctx context.Context, opts Options) (*Container, error) {
 
 // Close releases everything the container owns, newest first.
 //
-// The client is closed before the services, and that order is the point: a
-// client cleanup may legitimately want to use a service (flushing a log, telling
-// a handler the manager is going away), and closing the database first would
-// hand it a closed handle.
-//
-// Close is idempotent. The second call reports success rather than re-running
-// cleanups, because a double-close of a SQLite handle is not something an entry
-// point should have to reason about, and "closing again failed" is not a fact
-// anyone can act on.
+// The client is closed before the services because a client cleanup may
+// legitimately want to use a service; closing the database first would hand it a
+// closed handle. Close is idempotent: the second call reports success rather
+// than re-running cleanups.
 func (c *Container) Close() error {
 	if c == nil {
-		// A nil container is what a caller holds when construction failed and it
-		// deferred the close anyway. Nothing was opened, so there is nothing to
-		// report; refusing here would force every caller to nil-check before a
-		// defer that can only ever be right.
+		// A defer after a failed construction holds nil; nothing was opened.
 		return nil
 	}
 
@@ -243,9 +204,8 @@ func (c *Container) Close() error {
 // Closed reports whether Close has run. It is nil-receiver safe.
 func (c *Container) Closed() bool {
 	if c == nil {
-		// A container that was never built is not a closed container, but there
-		// is nothing to use either way, and a caller checking before its first
-		// use should not have to nil-check separately.
+		// A container that was never built has nothing to use either way, and a
+		// caller checking before its first use should not nil-check separately.
 		return true
 	}
 
@@ -255,12 +215,10 @@ func (c *Container) Closed() bool {
 	return c.closed
 }
 
-// errClosed is the error a caller gets for reaching into a container that has
-// already been closed.
+// errClosed is the error a caller gets for reaching into a closed container.
 //
 // Its code is INVALID_ARGUMENT rather than something failure-shaped: nothing
-// about the manager broke, the caller used a released object, and that is a
-// programming error rather than an operational one.
+// broke, the caller used a released object, and that is a programming error.
 func errClosed() error {
 	return appErrors.New(appErrors.ErrCodeInvalidArgument,
 		"container is closed; build a new one instead of reusing a closed container")
@@ -268,10 +226,9 @@ func errClosed() error {
 
 // normalizePath trims an option path and reports whether there is one.
 //
-// The trimming matters: a path read from a shell argument or a dialog often
-// carries a trailing space, and "" here means "use the platform default", so an
-// untrimmed blank would silently replace the user's configuration with a
-// default instead of being recognised as no opinion at all.
+// A path read from a shell argument or a dialog often carries a trailing space,
+// and "" here means "use the platform default", so an untrimmed blank would
+// replace the user's configuration with a default instead of meaning nothing.
 func normalizePath(path string) (string, bool) {
 	trimmed := strings.TrimSpace(path)
 	return trimmed, trimmed != ""

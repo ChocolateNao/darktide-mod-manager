@@ -173,10 +173,8 @@ func TestWithTimeoutApplies(t *testing.T) {
 	if err == nil {
 		require.FailNow(t, "GetJSON against a stalled server returned no error")
 	}
-	// A per-request timeout is a transport failure, not a cancellation. Only the
-	// caller's own context being done means somebody asked to stop, and the UI
-	// treats a cancellation as "not an error"; reporting a slow source that way
-	// would swallow it.
+	// A per-request timeout is a transport failure, not a cancellation: only the
+	// caller's own context being done means somebody asked to stop.
 	assert.False(
 		t,
 		appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled),
@@ -419,12 +417,8 @@ func TestStatusErrorMapping(t *testing.T) {
 			quote:  "status 503",
 			absent: "",
 		},
-		// A 4xx that is none of the four cases above is a request the far end read
-		// and refused. That is the case this mapping used to get wrong: it fell
-		// through to the kind's fallback, which for a credential check is
-		// SOURCE_UNAVAILABLE, so a payload the API did not like was reported as an
-		// unreachable service. It is the most expensive kind of wrong answer
-		// because it sends the user after a network problem they do not have.
+		// A 4xx the rules above do not claim is a request the far end read and refused: the
+		// kind's fallback would report a rejected payload as an unreachable service.
 		{
 			name:   "400 on search",
 			kind:   KindSearch,
@@ -596,15 +590,8 @@ func TestDoRejectsUnencodableBody(t *testing.T) {
 }
 
 func TestDoRefusesAPreEncodedBody(t *testing.T) {
-	// The regression this guards: a plugin that marshalled its own body and passed
-	// the resulting bytes here had them encoded a second time, because Body is a
-	// value to encode rather than bytes to send. The result was a quoted base64
-	// string, which the far end refused with a complaint about a request shape the
-	// plugin had never written — and the refusal was then reported as the source
-	// being unavailable, which sent the reader looking in the wrong place.
-	//
-	// Refusing the type makes that mistake a compile-time-shaped argument error
-	// instead of a wrong request that only the live API notices.
+	// The regression this guards: a plugin that marshalled its own body had it encoded a
+	// second time, and the resulting refusal was reported as the source being down.
 	type payload []byte
 
 	for name, body := range map[string]any{
@@ -690,9 +677,7 @@ func TestDoSendsRawMessageThroughUnchanged(t *testing.T) {
 }
 
 func TestEncodeBodyTreatsABase64NamedTypeAsBytes(t *testing.T) {
-	// A plugin is free to name its own types, and reflect sees through the name:
-	// without this the mistake is invisible to the check and only a live API
-	// notices.
+	// A plugin is free to name its own types, and reflect sees through the name.
 	type requestBody []byte
 
 	if !alreadyEncoded(requestBody(nil)) {
@@ -740,9 +725,8 @@ func TestGetJSONDecodes(t *testing.T) {
 }
 
 func TestGetJSONTreatsEmptyBodyAsNoResults(t *testing.T) {
-	// Several providers answer 200 with an empty body for "nothing matched".
-	// Decoding that would fail with a syntax error, which reads as "the source is
-	// broken" instead of "no results".
+	// Providers answer 200 with an empty body for "nothing matched"; decoding that
+	// would fail with a syntax error that reads as "the source is broken".
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer srv.Close()
 

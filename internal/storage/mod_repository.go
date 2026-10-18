@@ -24,9 +24,8 @@ const (
 	SortLoadPriority = "load_priority"
 )
 
-// ModRepository is the persistence contract for installed mods. Services depend
-// on this interface, never on the SQLite implementation, so the whole mod
-// lifecycle can be exercised against an in-memory fake.
+// ModRepository is the persistence contract for installed mods. Services depend on
+// this interface, never on SQLite, so the lifecycle can be tested against a fake.
 type ModRepository interface {
 	// Save inserts or updates a mod. The ID is the primary key.
 	Save(ctx context.Context, m *domain.Mod) error
@@ -34,19 +33,17 @@ type ModRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.Mod, error)
 	// List returns every mod, in the repository's canonical order.
 	List(ctx context.Context) ([]domain.Mod, error)
-	// ListOrdered returns every mod sorted by one of the Sort* keys, ties
-	// broken by id. SortPriority and SortLoadPriority sort descending, because a
-	// higher priority loads earlier; the remaining keys sort ascending. An
-	// unknown key is rejected rather than interpolated.
+	// ListOrdered returns every mod sorted by one of the Sort* keys, ties broken by
+	// id. SortPriority and SortLoadPriority sort descending, because a higher priority
+	// loads earlier; the rest sort ascending. An unknown key is rejected.
 	ListOrdered(ctx context.Context, sortBy string) ([]domain.Mod, error)
 	// ListEnabled returns the enabled mods only.
 	ListEnabled(ctx context.Context) ([]domain.Mod, error)
 	// ListBySource returns the mods installed from one source.
 	ListBySource(ctx context.Context, sourceID string) ([]domain.Mod, error)
 	// ListByGame returns the mods belonging to one game in the repository's
-	// canonical order. The empty game id is a valid key: it selects the rows
-	// written before multi-game support, which the composition root maps onto
-	// the default game.
+	// canonical order. The empty game id is a valid key: it selects the rows written
+	// before multi-game support, which the composition root maps onto the default game.
 	ListByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
 	// ListEnabledByGame returns the enabled mods of one game.
 	ListEnabledByGame(ctx context.Context, gameID string) ([]domain.Mod, error)
@@ -88,10 +85,8 @@ type ModRepository interface {
 	Close() error
 }
 
-// sqliteModRepository is the SQLite-backed ModRepository.
-//
-// now is injected rather than calling time.Now directly so tests can pin the
-// timestamps that Save stamps onto rows.
+// sqliteModRepository is the SQLite-backed ModRepository. now is injected rather
+// than calling time.Now directly so tests can pin the timestamps Save stamps on.
 type sqliteModRepository struct {
 	closeErr  error
 	db        *sql.DB
@@ -101,12 +96,10 @@ type sqliteModRepository struct {
 
 var _ ModRepository = (*sqliteModRepository)(nil)
 
-// NewSQLiteModRepository opens (creating if needed) the database at path,
-// applies the schema and returns a repository over it.
-//
-// The empty path and ":memory:" produce a private in-memory database, which is
-// what the tests and the `--dry-run` CLI paths use. Any other path has its
-// parent directory created first.
+// NewSQLiteModRepository opens (creating if needed) the database at path, applies
+// the schema and returns a repository over it. An empty path or ":memory:" yields a
+// private in-memory database, which the tests and the `--dry-run` CLI paths use;
+// any other path has its parent directory created first.
 func NewSQLiteModRepository(ctx context.Context, path string) (ModRepository, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -139,9 +132,8 @@ func NewSQLiteModRepositoryWithClock(
 	return &sqliteModRepository{db: db, now: now}, nil
 }
 
-// NewSQLiteModRepositoryFromDB wraps an already-open handle. The caller keeps
-// ownership of the handle, so Close is a no-op on the returned repository
-// unless CloseHandle is called.
+// NewSQLiteModRepositoryFromDB wraps an already-open handle. The caller keeps ownership
+// of the handle, so Close on the returned repository is a no-op.
 func NewSQLiteModRepositoryFromDB(db *sql.DB) (ModRepository, error) {
 	if db == nil {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "nil database handle")
@@ -181,19 +173,10 @@ const modColumns = `id, game_id, name, version, author, description, source_id, 
 	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name,
 	source_url, download_url, update_url`
 
-// Save upserts a mod.
-//
-// Timestamps: a zero UpdatedAt becomes "now". A zero InstalledAt is filled in
-// with that UpdatedAt when the row is inserted — so an install records one
-// instant for both — and is left alone when the row already exists: an update
-// that says nothing about the install time must not invent a new one and reset
-// the age shown in the UI.
-//
-// A nil Dependencies, ConflictsWith, Tags or SourceData comes back from GetByID
-// as an empty collection rather than nil: the columns store "[]" and "{}" so a
-// hand-inspected row is unambiguous, and an empty collection is what callers
-// range over anyway. The mod's own JSON is unaffected, because those fields are
-// omitempty.
+// Save upserts a mod. A zero UpdatedAt becomes "now"; a zero InstalledAt takes that value on
+// insert but is left alone on update, so an update that says nothing about the install time
+// cannot reset the age shown in the UI. Nil Dependencies, ConflictsWith, Tags or SourceData
+// come back from GetByID as an empty collection, never nil.
 func (r *sqliteModRepository) Save(ctx context.Context, m *domain.Mod) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -301,8 +284,8 @@ ON CONFLICT(id) DO UPDATE SET
 }
 
 // existingInstalledAt reads the install time already recorded for id. It is only
-// consulted when the incoming mod carries none, so that a partially-populated
-// mod cannot reset the install time of a row that is already there.
+// consulted when the incoming mod carries none, so a partially-populated mod cannot
+// reset the install time of a row that is already there.
 func (r *sqliteModRepository) existingInstalledAt(
 	ctx context.Context,
 	id string,
@@ -359,9 +342,9 @@ func (r *sqliteModRepository) GetByID(ctx context.Context, id string) (*domain.M
 	return m, nil
 }
 
-// List returns every mod in canonical order: enabled mods first, then by
-// descending priority (a higher priority loads earlier), then by id so the
-// order never depends on insertion order.
+// List returns every mod in canonical order: enabled first, then descending priority
+// (a higher priority loads earlier), then id, so the order never depends on
+// insertion order.
 func (r *sqliteModRepository) List(ctx context.Context) ([]domain.Mod, error) {
 	return r.query(
 		ctx,
@@ -390,9 +373,9 @@ func (r *sqliteModRepository) ListEnabled(ctx context.Context) ([]domain.Mod, er
 	)
 }
 
-// ListBySource returns the mods installed from one source, in id order. An
-// empty source id matches mods whose source_id is empty, which is exactly the
-// set of manually installed mods.
+// ListBySource returns the mods installed from one source, in id order. An empty
+// source id matches mods whose source_id is empty, which is exactly the set of
+// manually installed mods.
 func (r *sqliteModRepository) ListBySource(
 	ctx context.Context,
 	sourceID string,
@@ -456,9 +439,8 @@ func (r *sqliteModRepository) query(
 
 	defer func() { _ = rows.Close() }()
 
-	// An empty result is an empty slice, never nil: callers range over it and
-	// marshall it straight to JSON, where null and [] mean different things to
-	// the frontend.
+	// An empty result is an empty slice, never nil: it is marshalled straight to JSON,
+	// where null and [] mean different things to the frontend.
 	out := []domain.Mod{}
 
 	for rows.Next() {
@@ -537,9 +519,9 @@ func (r *sqliteModRepository) SaveFile(ctx context.Context, mf *domain.ModFile) 
 	return r.SaveFiles(ctx, mf.ModID, []domain.ModFile{*mf})
 }
 
-// SaveFiles replaces a mod's whole file inventory inside one transaction: an
-// empty slice clears the inventory, and a mod that does not exist is an error
-// (the foreign key rejects the insert, which is surfaced as ErrModNotFound).
+// SaveFiles replaces a mod's whole file inventory inside one transaction: an empty
+// slice clears the inventory, and the foreign key rejects an unknown mod id, which
+// surfaces as ErrModNotFound.
 func (r *sqliteModRepository) SaveFiles(
 	ctx context.Context,
 	modID string,
@@ -743,11 +725,9 @@ func (r *sqliteModRepository) DeleteFile(ctx context.Context, modID, relPath str
 	return nil
 }
 
-// SetLoadOrder stores an explicit load order, replacing any previous one.
-//
-// Every id must name an installed mod. Rejecting the whole order is deliberate:
-// a partially-applied load order would silently reorder the game, which is far
-// worse than refusing the request.
+// SetLoadOrder stores an explicit load order, replacing any previous one. Every id
+// must name an installed mod: rejecting the whole order beats a partially-applied
+// one, which would silently reorder the game.
 func (r *sqliteModRepository) SetLoadOrder(ctx context.Context, ids []string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -872,9 +852,8 @@ func (r *sqliteModRepository) LoadOrder(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// cleanLoadIDs trims a requested load order, drops empty entries and rejects
-// duplicates, so both the global and the game-scoped setters agree on what a
-// valid request looks like.
+// cleanLoadIDs trims a requested load order, drops empty entries and rejects duplicates,
+// so both setters agree on what a valid request looks like.
 func cleanLoadIDs(ids []string) ([]string, error) {
 	cleaned := make([]string, 0, len(ids))
 
@@ -900,9 +879,9 @@ func cleanLoadIDs(ids []string) ([]string, error) {
 	return cleaned, nil
 }
 
-// SetLoadOrderForGame replaces the explicit load order of ONE game. The
-// delete is scoped through the mods table, so other games' rows — which the
-// unscoped SetLoadOrder would wipe — survive untouched.
+// SetLoadOrderForGame replaces the explicit load order of ONE game. The delete is
+// scoped through the mods table, so other games' rows — which the unscoped
+// SetLoadOrder would wipe — survive untouched.
 func (r *sqliteModRepository) SetLoadOrderForGame(
 	ctx context.Context,
 	gameID string,
@@ -1136,10 +1115,9 @@ func (r *sqliteModRepository) CountByGame(ctx context.Context, gameID string) (i
 	return n, nil
 }
 
-// wrapKeepingCode attaches a message to err without losing a code it already
-// carries. A corrupt JSON column has to surface as CACHE_CORRUPT — that is the
-// code the GUI uses to offer an index rebuild — so a generic I/O code must not
-// be layered on top of a specific one.
+// wrapKeepingCode attaches a message to err without losing a code it already carries.
+// A corrupt JSON column has to surface as CACHE_CORRUPT — the code the GUI uses to
+// offer an index rebuild — so a generic I/O code must not be layered on a specific one.
 func wrapKeepingCode(err error, fallback appErrors.Code, format string, args ...any) error {
 	if err == nil {
 		return nil
@@ -1157,11 +1135,9 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-// scanMod reads one mods row into a domain.Mod.
-//
-// A corrupt JSON column fails the whole read rather than being silently dropped:
-// the alternative is a mod that installs without its dependencies and without
-// its hooks, which looks like a bug in the game instead of a bug in the file.
+// scanMod reads one mods row into a domain.Mod. A corrupt JSON column fails the whole
+// read rather than being silently dropped: a mod that installs without its
+// dependencies and hooks looks like a bug in the game instead of a bug in the file.
 func scanMod(row rowScanner) (*domain.Mod, error) {
 	var (
 		m                                            domain.Mod
@@ -1237,11 +1213,10 @@ func scanMod(row rowScanner) (*domain.Mod, error) {
 	return &m, nil
 }
 
-// sortColumn maps a Sort* key onto an ORDER BY clause, rejecting anything else
-// so the key can never be interpolated unchecked. The id tiebreaker is part of
-// the clause: without it two rows with the same name or priority would come
-// back in whatever order the query engine felt like, and the load order the
-// player sees would change between runs.
+// sortColumn maps a Sort* key onto an ORDER BY clause, rejecting anything else so the
+// key can never be interpolated unchecked. The id tiebreaker is part of the clause:
+// without it, equal names or priorities come back in whatever order the query engine
+// prefers, and the load order the player sees would change between runs.
 func sortColumn(sortBy string) (string, error) {
 	var column string
 
@@ -1288,9 +1263,8 @@ func SortKeys() []string {
 	}
 }
 
-// encodeStringList renders a string slice as a JSON array. A nil slice becomes
-// "[]" rather than "null", so a column read back by an older build, or by a
-// SQL query in a debugger, is unambiguous.
+// encodeStringList renders a string slice as a JSON array. A nil slice becomes "[]"
+// rather than "null", so a column read back later is unambiguous.
 func encodeStringList(values []string) (string, error) {
 	if values == nil {
 		return "[]", nil
@@ -1342,7 +1316,7 @@ func encodeJSONObject(value map[string]any) (string, error) {
 }
 
 // decodeJSONObject reverses encodeJSONObject. A JSON `null` decodes to a nil map.
-// It is only used for SourceData; hooks have their own codec.
+// Only SourceData uses it; hooks have their own codec.
 func decodeJSONObject(s string) (map[string]any, error) {
 	trimmed := strings.TrimSpace(s)
 	if trimmed == "" || trimmed == "null" {
@@ -1357,9 +1331,8 @@ func decodeJSONObject(s string) (map[string]any, error) {
 	return out, nil
 }
 
-// encodeHooks renders a ModHooks struct. The struct already carries one
-// JSON-tagged field per phase, so this is a straight marshal: a hook set with
-// nothing in it becomes "{}".
+// encodeHooks renders a ModHooks struct. The struct already carries one JSON-tagged
+// field per phase, so this is a straight marshal and an empty hook set becomes "{}".
 func encodeHooks(h domain.ModHooks) (string, error) {
 	data, err := json.Marshal(h)
 	if err != nil {
@@ -1369,14 +1342,10 @@ func encodeHooks(h domain.ModHooks) (string, error) {
 	return string(data), nil
 }
 
-// decodeHooks reverses encodeHooks.
-//
-// Three deliberate degradations: an empty or null column yields no hooks (a row
-// written before hooks existed), an explicitly empty phase list is normalised to
-// nil (the struct tags omit empty lists, so nil and empty are the same state as
-// far as the executor is concerned, and normalising keeps the round trip
-// canonical), and an unknown phase name is ignored so a mod written by a newer
-// build still loads. Anything else malformed fails the read.
+// decodeHooks reverses encodeHooks. An empty or null column yields no hooks (a row written
+// before hooks existed); an empty phase list normalises to nil so the round trip stays
+// canonical; an unknown phase name is ignored so a mod from a newer build still loads.
+// Anything else malformed fails the read.
 func decodeHooks(s string) (domain.ModHooks, error) {
 	var hooks domain.ModHooks
 
@@ -1407,10 +1376,9 @@ func boolToInt(v bool) int64 {
 	return 0
 }
 
-// isForeignKeyViolation reports whether err came from the foreign key
-// constraint. modernc's driver renders the message rather than exporting a
-// typed error, so the check is on text; the alternative — probing the schema —
-// costs a query on every insert.
+// isForeignKeyViolation reports whether err came from the foreign key constraint.
+// modernc's driver renders the message rather than exporting a typed error, so the
+// check is on text; the alternative — probing the schema — costs a query per insert.
 func isForeignKeyViolation(err error) bool {
 	if err == nil {
 		return false

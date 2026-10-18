@@ -34,12 +34,11 @@ var knownGameSources = []GameSource{
 }
 
 // ParseGameSource maps a configured launcher name onto a GameSource. Comparison
-// is case-insensitive and surrounding space is ignored, because the value comes
-// from a hand-editable JSON file.
+// is case-insensitive and space-trimmed, because the value comes from a
+// hand-editable JSON file.
 //
-// The boolean is false for anything unrecognised, including the empty string.
-// "manual" is a real source but is not something a user selects to *filter*
-// auto-detection by, so it is rejected here as well.
+// The boolean is false for anything unrecognised, including "manual": a user
+// selects it as a source, never to filter auto-detection by it.
 func ParseGameSource(s string) (GameSource, bool) {
 	candidate := GameSource(strings.ToLower(strings.TrimSpace(s)))
 	if candidate == "" {
@@ -90,10 +89,9 @@ const (
 	UnixBinaryName = "Darktide.exe"
 )
 
-// PathEqual compares two installation paths using case-insensitive semantics,
-// which is correct on Windows and macOS and harmless on Linux (a case difference
-// there means genuinely different paths, which callers can detect with
-// StrictPathEqual when they need to).
+// PathEqual compares two installation paths case-insensitively: correct on
+// Windows and macOS, harmless on Linux. Use StrictPathEqual where a case
+// difference on Linux genuinely means two paths.
 func (g GameInstallation) PathEqual(other string) bool {
 	return EqualFold(CleanPath(g.Path), CleanPath(other))
 }

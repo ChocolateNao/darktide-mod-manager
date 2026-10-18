@@ -23,18 +23,13 @@ import (
 
 // Test doubles for ModService. Everything here is deliberately in-memory: the
 // service is the unit under test, so its collaborators are recorded rather than
-// re-implemented, and the assertions are about the calls the service made and
-// the state it left behind.
+// re-implemented.
 
 // modNow pins every timestamp the service writes, so assertions can compare
 // exact values instead of ranges.
 var modNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
 func modClock() Clock { return func() time.Time { return modNow } }
-
-// ---------------------------------------------------------------------------
-// index
-// ---------------------------------------------------------------------------
 
 // fakeIndex is an in-memory ModIndex. mods is the source of truth; every method
 // that mutates records what it saw so a test can assert the service wrote what
@@ -225,8 +220,8 @@ func (f *fakeIndex) SaveFiles(_ context.Context, modID string, files []domain.Mo
 	defer f.mu.Unlock()
 
 	f.saveFilesFor = append(f.saveFilesFor, modID)
-	// The real repository stamps ModID from the argument; mirroring that here
-	// keeps the fake honest about what the service is expected to pass.
+	// The real repository stamps ModID from the argument; mirroring that keeps
+	// the fake honest about what the service is expected to pass.
 	copied := make([]domain.ModFile, len(files))
 	for i, file := range files {
 		copied[i] = file
@@ -296,9 +291,8 @@ func (f *fakeIndex) LoadOrder(_ context.Context) ([]string, error) {
 	return append([]string{}, f.order...), nil
 }
 
-// SetLoadOrderForGame replaces the order of ONE game: ids of other games stay
-// in the shared slice, mirroring how the sqlite repository leaves the other
-// games' rows untouched.
+// SetLoadOrderForGame replaces the order of ONE game, leaving the other games'
+// rows in the shared slice as the sqlite repository does.
 func (f *fakeIndex) SetLoadOrderForGame(_ context.Context, gameID string, ids []string) error {
 	if f.setOrderErr != nil {
 		return f.setOrderErr
@@ -333,8 +327,7 @@ func (f *fakeIndex) SetLoadOrderForGame(_ context.Context, gameID string, ids []
 	return nil
 }
 
-// LoadOrderByGame filters the shared order down to one game's mods, in the
-// order they were recorded.
+// LoadOrderByGame filters the shared order down to one game's mods, in order.
 func (f *fakeIndex) LoadOrderByGame(_ context.Context, gameID string) ([]string, error) {
 	if f.loadOrderErr != nil {
 		return nil, f.loadOrderErr
@@ -367,8 +360,7 @@ func (f *fakeIndex) Close() error {
 	return nil
 }
 
-// put installs a mod directly, bypassing the service. Tests use it to set up a
-// starting state rather than driving a full install for each fixture.
+// put installs a mod directly, bypassing the service, to set up a starting state.
 func (f *fakeIndex) put(m *domain.Mod) *domain.Mod {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -385,15 +377,12 @@ func (f *fakeIndex) put(m *domain.Mod) *domain.Mod {
 	return c
 }
 
-// putValue is put for a fixture literal. Go does not allow taking the address of
-// a function result, so without this every fixture would need a throwaway local
-// just to hand a value over.
+// putValue is put for a fixture literal, since Go cannot take the address of a
+// function result.
 func (f *fakeIndex) putValue(m domain.Mod) *domain.Mod { return f.put(&m) }
 
 // enabledMap reads the Enabled flag out of the stored records, which is what
-// "which mods are on after that operation" actually means. enabledFlags reports
-// the UpdateEnabled calls instead, which is the wrong question for a resolution
-// that may have uninstalled a mod outright.
+// "which mods are on after that operation" actually means.
 func (f *fakeIndex) enabledMap() map[string]bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -406,8 +395,8 @@ func (f *fakeIndex) enabledMap() map[string]bool {
 	return out
 }
 
-// enabledIDs lists the enabled mods, sorted, so a test can compare a whole state
-// with one equality check.
+// enabledIDs lists the enabled mods, sorted, so one equality check compares a
+// whole state.
 func (f *fakeIndex) enabledIDs() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -449,13 +438,8 @@ func (f *fakeIndex) enabledFlags() []bool {
 	return append([]bool(nil), f.enabledCalls...)
 }
 
-// ---------------------------------------------------------------------------
-// source
-// ---------------------------------------------------------------------------
-
-// scriptSource is a domain.ModSource backed by a map. It is the smallest thing
-// that satisfies the interface while letting a test decide exactly which mods
-// exist and which calls fail.
+// scriptSource is a domain.ModSource backed by a map, letting a test decide
+// exactly which mods exist and which calls fail.
 type scriptSource struct {
 	mods     map[string]*domain.Mod
 	getErr   map[string]error
@@ -501,8 +485,8 @@ func (s *scriptSource) Authenticate(context.Context, domain.AuthCredentials) err
 func (s *scriptSource) ValidateCredentials(context.Context) error                  { return nil }
 
 // failGet scripts (or, with a nil error, un-scripts) a GetMod failure. A nil
-// error has to delete the entry rather than store it: GetMod treats a present
-// key as "fail", so a stored nil would look like "return (nil, nil)".
+// error has to delete the entry: GetMod reads a present key as "fail", so a
+// stored nil would look like "return (nil, nil)".
 func (s *scriptSource) failGet(modID string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -566,12 +550,8 @@ func (p *fakeSourceProvider) requested() []string {
 	return append([]string(nil), p.asked...)
 }
 
-// ---------------------------------------------------------------------------
-// cache
-// ---------------------------------------------------------------------------
-
-// fakeCache returns a pre-written archive for each mod it knows. The archive is
-// a real zip so the real extractor is exercised rather than a stub.
+// fakeCache returns a pre-written archive for each mod it knows. The archive is a
+// real zip so the real extractor is exercised rather than a stub.
 type fakeCache struct {
 	getErr   error
 	archives map[string]string
@@ -645,10 +625,6 @@ func (c *fakeCache) removedKeys() []string {
 	return append([]string(nil), c.removed...)
 }
 
-// ---------------------------------------------------------------------------
-// hooks
-// ---------------------------------------------------------------------------
-
 // fakeHooks records the phases the service executed and can be told to fail a
 // specific one, so the Pre*/Post* asymmetry can be tested directly.
 type fakeHooks struct {
@@ -721,10 +697,6 @@ func (h *fakeHooks) countOf(phase domain.HookPhase) int {
 	return n
 }
 
-// ---------------------------------------------------------------------------
-// locator
-// ---------------------------------------------------------------------------
-
 // fakeLocator stands in for GameLocator. modsPath == "" models "a game is
 // configured but has no mods folder yet", which the service must treat as "no
 // game" rather than as an error.
@@ -740,8 +712,8 @@ type fakeLocator struct {
 }
 
 // fakeGameDef is a GameDefinition whose id can be the empty string, which
-// gamestest.Def refuses to represent: the harness keeps the legacy,
-// not-yet-assigned game id by default.
+// gamestest.Def refuses to represent; the harness keeps the legacy, not-yet
+// assigned game id by default.
 type fakeGameDef struct {
 	gamestest.Def
 	id            string
@@ -811,7 +783,7 @@ func (l *fakeLocator) withGameInstallMethod(method string) *fakeLocator {
 }
 
 // Active implements ModLocator. It reports the configured game id (the empty
-// string by default) and is independent of installation errors: a missing
+// string by default) independently of installation errors: a missing
 // installation is not a missing registry entry.
 func (l *fakeLocator) Active() (domain.GameDefinition, domain.GameSettings, error) {
 	l.mu.Lock()
@@ -861,13 +833,8 @@ func (l *fakeLocator) currentCalls() int {
 	return l.calls
 }
 
-// ---------------------------------------------------------------------------
-// deployer
-// ---------------------------------------------------------------------------
-
-// recordingDeployer models the game mods folder as a set of deployed names.
-// It never touches the disk, which keeps the tests about the service's
-// bookkeeping; the real deployer has its own suite.
+// recordingDeployer models the game mods folder as a set of deployed names. It
+// never touches the disk; the real deployer has its own suite.
 type recordingDeployer struct {
 	deployErr   error
 	undeployErr error
@@ -1036,10 +1003,6 @@ func (d *recordingDeployer) deployTargets() []string {
 	return append([]string(nil), d.deployCalls...)
 }
 
-// ---------------------------------------------------------------------------
-// config
-// ---------------------------------------------------------------------------
-
 // staticConfig is a ConfigStore that always returns the same config, so a test
 // can control storage.path and the hook/backup settings without a file.
 type staticConfig struct {
@@ -1092,10 +1055,6 @@ func (s *staticConfig) SaveIfChanged(cfg *domain.Config) (bool, error) {
 
 func (s *staticConfig) saveCount() int { return s.saves }
 
-// ---------------------------------------------------------------------------
-// events
-// ---------------------------------------------------------------------------
-
 type modEvents struct {
 	events []Event
 	mu     sync.Mutex
@@ -1147,13 +1106,8 @@ func (e *modEvents) countOf(t EventType) int {
 	return n
 }
 
-// ---------------------------------------------------------------------------
-// fixtures
-// ---------------------------------------------------------------------------
-
-// writeZipArchive builds a real zip at path with the given entries. Real
-// archives keep the install path honest: a broken extractor stub would hide
-// exactly the bugs these tests exist to catch.
+// writeZipArchive builds a real zip at path with the given entries: a broken
+// extractor stub would hide exactly the bugs these tests exist to catch.
 func writeZipArchive(t *testing.T, path string, names ...string) string {
 	t.Helper()
 
@@ -1219,8 +1173,7 @@ func bareMod(id, version string) *domain.Mod {
 }
 
 // harness bundles a wired ModService with the fakes behind it, so a test can
-// reach both the service and the recorded calls without plumbing every fake
-// into each test.
+// reach both the service and the recorded calls.
 type harness struct {
 	svc      *ModService
 	index    *fakeIndex
@@ -1365,8 +1318,7 @@ func (h *harness) payloadFiles(id, version string) []string {
 	return out
 }
 
-// newModServiceOrFail builds a service for tests that only exercise one helper
-// and do not need the full harness.
+// newModServiceOrFail builds a service for tests that need only one helper.
 func newModServiceOrFail(t *testing.T, deps ModServiceDeps) *ModService {
 	t.Helper()
 

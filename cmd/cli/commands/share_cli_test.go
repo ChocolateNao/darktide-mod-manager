@@ -10,11 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// execute runs one command line against the workspace and returns the three
-// streams plus the exit code. It is the harness the golden transcripts use,
-// trimmed to the part a test that checks behaviour needs: no recording, so a
-// failure is reported against the assertion that caught it rather than against
-// a transcript diff.
+// execute runs one command line against the workspace and returns the streams.
 func (w *workspace) execute(t *testing.T, args ...string) (string, string, int) {
 	t.Helper()
 
@@ -35,12 +31,7 @@ func (w *workspace) execute(t *testing.T, args ...string) (string, string, int) 
 }
 
 // The share commands are driven against the real command tree and a real
-// container, so their error handling and their "nothing to show" paths are
-// exercised the way a user meets them.
-//
-// The upload path is deliberately not covered here: it needs a provider, and the
-// bundled one talks to an S3 endpoint. The orchestrator's behaviour — including
-// what happens when every provider fails — is covered by its own tests.
+// container. The upload path is deliberately not covered: it needs a provider.
 
 func TestShareListWithNoShares(t *testing.T) {
 	w := newWorkspace(t)

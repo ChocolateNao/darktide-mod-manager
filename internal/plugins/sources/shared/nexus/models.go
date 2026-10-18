@@ -11,33 +11,21 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// The Nexus Mods v3 API is shaped around three nested resources: a mod, the mod
-// files on it (each an update chain), and the versions inside each file. The
-// manager installs one *file* at a version, so those three are the vocabulary
-// here.
+// The v3 API nests three resources: mod, mod file (an update chain), and the
+// versions inside each file. The manager installs one *file* at a version, so
+// those three are the vocabulary here.
 //
-// Two conventions in the payloads are worth stating once, because they shape
-// every struct below:
-//
-//   - Almost every endpoint nests its payload under "data". The four dependency
-//     endpoints and the download-repacked response do not. Decoding a response
-//     into the wrong shape yields a zero value rather than an error, and a zero
-//     value here reads as "this mod has no files" or "no dependencies", which is
-//     a wrong answer rather than a missing one. Every envelope below therefore
-//     names the wrapper it actually has.
-//   - Every id in v3 is a *string*, including the ones that are plainly numbers.
-//     They are kept as strings rather than parsed, because the API is free to
-//     widen them and a mod id that no longer parses is a mod id that cannot be
-//     installed.
+// Two payload conventions shape every struct below: almost every endpoint nests
+// its payload under "data" (the dependency and download-repacked responses do
+// not, and a mismatch decodes to a zero value rather than an error), and ids are
+// strings even when plainly numeric — kept unparsed so a widened id cannot make a
+// mod uninstallable.
 
-// modScoped is what GET /games/{game_domain}/mods/{game_scoped_id} returns.
+// modScoped is what GET /games/{game_domain}/mods/{game_scoped_id} returns: four
+// fields, three of them ids.
 //
-// The whole of it is four fields, and three of them are ids. Notably there is
-// no summary, no author, no category and no timestamp: v3's single-mod endpoint
-// is deliberately thin, and a caller wanting more has to go through the batch
-// endpoint with the composite id. Author in particular is unavailable here, so
-// an installed Nexus mod reports no author unless the caller already knows one
-// from the trending feed.
+// v3's single-mod endpoint is deliberately thin — no summary, author, category or
+// timestamp — so a mod's author comes from the trending feed or from nowhere.
 type modScoped struct {
 	ID           string `json:"id"`
 	GameScopedID string `json:"game_scoped_id"`
@@ -48,9 +36,8 @@ type modScoped struct {
 // fileAggregate is a mod file with the counts the API aggregates across its
 // versions (ModFileWithAggregates).
 //
-// IsActive is the API's own statement that the file holds at least one version
-// in an installable category, which is exactly the question "is there anything to
-// install here", so it is preferred over re-deriving that from the categories.
+// IsActive is the API's own answer to "is there anything installable here", so it
+// is preferred over re-deriving that from the categories.
 type fileAggregate struct {
 	ID                 string `json:"id"`
 	Name               string `json:"name"`
@@ -63,9 +50,8 @@ type fileAggregate struct {
 
 // fileVersion is one version of a mod file (ModFileVersion).
 //
-// Position is declared as a decimal *string* rather than a number, so it is kept
-// verbatim and ordered through positionValue. IsPrimary is not in the API's
-// required list and defaults to false when absent.
+// Position arrives as a decimal string, kept verbatim and ordered through
+// positionValue. IsPrimary is absent more often than not and defaults to false.
 type fileVersion struct {
 	ID           string `json:"id"`
 	Position     string `json:"position"`
@@ -79,10 +65,9 @@ type fileVersion struct {
 
 // trendingMod is one entry of the public trending feed (TrendingMod).
 //
-// It carries no id at all — only a name, an author, a summary and the canonical
-// URL of the mod page. The game-scoped id is recovered from that URL by
-// scopedIDFromPageURL, which is the only way the feed can be turned into
-// something installable.
+// It carries no id at all — only the canonical mod page URL, which
+// scopedIDFromPageURL parses to recover the game-scoped id. That is the only way
+// a feed entry becomes installable.
 type trendingMod struct {
 	Name       string `json:"name"`
 	Author     string `json:"author"`
@@ -91,9 +76,8 @@ type trendingMod struct {
 	ModPageURL string `json:"mod_page_url"`
 }
 
-// minimalMod is the trimmed mod the dependency endpoints embed inside a
-// dependency target (MinimalMod). It is the one place a dependency's owning mod
-// is named.
+// minimalMod is the trimmed mod the dependency endpoints embed in a target
+// (MinimalMod) — the only place a dependency names its owning mod.
 type minimalMod struct {
 	ID           string      `json:"id"`
 	GameScopedID string      `json:"game_scoped_id"`
@@ -108,9 +92,8 @@ type minimalGame struct {
 	DomainName string `json:"domain_name"`
 }
 
-// fileWithMod is a dependency's target: the mod file plus the mod that owns it
-// (ModFileWithMod). Together with the mod's game-scoped id this is enough to
-// build the dependency's manager id.
+// fileWithMod is a dependency's target: the mod file plus its owning mod
+// (ModFileWithMod), which together are enough to build a manager id.
 type fileWithMod struct {
 	ID   string     `json:"id"`
 	Name string     `json:"name"`
@@ -135,11 +118,8 @@ type filesEnvelope struct {
 
 // fileEnvelope is GET /mod-files/{id}.
 //
-// The single-file endpoint wraps its payload in "data" just like the list ones
-// do. Decoding the body into a bare fileAggregate instead yields a zero value —
-// which, because a zero file has an empty id, reads as "this file does not
-// exist" for every file that does. The wrapper is named for the same reason the
-// others are.
+// The "data" wrapper is load-bearing: decoding into a bare fileAggregate yields a
+// zero value, and a zero file has an empty id, which reads as "no such file".
 type fileEnvelope struct {
 	Data fileAggregate `json:"data"`
 }
@@ -165,11 +145,9 @@ type modEnvelope struct {
 
 // versionEnvelope is GET /mod-file-versions/{id}.
 //
-// The single-version endpoint wraps its payload in "data" like the other single
-// reads do. It is read by the keyed download path, which needs the version's
-// game-scoped id: that id is the legacy file number the v1 download endpoint
-// addresses a file by, and it appears nowhere else in the manager's record of
-// a mod.
+// Read by the keyed download path, which needs the version's game-scoped id: that
+// is the legacy file number the v1 download endpoint addresses a file by, and it
+// appears nowhere else in the manager's record of a mod.
 type versionEnvelope struct {
 	Data fileVersion `json:"data"`
 }
@@ -177,12 +155,9 @@ type versionEnvelope struct {
 // versionByScopedIDEnvelope is
 // GET /games/{game_domain}/mod-file-versions/{game_scoped_id}.
 //
-// It is the one version read that also names its mod file. The endpoint
-// addresses a version by the legacy file number a website link carries, and
-// answers with the v3 mod file id, which is what a mod's identity is built
-// from; the version read by id does not name its file at all, so a link carrying
-// the legacy number and nothing else cannot be turned into the pair the manager
-// identifies a mod by without this third shape.
+// The one version read that also names its mod file: a link carries the legacy
+// file number and nothing else, and the read-by-id endpoint never names the file,
+// so this is the only shape that yields the pair a manager id is built from.
 type versionByScopedIDEnvelope struct {
 	Data struct {
 		File struct {
@@ -196,10 +171,10 @@ type versionByScopedIDEnvelope struct {
 // downloadLinkResponse is
 // GET /v1/games/{domain}/mods/{mod}/files/{file}/download_link.
 //
-// The body is a JSON array of mirrors rather than a single URL, and the field
-// names are the legacy ones: name, short_name, URI. The URI is a signed
-// content-host address that carries its own expiry and needs no API key, so it
-// is fetched with no credentials attached.
+// GET /v1/games/{domain}/mods/{mod}/files/{file}/download_link answers with a
+// JSON array of mirrors under the legacy name, short_name and URI fields. The URI
+// is a signed content-host address carrying its own expiry, so it is fetched with
+// no credentials attached.
 type downloadLinkResponse []downloadLinkMirror
 
 // downloadLinkMirror is one content host offering a file.
@@ -211,10 +186,9 @@ type downloadLinkMirror struct {
 
 // dependencyResponse is GET /mod-file-versions/{id}/dependencies.
 //
-// There is deliberately no "data" wrapper here, unlike almost every other
-// endpoint. The min and max version bounds inside each range are not modelled:
-// the manager only needs to know *which* mod file is required, and the bounds
-// cannot make a dependency disappear, so leaving them out cannot hide one.
+// — deliberately without the "data" wrapper almost every other endpoint has.
+// Per-range version bounds are unmodelled: the manager only needs *which* mod file
+// is required, and bounds cannot make a dependency disappear.
 type dependencyResponse struct {
 	DependencyDefinitions    []dependencyDefinition    `json:"dependency_definitions"`
 	DLCDependencyDefinitions []dlcDependencyDefinition `json:"dlc_dependency_definitions"`
@@ -237,26 +211,24 @@ type dlcDependencyDefinition struct {
 
 // downloadResponse is POST /mod-file-versions/{id}/download-repacked.
 //
-// Like the dependency endpoints this response has no "data" wrapper: the body is
-// the schema. The URL it carries is short-lived (ExpiresAt) and points at a
-// content host, not at the API, so it must not be requested with the API key
-// attached.
+// Like the dependency endpoints this response has no "data" wrapper. The URL is
+// short-lived and points at a content host, not the API, so it must not be
+// requested with the API key attached.
 type downloadResponse struct {
 	DownloadURL string `json:"download_url"`
 	ExpiresAt   string `json:"expires_at"`
 }
 
-// modsBatchRequest is the body of POST /mods/batch. It is used to check a
-// credential: the endpoint requires an api key, and an id that does not exist
-// simply contributes no row, so a key that works is answered with a 200 and an
-// empty list rather than with a 404 that could also mean "hidden key".
+// modsBatchRequest is the body of POST /mods/batch, used to check a credential.
+// An id that does not exist contributes no row, so a working key gets a 200 and an
+// empty list rather than a 404 that could also mean "hidden key".
 type modsBatchRequest struct {
 	ModIDs []string `json:"mod_ids"`
 }
 
-// modContext carries what a mod's identity and presentation need. The file and
-// version responses carry no mod name at all, so the name has to come from the
-// mod fetch and be threaded through the conversions rather than rediscovered.
+// modContext carries what a mod's identity and presentation need. File and
+// version responses name no mod, so the name comes from the mod fetch and is
+// threaded through rather than rediscovered.
 type modContext struct {
 	scopedID     string // game-scoped id: the number in a mod page URL and an nxm link
 	uid          string // composite Mod.id
@@ -268,9 +240,8 @@ type modContext struct {
 	thumbnailURL string
 }
 
-// pageURL renders the canonical address of a mod page, which is also the form an
-// nxm link is built from. It is published as the mod's release_url so a shared
-// link and a browsable address agree.
+// pageURL renders the canonical mod page address, the same form an nxm link is
+// built from, and is published as release_url so the two agree.
 func (c modContext) pageURL() string {
 	if c.scopedID == "" || c.gameDomain == "" {
 		return ""
@@ -282,12 +253,10 @@ func (c modContext) pageURL() string {
 // locationURL is the stable, non-fetchable locator published as the mod's
 // download_url.
 //
-// The cache keys an archive by hashing a download location plus a version, so
-// something location-shaped has to exist before anything is downloaded. In v3
-// there is no such URL: the real one is minted per download by a POST that has
-// to happen first. This string therefore names the endpoint that mints it rather
-// than pretending to be the archive's address, and it changes exactly when the
-// version does, which is what makes the cache key correct.
+// The cache hashes a download location plus a version, so something
+// location-shaped must exist before anything is downloaded, and v3 has no such URL
+// until a POST mints one. This names the minting endpoint rather than pretending
+// to be the archive's address, and changes exactly when the version does.
 func (c modContext) locationURL(versionID string) string {
 	if strings.TrimSpace(versionID) == "" {
 		return ""
@@ -299,8 +268,7 @@ func (c modContext) locationURL(versionID string) string {
 // versionCategory is what the manager makes of a version's category.
 //
 // The distinction that matters is not "installable or not" but "the API said no"
-// versus "the API said something this build has never heard of". Collapsing the
-// two is what let a site change break every mod at once.
+// versus "the API said something this build has never heard of".
 type versionCategory int
 
 const (
@@ -308,21 +276,14 @@ const (
 	// user could install: main, update, optional or miscellaneous.
 	categoryInstallable versionCategory = iota
 
-	// categorySuperseded is old_version — a release kept for history. Installing
-	// it in place of the current one is the mistake the category check exists to
-	// prevent, so it is refused rather than merely ranked lower.
+	// categorySuperseded is old_version, a release kept for history. Installing it in
+	// place of the current one is the mistake the category check exists to prevent.
 	categorySuperseded
 
-	// categoryUnknown is anything else, including an empty category: a value
-	// Nexus has introduced since this was written, or a version whose category
-	// came back blank.
-	//
-	// Unknown is not treated as a refusal. A filter that rejects everything it
-	// does not recognise makes the manager unusable the first time the site adds
-	// a category, and it does so silently — the mod simply "has no downloadable
-	// version" while a perfectly good grant sits in the user's hand. Offering the
-	// version instead lets the download fail loudly and specifically if it really
-	// is not installable, which is the better of the two failures.
+	// categoryUnknown covers anything unrecognised, including a blank or a category
+	// introduced since this was written. It is not a refusal: rejecting everything
+	// unrecognised would make the manager silently useless the first time the site adds
+	// a category, whereas offering it fails loudly if it truly is not installable.
 	categoryUnknown
 )
 
@@ -342,10 +303,9 @@ func classifyCategory(category string) versionCategory {
 // describeCategories renders the categories present in a version list, for an
 // error message.
 //
-// A message that says only "no downloadable version" leaves the reader with
-// nothing to act on: the fix is either in this build or in a link, and which one
-// is visible only in the categories. Duplicates are collapsed and the order is
-// fixed so the same list always produces the same sentence.
+// "No downloadable version" alone leaves the reader nothing to act on — the fix
+// is in this build or in the link, and only the categories say which. Duplicates
+// collapse and order is fixed so one list always reads the same.
 func describeCategories(versions []fileVersion) string {
 	seen := map[string]int{}
 	order := make([]string, 0, 4)
@@ -376,14 +336,12 @@ func describeCategories(versions []fileVersion) string {
 
 // positionValue parses the decimal position the API publishes.
 //
-// A position that will not parse reports false, and callers treat that as "no
-// opinion" rather than as zero, so a file whose positions all look unusual
-// falls back to upload order instead of collapsing onto the first entry.
+// An unparseable position reports false and callers read that as "no opinion"
+// rather than zero, so a file with odd positions falls back to upload order.
 //
-// The non-finite values are refused as well. strconv.ParseFloat accepts "NaN",
-// "Inf" and "-Inf", and every comparison against NaN is false, so a NaN
-// position would make pickVersion keep whichever candidate it saw first — the
-// opposite of what "newest wins" means, and silently so.
+// Non-finite values are refused too: ParseFloat accepts "NaN", every comparison
+// against it is false, and pickVersion would then keep the first candidate seen —
+// the opposite of "newest wins", silently.
 func positionValue(raw string) (float64, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -400,17 +358,13 @@ func positionValue(raw string) (float64, bool) {
 
 // pickVersion chooses the version a mod should be reported at.
 //
-// The newest version wins, not the primary one. A primary version is the default
-// download for a mod page and can be years old, and the manager's update check
-// compares the version it is told about against the one it has installed; if
-// this returned the primary, an update would never be found. The primary flag is
-// still recorded in SourceData.
+// Newest wins, not primary: a primary version is a mod page's default download and
+// can be years old, so returning it would mean the update check finds nothing.
+// The flag is still recorded in SourceData.
 //
-// Versions in a category that the API documents as superseded are skipped before
-// the comparison, because a file's newest version is sometimes a removed or
-// archived entry and offering that would produce an install that fails. A
-// category this build does not recognise is not skipped — see categoryUnknown —
-// so that a change on Nexus's side cannot empty the candidate set.
+// Superseded categories are skipped first — a file's newest version is sometimes a
+// removed entry whose install would fail — but an unrecognised category is not
+// skipped (see categoryUnknown) so a Nexus-side change cannot empty the set.
 func pickVersion(versions []fileVersion) (fileVersion, bool) {
 	best := fileVersion{}
 	found := false
@@ -438,9 +392,8 @@ func pickVersion(versions []fileVersion) (fileVersion, bool) {
 				bestAt = parseStamp(candidate.UploadedAt)
 			}
 		case hasPos != bestHasPos:
-			// A version with a usable position beats one without: the position is
-			// the API's own ordering, whereas upload time is a second opinion that
-			// can be wrong when an old file was re-uploaded.
+			// A usable position beats upload time: it is the API's own ordering,
+			// whereas an old file re-uploaded makes a timestamp lie.
 			if hasPos {
 				best, bestPos, bestHasPos = candidate, pos, true
 				bestAt = parseStamp(candidate.UploadedAt)
@@ -457,8 +410,8 @@ func pickVersion(versions []fileVersion) (fileVersion, bool) {
 }
 
 // parseStamp reads one of the API's timestamps, reporting the zero time when it
-// cannot be read. A missing timestamp must not stop a mod being offered: the
-// upload date is presentation, the version id is identity.
+// cannot: a missing upload date must not stop a mod being offered, since the date
+// is presentation and the version id is identity.
 func parseStamp(raw string) time.Time {
 	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(raw))
 	if err != nil {
@@ -468,25 +421,20 @@ func parseStamp(raw string) time.Time {
 	return parsed
 }
 
-// unversioned is the version recorded for a file version that carries no version
-// string. The manager needs something non-empty to store, and 0.0.0 is the
-// honest rendering of "unversioned" because it sorts below every real version.
+// unversioned is stored for a file version that carries no version string; 0.0.0
+// is non-empty to persist and sorts below every real version.
 const unversioned = "0.0.0"
 
 // modFor converts a mod context plus one file and its chosen version into a
 // domain.Mod.
 //
-// The mod's identity is the (game-scoped mod id, mod file id) pair rather than
-// either half. The file alone would not survive a shared link, which carries
-// both; the mod alone would collapse every file of one mod into a single entry,
-// so a mod with a main file and an optional file would install both or neither.
-// The pair is also exactly what an nxm link carries, so a shared link and a
-// stored id are the same string.
+// Identity is the (game-scoped mod id, mod file id) pair, not either half: the
+// file alone would not survive a shared link, the mod alone would collapse all of
+// a mod's files into one entry. The pair is what an nxm link carries.
 func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod {
 	scoped := ctx.scopedID
 	if scoped == "" {
-		// The version knows which mod page it belongs to, which is the next best
-		// answer when the mod fetch did not supply one.
+		// Fall back to the mod page the version itself names.
 		scoped = strings.TrimSpace(version.GameScopedID)
 	}
 
@@ -497,8 +445,7 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 
 	versionID := strings.TrimSpace(version.ID)
 	if versionID == "" {
-		// Without a version id nothing can be downloaded later, so a file with no
-		// usable version is not an offerable mod.
+		// Nothing can be downloaded later without a version id.
 		return nil
 	}
 
@@ -517,17 +464,17 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 	}
 
 	mod.SourceData = map[string]any{
-		"mod_id":       ctx.scopedID,
-		"file_id":      file.ID,
-		"version_id":   versionID,
-		"mod_uid":      ctx.uid,
-		"game_id":      firstText(ctx.gameID, version.GameScopedID),
-		"game_domain":  ctx.gameDomain,
-		"position":     strings.TrimSpace(version.Position),
-		"uploaded_at":  strings.TrimSpace(version.UploadedAt),
-		"category":     strings.TrimSpace(version.Category),
-		"is_primary":   version.IsPrimary,
-		"download_url": ctx.locationURL(versionID),
+		"mod_id":               ctx.scopedID,
+		"file_id":              file.ID,
+		"version_id":           versionID,
+		"mod_uid":              ctx.uid,
+		"game_id":              firstText(ctx.gameID, version.GameScopedID),
+		domain.SourceDomainKey: ctx.gameDomain,
+		"position":             strings.TrimSpace(version.Position),
+		"uploaded_at":          strings.TrimSpace(version.UploadedAt),
+		"category":             strings.TrimSpace(version.Category),
+		"is_primary":           version.IsPrimary,
+		"download_url":         ctx.locationURL(versionID),
 	}
 	if file.Name != "" {
 		mod.SourceData["file_name"] = file.Name
@@ -553,8 +500,7 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 		mod.SourceURL = page
 		mod.SourceData["source_url"] = page
 	}
-	// Nexus download links require authentication for many cases; store release URL as
-	// update/source reference
+	// Nexus download links need auth, so the release URL stands in as update reference.
 	if du := ctx.locationURL(versionID); du != "" {
 		mod.DownloadURL = ""
 		mod.SourceData["download_url_candidate"] = du
@@ -565,11 +511,9 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 
 // scopedIDFromPageURL recovers a game's mod id from a canonical mod page URL.
 //
-// The trending feed is the only public discovery endpoint and it carries no id,
-// so this is the only way to turn one of its entries into something installable.
-// The URL is the one the API itself published, so parsing it is reading the
-// answer rather than guessing it — but a URL of an unexpected shape yields
-// nothing, because an entry that cannot be resolved must not be guessed at.
+// The trending feed is the only public discovery endpoint and carries no id, so
+// this is the only way to make one of its entries installable. A URL of an
+// unexpected shape yields nothing rather than a guess.
 func scopedIDFromPageURL(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -596,11 +540,10 @@ func scopedIDFromPageURL(raw string) (string, bool) {
 	return "", false
 }
 
-// isDigits reports whether the string is one or more plain decimal digits.
-//
-// The API's ids are strings, so the check that an id looks like an id is this
-// one. A sign, padding or any other character is refused: ids this plugin mints
-// never contain them, and quietly accepting one would let a crafted id through.
+// isDigits reports whether the string is plain decimal digits — the check that an
+// id looks like an id, now that ids arrive as strings. Anything else is refused:
+// this plugin never mints such ids, and accepting one would let a crafted id
+// through.
 func isDigits(s string) bool {
 	if s == "" {
 		return false
@@ -630,10 +573,8 @@ func ModID(scopedID, fileID string) string {
 }
 
 // ParseModID reverses ModID, reporting the game-scoped mod id and the file id.
-//
-// The id is exported because the CLI parses launcher links into the same pair
-// and the two encodings have to agree: a link that resolved to a different id
-// than the one shareLink prints would install something else.
+// Exported because the CLI parses launcher links into the same pair; the two
+// encodings must agree or a link installs something other than shareLink prints.
 func ParseModID(id string) (scopedID, fileID string, ok bool) {
 	trimmed := strings.TrimSpace(id)
 	if trimmed == "" || !strings.HasPrefix(trimmed, idPrefix) {
@@ -657,16 +598,14 @@ func ParseModID(id string) (scopedID, fileID string, ok bool) {
 
 // dependencyMods turns a dependency response into manager mod ids.
 //
-// Ranges inside one definition are alternatives and separate definitions are
-// separate requirements, while domain.Mod.Dependencies is one flat list, so
-// every candidate across every range is reported. That is a superset of what the
-// API requires: the manager's dependency check treats the list as "all of these
-// must be installed", so listing the alternatives of one requirement as several
-// requirements would report a conflict the author did not declare. Deduplicating
-// matters because two requirements commonly name the same file.
+// Ranges in one definition are alternatives and separate definitions are
+// separate requirements, but domain.Mod.Dependencies is one flat list, so every
+// candidate is reported. That over-reports: the check reads the list as "all of
+// these", so splitting alternatives across entries would declare an undeclared
+// conflict. Deduped because two requirements commonly name the same file.
 //
-// A dependency on another game is skipped, and one whose owning mod has no id to
-// resolve is skipped: an id that cannot be built would install the wrong mod.
+// Cross-game dependencies, and ones with no unresolvable id, are skipped: an id
+// that cannot be built would install the wrong mod.
 func dependencyMods(resp dependencyResponse, gameDomain string) []string {
 	seen := map[string]bool{}
 

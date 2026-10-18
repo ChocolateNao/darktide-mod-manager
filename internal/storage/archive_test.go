@@ -20,9 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// entry describes one archive member for the builders below. Keeping the
-// builders table-driven lets a test express an archive the same way whether it
-// ends up as a zip or a tar.
+// entry describes one archive member for the builders below.
 type entry struct {
 	name     string
 	body     string
@@ -339,9 +337,7 @@ func TestExtractTarFormats(t *testing.T) {
 }
 
 // A real bzip2 stream cannot be produced with the standard library, so the test
-// feeds a well-formed bzip2 header followed by nothing: the container is
-// recognised and the decompression then fails loudly rather than writing a
-// half-unpacked mod.
+// feeds a well-formed bzip2 header and nothing after it.
 func TestExtractBzip2FailsLoudlyOnATruncatedStream(t *testing.T) {
 	dir := t.TempDir()
 
@@ -355,9 +351,8 @@ func TestExtractBzip2FailsLoudlyOnATruncatedStream(t *testing.T) {
 		filepath.Join(dir, "out"),
 	)
 	require.Error(t, err, "expected a decompression failure")
-	// bzip2.NewReader does not validate the stream eagerly, so the truncation
-	// surfaces while reading the tar header. Either way the extraction must fail:
-	// a half-unpacked mod looks complete to the game.
+	// bzip2.NewReader does not validate eagerly, so the truncation surfaces while
+	// reading the tar header; either way, a half-unpacked mod looks complete.
 	code := appErrors.CodeOf(err)
 	assert.Equal(
 		t,

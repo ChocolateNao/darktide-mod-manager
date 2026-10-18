@@ -1,15 +1,10 @@
 // Package sources wires the bundled mod-source plugins into a registry.
 //
-// Every source package registers its constructor from init, so importing this
-// package is all that is needed for a source to be available. RegisterAll then
-// turns that set of constructors into live sources, which is what the GUI, the
-// CLI and the public API each call once at start-up.
-//
-// The split matters. Constructors are registered by init because Go has no other
-// way for a package to announce itself; the sources themselves are built
-// explicitly, because building one is fallible (a source needs credentials, a
-// base URL, maybe a search endpoint) and a start-up that failed because one
-// optional source was misconfigured would be worse than useless.
+// Each source package registers its constructor from init, so importing this
+// package is all that is needed for a source to be available; RegisterAll turns
+// those constructors into live sources at start-up. Building is left out of init
+// because it is fallible — a source needs credentials, a base URL, maybe a
+// search endpoint.
 package sources
 
 import (
@@ -25,9 +20,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// The imports above are not decoration. Each source package registers its
-// factory from init, so a blank import is the mechanism that makes the plugin
-// visible at all. Dropping one silently removes a source from the manager.
+// The imports above are not decoration: each source package registers its
+// factory from init, so dropping one silently removes a source from the manager.
 var (
 	_ = github.SourceID
 	_ = local.SourceID
@@ -40,19 +34,14 @@ var (
 func IDs() []string { return services.RegisteredFactoryIDs() }
 
 // RegisterAll builds every registered source whose configuration block enables
-// it and adds it to registry. The game is the active one: it is attached to
-// the registry (so later lazy builds resolve its game-scoped factories first)
-// and handed to every factory as the build context.
+// it and adds it to registry. The game is attached to the registry (so later
+// lazy builds resolve its game-scoped factories first) and handed to every
+// factory as the build context.
 //
-// The returned error names every source that failed to build, but the sources
-// that did build are registered either way. A source with a missing API key, an
-// unreachable base URL or a broken plugin must not take the other three down
-// with it — the user can still manage their installed mods without, say, Nexus.
-//
-// A configuration block that is absent counts as enabled. A fresh install has
-// no blocks at all, and a manager that started with no sources in it would look
-// broken; this matches SourceRegistry.EnabledSources, which treats a missing
-// block the same way.
+// The error names every source that failed to build, but the sources that did
+// build are registered either way: one misconfigured source must not take the
+// others down. A missing configuration block counts as enabled, since a fresh
+// install has no blocks and a manager with no sources at all would look broken.
 func RegisterAll(
 	registry *services.SourceRegistry,
 	cfg map[string]domain.SourceConfig,
@@ -79,18 +68,16 @@ func RegisterAll(
 
 		factory, ok := services.SourceFactoryFor(id)
 		if game != nil {
-			// Game-scoped registrations win: a source that exists for one game
-			// describes that game's build of the id, even when a generic
-			// factory for the same id is installed.
+			// Game-scoped registrations win: a source for one game describes that
+			// game's build of the id even when a generic factory is installed.
 			if gameFactory, gameOK := services.SourceFactoryForGame(game.ID(), id); gameOK {
 				factory, ok = gameFactory, true
 			}
 		}
 
 		if !ok {
-			// The id came from the registry a moment ago, so this cannot happen
-			// unless another goroutine unregistered in between. Skipping is the
-			// right answer: there is nothing to build and nothing to report.
+			// The id came from the registry a moment ago, so this cannot happen unless
+			// another goroutine unregistered in between; there is nothing to build.
 			continue
 		}
 
@@ -125,8 +112,7 @@ func RegisterAll(
 }
 
 // RegisterEnabled is RegisterAll without the configuration blocks: every
-// registered source for the game is built. It exists for callers that have no
-// per-source configuration to honour, such as a container built in a test.
+// registered source for the game is built, whatever the caller has configured.
 func RegisterEnabled(registry *services.SourceRegistry, game domain.GameDefinition) error {
 	return RegisterAll(registry, nil, game)
 }
@@ -167,17 +153,12 @@ func Enabled(cfg map[string]domain.SourceConfig, id string) bool {
 }
 
 // normalizeBlocks re-keys a configuration map so every key is lower-cased and
-// trimmed, matching how source ids are normalised everywhere else.
+// trimmed, matching how source ids are normalised everywhere else. The keys come
+// from a file the user is free to edit, so a config naming "GitHub" rather than
+// "github" must not be silently ignored by a lookup on the registry's own key.
 //
-// It matters because the keys come out of a file the user is free to edit. A
-// config naming "GitHub" rather than "github" describes the same source, and a
-// lookup by the registry's own key would silently ignore it — the user sets a
-// token in their config and watches it never arrive. Both RegisterAll and
-// Enabled go through here so the two cannot disagree.
-//
-// Keys are visited in sorted order and the first spelling of a given id wins.
-// A file naming the same source twice is a mistake, and pinning the outcome to
-// sorted order is what keeps it from becoming a different answer on each start.
+// Keys are visited in sorted order and the first spelling of an id wins, so a
+// file naming the same source twice gives the same answer on every start.
 func normalizeBlocks(cfg map[string]domain.SourceConfig) map[string]domain.SourceConfig {
 	out := make(map[string]domain.SourceConfig, len(cfg))
 

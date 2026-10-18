@@ -25,25 +25,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// updateGolden rewrites the recorded transcripts instead of comparing against
-// them. It is a flag rather than a build tag so a deliberate output change is
-// one command: `go test ./cmd/cli/commands/ -update`, and then the diff in the
-// golden files is the review of that change.
+// updateGolden rewrites the recorded transcripts instead of comparing them.
 var updateGolden = flag.Bool(
 	"update",
 	false,
 	"rewrite the golden transcripts instead of comparing them",
 )
 
-// workspace is a private manager installation: its own home directory, its own
-// settings file, its own cache and mod storage, and a Darktide folder to deploy
-// into. Nothing in it is shared with the machine running the test, and nothing
-// in it is shared between tests.
-//
-// The home directory is a separate temporary directory rather than a
-// subdirectory of the workspace, because the two are scrubbed to different
-// placeholders: a golden transcript that cannot tell "the user's home" from
-// "this test's tree" is a transcript that quietly stops being checked.
+// workspace is a private manager installation: its own home, settings, cache,
+// storage and game folder, sharing nothing with the machine or between tests.
 type workspace struct {
 	root         string
 	home         string
@@ -58,12 +48,6 @@ type workspace struct {
 }
 
 // newWorkspace builds an isolated tree and points the environment at it.
-//
-// Every variable platform.ResolveDirs consults is set, not just HOME: on
-// Windows the same call reads APPDATA and LOCALAPPDATA, and a test that only
-// set HOME would read the real user's settings file on that platform. A test
-// that writes to somebody's real configuration is worse than a test that
-// fails.
 func newWorkspace(t *testing.T) *workspace {
 	t.Helper()
 	root := t.TempDir()
@@ -88,11 +72,8 @@ func newWorkspace(t *testing.T) *workspace {
 		localDir:    filepath.Join(root, "local"),
 	}
 	w.databasePath = filepath.Join(filepath.Dir(w.storageRoot), "mods.db")
-	// The mods directory inside the game folder is deliberately not created
-	// here. The detector accepts a folder holding a `mods` directory as a
-	// Darktide installation, so creating it in every workspace would give every
-	// test a game — and a test that believes it has no game while quietly having
-	// one is worse than no test at all. makeGame creates it.
+	// The mods directory is deliberately not created here: the detector accepts a
+	// folder holding one, so creating it would give every test a game.
 	for _, dir := range []string{w.cacheRoot, w.storageRoot, w.localDir} {
 		require.NoError(t, os.MkdirAll(dir, 0o755), "prepare %s", dir)
 	}
@@ -115,9 +96,7 @@ func (w *workspace) args(rest ...string) []string {
 // scrub replaces the machine-specific parts of a transcript with placeholders.
 func (w *workspace) scrub(text string) string {
 	// Longest first: the storage root is inside the tree, and replacing the
-	// tree first would leave the more specific placeholder with nothing to
-	// match. A stub server's base URL joins them because its port is assigned
-	// by the operating system and changes on every run.
+	// tree first would leave the more specific placeholder with nothing to match.
 	pairs := []struct{ from, to string }{
 		{w.storageRoot, "<storage>"},
 		{w.databasePath, "<database>"},
@@ -138,33 +117,15 @@ func (w *workspace) scrub(text string) string {
 	for _, pair := range pairs {
 		text = strings.ReplaceAll(text, pair.from, pair.to)
 	}
-	// Column padding is squeezed to two spaces after the paths are gone.
-	//
-	// A table pads each column to its widest cell, and in this program the widest
-	// cell is usually a path. The paths have just been replaced by placeholders
-	// that are shorter than the values they stood for, so the padding left behind
-	// is the padding the real value needed — and the real value is a temporary
-	// directory whose name ends in a random number whose digit count changes from
-	// run to run. Without this, a transcript recorded on one machine fails on the
-	// next for no reason at all.
-	//
-	// Alignment is not lost by this. It is asserted directly in render_test.go,
-	// where the values are fixed strings and the measurement is the thing under
-	// test. Here it would be a measurement of a temporary directory name.
+	// Padding is squeezed to two spaces once the paths are placeholders: the real
+	// value was a temp directory whose random suffix changes digit count per run.
 	return columnGap.ReplaceAllString(text, "  ")
 }
 
-// columnGap is a run of three or more spaces, which in aligned output is a cell
-// boundary plus the padding that made the columns line up. A single space inside
-// a value is untouched.
+// columnGap matches three or more spaces, a cell boundary in aligned output.
 var columnGap = regexp.MustCompile(` {3,}`)
 
 // writeConfig stores a settings file describing this workspace.
-//
-// The three network sources are switched off. They are the ones that would
-// otherwise be queried for real: a test that reaches the internet is a test
-// whose result depends on someone else's uptime, and one that authenticates
-// against a real account is a test that can lock it out.
 func (w *workspace) writeConfig(t *testing.T) {
 	t.Helper()
 
@@ -189,9 +150,7 @@ func (w *workspace) writeConfigWith(t *testing.T, cfg *domain.Config) {
 	require.NoError(t, store.Save(cfg), "write settings")
 }
 
-// credentialProbe is a stub of the one Nexus endpoint a credential check needs,
-// together with the keys it was handed, the bodies it was sent and the answer it
-// will give.
+// credentialProbe is a stub of the one Nexus endpoint a credential check needs.
 type credentialProbe struct {
 	url    string
 	body   string
@@ -201,9 +160,7 @@ type credentialProbe struct {
 	mu     sync.Mutex
 }
 
-// answer changes what the stub replies with next time. It exists so a
-// transcript can record a rejected key as well as an accepted one without a
-// second server.
+// answer changes what the stub replies with next time.
 func (p *credentialProbe) answer(status int, body string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -227,15 +184,7 @@ func (p *credentialProbe) bodiesSeen() []string {
 	return append([]string(nil), p.bodies...)
 }
 
-// reject reports the complaint POST /mods/batch makes about body, or the empty
-// string when the body is one the endpoint accepts.
-//
-// A stub that answers every request with the status its test chose cannot tell a
-// correctly encoded request from an incorrectly encoded one: the credential probe
-// used to hand already-encoded bytes to a client that encoded them again, every
-// transcript below recorded "authenticated nexus", and the live API answered 422
-// with a complaint about a body shape the plugin had never written. Mirroring the
-// real endpoint is what turns that class of mistake into a failing transcript.
+// reject reports the complaint POST /mods/batch makes about body, or "" when accepted.
 func reject(body []byte) (int, string) {
 	var request struct {
 		ModIDs []string `json:"mod_ids"`
@@ -255,17 +204,7 @@ func reject(body []byte) (int, string) {
 			`"detail":"` + detail + `","instance":"/v3/mods/batch"}`
 }
 
-// newCredentialProbe starts a stub Nexus API answering the credential check
-// with the given status and body, then writes a settings file in which the
-// nexus source is enabled and pointed at it.
-//
-// Without this, a transcript about authenticating records whatever
-// api.nexusmods.com happened to answer at the time, which is not a property of
-// this program: the wording of an error changes without notice, an outage
-// changes which path runs, and a machine with a working route records something
-// different from one without. A transcript is only worth keeping while it is a
-// record of the code under test. The same reasoning removed the accepted-link
-// import from the mod-share transcript.
+// newCredentialProbe starts a stub Nexus API answering the credential check.
 func (w *workspace) newCredentialProbe(t *testing.T, status int, body string) *credentialProbe {
 	t.Helper()
 
@@ -312,8 +251,7 @@ func (w *workspace) newCredentialProbe(t *testing.T, status int, body string) *c
 	return probe
 }
 
-// makeGame builds a folder the detector accepts as a Darktide installation:
-// the executable, a data directory and a mods directory.
+// makeGame builds a folder the detector accepts as a Darktide installation.
 func (w *workspace) makeGame(t *testing.T) {
 	t.Helper()
 
@@ -338,13 +276,8 @@ func (w *workspace) makeGame(t *testing.T) {
 	), "write version")
 }
 
-// writeModArchive writes a real zip into the local source's folder and returns
-// the mod id the local source will derive from it.
-//
-// The file name carries a space before the version because that is what the
-// local source looks for: "Better UI 1.2.0.zip" becomes the id "betterui",
-// while "Better_UI_1.2.0.zip" would keep the version in the id and the id a
-// test then has to carry everywhere.
+// writeModArchive writes a real zip into the local source's folder and returns the
+// mod id it derives: the name carries a space because that is what the local source parses.
 func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	t.Helper()
 
@@ -401,14 +334,8 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o644), "write archive")
 }
 
-// golden records a command line and everything it printed, and compares the
-// result with a stored transcript.
-//
-// The transcript format is a shell session: the command line, its output
-// prefixed with "|", its diagnostics with "!", and the exit code at the end.
-// That shape is not decoration — it makes a failure readable in a diff, because
-// a golden test whose output is one undifferentiated blob cannot show which of
-// four command lines changed.
+// golden records a command line and everything it printed, and compares the result
+// with a stored transcript, so a failure is readable in a diff.
 type golden struct {
 	t      *testing.T
 	name   string
@@ -455,14 +382,8 @@ func (g *golden) run(w *workspace, args ...string) {
 	fmt.Fprintf(&g.body, "! exit %d\n", code)
 }
 
-// stream records one output stream, skipping it when it is empty so a
-// transcript is not padded with blank blocks.
-//
-// The text is scrubbed on the way in. Almost every command prints a path, and a
-// transcript that recorded this run's temporary directories would fail on the
-// next run for no reason at all — which teaches a reader to re-record
-// transcripts without reading them, and then the transcripts stop being worth
-// anything.
+// stream records one output stream, skipping it when empty so a transcript is not
+// padded with blank blocks.
 func (g *golden) stream(w *workspace, label, text string) {
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
@@ -489,11 +410,8 @@ func placeholders(w *workspace, args []string) []string {
 	return out
 }
 
-// timestampPattern is duplicated here rather than reused from the production
-// package on purpose: the test's normaliser and the program's formatter are
-// independent implementations of the same idea, so a change to one that
-// silently broke the other would show up as a failing transcript rather than
-// as two agreeing mistakes.
+// scrubTimestamp is duplicated from the production package on purpose: the two are
+// independent, so breaking one shows up as a failing transcript.
 var scrubTimestamp = regexp.MustCompile(
 	`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})`,
 )
@@ -542,8 +460,7 @@ func (g *golden) want() {
 	)
 }
 
-// defaultConfigFor builds a configuration with nothing pointed anywhere, for a
-// test that needs a settings file without a game or a cache in it.
+// defaultConfigFor builds a configuration with nothing pointed anywhere.
 func defaultConfigFor(t *testing.T) domain.Config {
 	t.Helper()
 

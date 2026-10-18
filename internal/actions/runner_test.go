@@ -10,9 +10,8 @@ import (
 )
 
 // newTestRunner wires a runner over fakes so a test only states the part it
-// cares about. Everything a real runner gets from the wire — the registry, the
-// game lookup, the opener, the platform — is explicit here because "works on my
-// machine" is the usual reason a platform-gated action misbehaves.
+// cares about. Every dependency is explicit because "works on my machine" is the
+// usual reason a platform-gated action misbehaves.
 func newTestRunner(t *testing.T, action domain.GameAction, opts ...func(*RunnerDeps)) *Runner {
 	t.Helper()
 
@@ -72,9 +71,8 @@ func TestRunRejectsUnknownAction(t *testing.T) {
 	}
 }
 
-// The platform gate exists because a Linux box must not be offered a Windows
-// batch file; the failure has to be "unavailable", not "not found", so the UI
-// can grey the entry out instead of claiming the action does not exist.
+// The platform gate keeps a Linux box from being offered a Windows batch file,
+// and its failure must be "unavailable" so the UI greys the entry out.
 func TestRunRejectsActionOffPlatform(t *testing.T) {
 	action := withPlatform(okAction("test", "test:do"), domain.ActionPlatformWindows)
 	runner := newTestRunner(t, action)
@@ -226,9 +224,9 @@ func TestRunBoundsTheCapturedOutput(t *testing.T) {
 	}
 }
 
-// An action that needs the game installed cannot run when the locator is
-// absent. Saying "unavailable" keeps the failure honest: the action exists, the
-// machine is not ready.
+// An action needing the game cannot run when the locator is absent; saying
+// "unavailable" keeps the failure honest — the action exists, the machine is not
+// ready.
 func TestRunRequiresTheGameToBeInstalled(t *testing.T) {
 	action := okAction("test", "test:do")
 	action.RequiresGame = true

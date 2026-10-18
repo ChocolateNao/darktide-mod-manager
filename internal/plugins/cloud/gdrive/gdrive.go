@@ -1,9 +1,8 @@
 // Package gdrive is the Google Drive adapter.
 //
-// Drive stores a share as archives filed inside one folder. The name each
-// archive is given is the file id the payload carries, so the id a recipient
-// hands back is the name Drive already has and no second lookup table has to be
-// kept in step with it.
+// Drive files a share as archives inside one folder, and the name each archive
+// gets is the id the payload carries: no second lookup table has to be kept in
+// step with the names Drive already holds.
 package gdrive
 
 import (
@@ -79,8 +78,8 @@ func (p *Provider) SupportsAuth() bool  { return true }
 func (p *Provider) MaxFileSize() int64  { return 5 * 1024 * 1024 * 1024 }
 func (p *Provider) MaxTotalSize() int64 { return 0 }
 
-// ConsentURL is the page the user approves on. It is exposed because the GUI is
-// what opens it; a provider never opens a browser itself.
+// ConsentURL is the page the user approves on; the GUI opens it, a provider
+// never opens a browser itself.
 func (p *Provider) ConsentURL(redirectURL, state string) string {
 	if p == nil {
 		return ""
@@ -151,10 +150,8 @@ func (p *Provider) Upload(
 			size = info.Size()
 		}
 
-		// The media upload takes the bytes; a metadata patch afterwards files
-		// the object under the name the payload carries. Doing it the other way
-		// round — naming first — leaves a named but empty object behind if the
-		// transfer fails.
+		// The patch that names the file runs only after its bytes have landed;
+		// naming first would leave a named but empty object behind on failure.
 		endpoint := fmt.Sprintf("%s/files?uploadType=media&fields=id,name", uploadBase)
 
 		header := http.Header{}
@@ -186,10 +183,9 @@ func (p *Provider) Upload(
 
 // moveIntoFolder names and files an uploaded object.
 //
-// Drive creates an upload at the root of the account unless a parent is given,
-// so the patch that renames it also sets the share folder. Both land in one
-// call: a file at the root named after a payload id is a file the recipient's
-// folder-scoped lookup will never find.
+// Drive drops an upload at the root of the account unless a parent is given, so
+// the rename and the parent land in one patch: a root file named after a payload
+// id is one the folder-scoped lookupID will never find.
 func (p *Provider) moveIntoFolder(ctx context.Context, id, name string) error {
 	endpoint := fmt.Sprintf("%s/files/%s?fields=id,name", apiBase, id)
 
@@ -228,9 +224,8 @@ func (p *Provider) Download(ctx context.Context, ref domain.FileReference, destP
 // lookupID searches the share folder for the archive a name refers to.
 //
 // Drive names are unique per folder rather than per account, so the search is
-// scoped to the share's folder. Two archives of the same name in one folder
-// have already made the share ambiguous, and the first match is as good an
-// answer as any.
+// scoped to the share folder; two archives of one name there have already made
+// the share ambiguous, and the first match is as good as any.
 func (p *Provider) lookupID(ctx context.Context, name string) (string, error) {
 	clause := fmt.Sprintf(
 		"name = '%s' and '%s' in parents and trashed = false",
@@ -354,9 +349,8 @@ func escapeName(name string) string {
 	return strings.ReplaceAll(name, `'`, `\'`)
 }
 
-// parseSize reads a byte count out of a header. Drive answers the metadata
-// call with the size only when asked for it, so an empty value is normal rather
-// than an error.
+// parseSize reads a byte count out of a header. Drive answers the metadata call
+// with the size only when asked for it, so an empty value is normal, not an error.
 func parseSize(raw string) int64 {
 	var size int64
 

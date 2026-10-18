@@ -41,9 +41,7 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSealIsNotDeterministic covers the case where the same plaintext is sealed
-// twice: the tokens must differ, or a link seen twice would be recognisable as
-// the same offer.
+// TestSealIsNotDeterministic covers the same plaintext sealed twice giving two tokens.
 func TestSealIsNotDeterministic(t *testing.T) {
 	t.Parallel()
 
@@ -78,8 +76,7 @@ func TestOpenWithWrongSecret(t *testing.T) {
 	}
 }
 
-// TestOpenRejectsTamperedBlob covers GCM's authentication: a single flipped bit
-// must fail the whole open rather than yield garbage.
+// TestOpenRejectsTamperedBlob covers GCM authentication: one flipped bit fails the open.
 func TestOpenRejectsTamperedBlob(t *testing.T) {
 	t.Parallel()
 
@@ -98,10 +95,7 @@ func TestOpenRejectsTamperedBlob(t *testing.T) {
 	}
 }
 
-// TestOpenShortBlob covers a blob too small to hold a nonce, which is the shape
-// of a link that was truncated in transit rather than one that was tampered
-// with. It is reported as ErrMalformed so the caller can say "that is not a
-// link" instead of "that link needs a different secret".
+// TestOpenShortBlob covers a truncated link, reported as ErrMalformed rather than a bad secret.
 func TestOpenShortBlob(t *testing.T) {
 	t.Parallel()
 
@@ -115,8 +109,7 @@ func TestOpenShortBlob(t *testing.T) {
 	}
 }
 
-// TestEmptyPassphrase covers both directions: an empty secret has to fail at
-// derivation rather than silently keying the envelope with a hash of nothing.
+// TestEmptyPassphrase covers an empty secret failing at derivation, not keying on nothing.
 func TestEmptyPassphrase(t *testing.T) {
 	t.Parallel()
 
@@ -139,8 +132,7 @@ func TestEmptyPassphrase(t *testing.T) {
 	}
 }
 
-// TestGenerateSecretRejectsNonPositiveSize covers the guard on the size
-// parameter, which would otherwise produce a token that decodes to nothing.
+// TestGenerateSecretRejectsNonPositiveSize covers the guard on a token that would decode empty.
 func TestGenerateSecretRejectsNonPositiveSize(t *testing.T) {
 	t.Parallel()
 
@@ -151,8 +143,7 @@ func TestGenerateSecretRejectsNonPositiveSize(t *testing.T) {
 	}
 }
 
-// TestDeriveKeySeparatesLabels covers the property the whole link depends on:
-// the key that seals a link must not be the key that authenticates a session.
+// TestDeriveKeySeparatesLabels covers the sealing key not being the session key.
 func TestDeriveKeySeparatesLabels(t *testing.T) {
 	t.Parallel()
 
@@ -182,8 +173,7 @@ func TestDeriveKeySeparatesLabels(t *testing.T) {
 	}
 }
 
-// TestMACSeparatesParts covers the other property the handshake depends on: two
-// different groupings of the same bytes must not produce the same tag.
+// TestMACSeparatesParts covers two groupings of the same bytes not producing one tag.
 func TestMACSeparatesParts(t *testing.T) {
 	t.Parallel()
 
@@ -233,8 +223,7 @@ func TestEncodeJSONRoundTrip(t *testing.T) {
 	}
 }
 
-// TestDecodeJSONRejectsBadTokens covers the three ways a pasted link can be
-// unusable: not base64url, wrong secret, and a payload that is not JSON.
+// TestDecodeJSONRejectsBadTokens covers a token that is not base64url, and the wrong secret.
 func TestDecodeJSONRejectsBadTokens(t *testing.T) {
 	t.Parallel()
 
@@ -272,9 +261,7 @@ func TestDecodeJSONRejectsBadTokens(t *testing.T) {
 	}
 }
 
-// TestEncodeJSONOmitsUnsetFields covers the size path: a share link is built
-// from compact JSON, so an omitempty field that is present has to be a decision
-// somewhere rather than a surprise in the token.
+// TestEncodeJSONOmitsUnsetFields covers the size path: a share link is built from compact JSON.
 func TestEncodeJSONOmitsUnsetFields(t *testing.T) {
 	t.Parallel()
 
@@ -318,8 +305,7 @@ func TestEncodeJSONOmitsUnsetFields(t *testing.T) {
 	}
 }
 
-// TestDecompressBoundsOutput covers the compression-bomb guard: a small input
-// that claims a huge output has to be refused rather than allocated.
+// TestDecompressBoundsOutput covers the compression-bomb guard.
 func TestDecompressBoundsOutput(t *testing.T) {
 	t.Parallel()
 
@@ -333,8 +319,7 @@ func TestDecompressBoundsOutput(t *testing.T) {
 	}
 }
 
-// TestCompressRoundTrip covers the ordinary compression path on data that looks
-// like the thing it is usually given: verbose, repetitive ASCII.
+// TestCompressRoundTrip covers the usual input: verbose, repetitive ASCII.
 func TestCompressRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -365,9 +350,7 @@ func TestCompressRoundTrip(t *testing.T) {
 	}
 }
 
-// TestEqualConstantTime covers the comparison the handshake makes, including
-// the length-mismatch case that a naive bytes.Equal would also get right but a
-// naive constant-time compare would get wrong.
+// TestEqualConstantTime covers the handshake's tag comparison, including differing lengths.
 func TestEqualConstantTime(t *testing.T) {
 	t.Parallel()
 
@@ -389,9 +372,7 @@ func TestEqualConstantTime(t *testing.T) {
 	}
 }
 
-// TestConcurrentUse covers the shared zstd codecs: a share created and opened on
-// two goroutines at once must not race, because the manager does exactly that
-// when a user creates a share and resolves an incoming one in the same window.
+// TestConcurrentUse covers the shared zstd codecs, which the manager hits whenever shares overlap.
 func TestConcurrentUse(t *testing.T) {
 	t.Parallel()
 
@@ -436,8 +417,7 @@ func TestConcurrentUse(t *testing.T) {
 	}
 }
 
-// base64URLDecode mirrors the encoding EncodeJSON produces, so a test can look
-// inside a token without the package having to export its encoder.
+// base64URLDecode mirrors EncodeJSON's encoding so a test can look inside a token.
 func base64URLDecode(token string) ([]byte, error) {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 

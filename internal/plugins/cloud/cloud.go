@@ -15,8 +15,8 @@ import (
 type ProviderFactory func(opts map[string]string) (domain.CloudProvider, error)
 
 // factories holds the registered provider factories, keyed by provider id.
-// They register themselves through init(), the same way the mod source plugins
-// do, so adding a provider means adding one file and no wiring change.
+// Providers register themselves through init(), so adding one means adding one
+// file and no wiring change.
 var factories = map[string]ProviderFactory{}
 
 // RegisterFactory registers a factory under a provider id. It is called from
@@ -50,11 +50,9 @@ func Build(id string, opts map[string]string) (domain.CloudProvider, error) {
 	return factory(opts)
 }
 
-// RegisterConfigured builds every provider the configuration names and
-// registers them on the registry. Providers whose config is missing or
-// incomplete are skipped rather than failing the whole wiring: a share to a
-// provider the user never set up is a dead share, and the picker should simply
-// not offer it.
+// RegisterConfigured builds every provider the configuration names and registers
+// them on the registry. Incomplete configs are skipped rather than failing the
+// wiring: a share to a provider the user never set up is a dead share.
 func RegisterConfigured(
 	registry *services.CloudRegistry,
 	cfg domain.CloudSharingConfig,
@@ -89,8 +87,6 @@ func sortStrings(items []string) {
 }
 
 func init() {
-	// Each provider registers itself the same way a mod source plugin does, so
-	// adding one means adding one file and no wiring change here.
 	RegisterFactory(s3.ProviderID, func(opts map[string]string) (domain.CloudProvider, error) {
 		return s3.New(s3.Config{
 			Endpoint:  opts["endpoint"],

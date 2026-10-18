@@ -1,20 +1,14 @@
 // Package github indexes GitHub releases as a Darktide mod source.
 //
-// Darktide mods are distributed on GitHub far more often than through any
-// central registry: a maintainer publishes a release next to the repository
-// and links it from a launcher. This source turns those releases into
-// domain.Mod records, so the rest of the manager cannot tell them apart from
-// anything served by Nexus or Vortex.
+// Darktide mods reach users through GitHub far more often than through any
+// central registry, so this source turns those releases into domain.Mod records
+// the rest of the manager cannot tell apart from anything served by Nexus or
+// Vortex.
 //
-// Two modes are supported. When repositories are configured explicitly, those
-// repositories *are* the index: every release they publish is searchable. When
-// none are configured, discovery falls back to a GitHub repository search for
-// the "darktide-mod" topic, and each hit is asked for its releases. Discovery is
-// capped so a broad query cannot turn into hundreds of API calls.
-//
-// All transport goes through internal/plugins/sources/httpx, which owns status
-// code interpretation and integrity checking, so this file is only concerned
-// with mapping GitHub's JSON onto the domain model.
+// Configured repositories are the index; with none configured, discovery falls
+// back to a repository search for the mod topic, capped so a broad query cannot
+// turn into hundreds of API calls. Transport goes through httpx, which owns
+// status interpretation, so this file only maps GitHub's JSON onto the domain.
 package github
 
 import (
@@ -46,10 +40,9 @@ const (
 
 	pluginVersion = "1.0.0"
 
-	// defaultMaxDiscover caps how many discovered repositories are asked for
-	// their releases. GitHub allows 60 anonymous requests an hour, so an
-	// unbounded sweep would exhaust the budget and then report a rate-limit
-	// error for the rest of the session.
+	// defaultMaxDiscover caps how many discovered repositories are read. GitHub
+	// allows 60 anonymous requests an hour, so an unbounded sweep would exhaust
+	// the budget and then report a rate-limit error for the rest of the session.
 	defaultMaxDiscover = 25
 
 	// defaultReleaseLimit caps how many releases of one repository are indexed.
@@ -58,8 +51,8 @@ const (
 	// maxPageSize is the largest releases-per-page GitHub honours.
 	maxPageSize = 100
 
-	// SearchTopic is this source's own fallback for repository discovery. It
-	// only applies when the active game supplies no "topic" default and the
+	// SearchTopic is this source's own fallback for repository discovery. It only
+	// applies when the active game supplies no "topic" default and the
 	// configuration block does not set one either.
 	SearchTopic = "darktide-mod"
 )
@@ -82,9 +75,8 @@ var (
 	_ services.Downloader        = (*Source)(nil)
 )
 
-// Option customises a Source. Options exist so tests can point the API base at
-// an httptest server and so a user can pin a repository list in the config file
-// rather than relying on discovery.
+// Option customises a Source. Options let tests point the API base at an httptest
+// server and a user pin a repository list rather than rely on discovery.
 type Option func(*Source)
 
 // WithAPIBase overrides the API root. A blank value is ignored, because an empty
@@ -160,9 +152,8 @@ func init() {
 	_ = services.RegisterSourceFactory(
 		SourceID,
 		func(ctx services.SourceBuildContext) (domain.ModSource, error) {
-			// The game definition's default sits between the source's own
-			// fallback (New's struct literal) and the user's configuration
-			// block, which New applies last: config > game > native default.
+			// The game default sits between the source's own fallback (New's struct
+			// literal) and the user's block, which New applies last: config > game.
 			var opts []Option
 
 			if topic := domain.SourceDefault(ctx.Game, SourceID, "topic"); topic != "" {
@@ -444,10 +435,9 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 
 	releases, err := s.releases(ctxOrBackground(ctx), ref, 1)
 	if err != nil {
-		// A repository GitHub does not know about, and a repository that exists
-		// but has nothing published, are the same answer to "give me this mod".
-		// Reporting the raw NOT_FOUND would leak a transport code past the source
-		// registry, which only knows how to present MOD_NOT_FOUND.
+		// A repository GitHub does not know about and one with nothing published are the
+		// same answer here; NOT_FOUND would leak a transport code past a registry that
+		// only knows MOD_NOT_FOUND.
 		if appErrors.IsAppError(err, appErrors.ErrCodeNotFound) {
 			return nil, appErrors.New(appErrors.ErrCodeModNotFound,
 				"GitHub repository %q does not exist or has no published releases", ref)

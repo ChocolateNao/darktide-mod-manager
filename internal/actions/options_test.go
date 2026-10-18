@@ -54,8 +54,8 @@ func TestCoerceArgsDropsUndeclaredOptions(t *testing.T) {
 	}
 }
 
-// The CLI's flag name has to be idiomatic on a shell, the handler's key has to
-// be a Go identifier. Accepting both means neither surface has to translate.
+// The CLI's flag name has to be idiomatic on a shell, the handler's key a Go
+// identifier: accepting both means neither surface has to translate.
 func TestCoerceArgsAcceptsTheFlagSpelling(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "load_order_file", Type: domain.ActionOptionString, Label: "File"},
@@ -153,8 +153,8 @@ func TestCoerceNumberSplitsIntegralFromFractional(t *testing.T) {
 	}
 }
 
-// A JSON payload can carry "NaN" only if something wrote it by hand; accepting
-// it would put a value into a handler that no arithmetic can use.
+// A hand-written JSON payload can carry "NaN"; accepting it would put a value
+// into a handler that no arithmetic can use.
 func TestCoerceNumberRefusesValuesWithoutMeaning(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "count", Type: domain.ActionOptionNumber, Label: "Count"},
@@ -204,8 +204,8 @@ func TestCoerceSelectAcceptsOnlyDeclaredChoices(t *testing.T) {
 	}
 }
 
-// An empty selection means "use the default"; the handler decides what that is.
-// Only a required select has to have an answer.
+// An empty selection means "use the default"; only a required select must have
+// an answer.
 func TestCoerceSelectAllowsAnEmptyOptionalAnswer(t *testing.T) {
 	declared := []domain.ActionOption{{
 		Name: "mode", Type: domain.ActionOptionSelect, Label: "Mode",
@@ -228,8 +228,8 @@ func TestCoerceSelectAllowsAnEmptyOptionalAnswer(t *testing.T) {
 	}
 }
 
-// A handler declared a text option; handing it a nested object would mean
-// inventing a rendering. Refusing keeps the declared type honest.
+// A nested object handed to a text option would mean inventing a rendering;
+// refusing keeps the declared type honest.
 func TestCoerceTextRefusesContainers(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "query", Type: domain.ActionOptionString, Label: "Query"},

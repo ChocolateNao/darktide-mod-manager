@@ -22,8 +22,7 @@ func TestParseCSV(t *testing.T) {
 		{name: "one", in: "better-ui", want: []string{"better-ui"}},
 		{name: "three trimmed", in: " a , b , c ", want: []string{"a", "b", "c"}},
 		// An empty segment is dropped rather than passed through as a zero-length
-		// id: "a,,b" is a typo, and reporting "mod \"\" not found" points the user
-		// at a mod that was never asked for.
+		// id: "a,,b" is a typo, and reporting "mod \"\" not found" points at a mod never asked for.
 		{name: "empty segments dropped", in: "a,,b,", want: []string{"a", "b"}},
 		{name: "no spaces needed", in: "one,two", want: []string{"one", "two"}},
 	}

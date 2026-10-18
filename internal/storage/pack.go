@@ -13,22 +13,17 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// PackEntry is one file to place into a share archive.
-//
-// Name is the path the file will carry inside the archive. It is written as it
-// is given, so a caller that names a file "shared.zip" gets an archive entry
-// called exactly that — two mods each shipping one are kept apart by the
-// archive they sit in, not by renaming their contents.
+// PackEntry is one file to place into a share archive. Name is the path the file
+// will carry inside the archive, written as given, so two mods each shipping one
+// are kept apart by the archive they sit in rather than by renaming contents.
 type PackEntry struct {
 	Source string
 	Name   string
 }
 
-// PackFile is one entry after packing: its size and the hash of what the reader
-// will get back.
-//
-// Checksum is computed over the bytes as they were written, so a recipient
-// re-hashing the extracted file with the same algorithm lands on the same value.
+// PackFile is one entry after packing. Checksum is computed over the bytes as they
+// were written, so a recipient re-hashing the extracted file with the same
+// algorithm lands on the same value.
 type PackFile struct {
 	Name     string
 	Checksum string
@@ -39,24 +34,17 @@ type PackFile struct {
 type PackResult struct {
 	Files []PackFile
 	// TotalSize is the sum of the entry sizes, which is what a preview should
-	// show: the compressed archive on the provider can be far smaller, and
-	// quoting that would understate what a recipient is about to download.
+	// show: the compressed archive on the provider can be far smaller, and quoting
+	// that would understate what a recipient is about to download.
 	TotalSize int64
 }
 
-// PackArchive writes entries to destPath as a single zip archive and returns
-// the inventory.
+// PackArchive writes entries to destPath as a single zip archive and returns the inventory.
 //
-// The hash it reports is of the archive file itself, not of the entries, so the
-// caller can put one value in the share payload and have the recipient verify
-// the download in a single pass. Entry checksums are recorded for the same
-// reason a mod's normal install records them: the mod index expects one per
-// file.
-//
-// The destination is written to a temporary file first and moved into place on
-// success. A partial archive left at destPath would be indistinguishable from a
-// finished one, and a recipient would spend a download failing an integrity
-// check the sender could have caught locally.
+// The reported hash is of the archive file rather than the entries, so the recipient verifies
+// the download in one pass; entry checksums are recorded because the mod index expects one
+// per file. The archive is written to a temporary file and moved into place, because a
+// partial one at destPath would be indistinguishable from a finished one.
 func PackArchive(ctx context.Context, destPath string, entries []PackEntry) (*PackResult, error) {
 	if destPath == "" {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no destination path given")
@@ -153,9 +141,9 @@ func addZipEntry(ctx context.Context, zw *zip.Writer, entry PackEntry) (int64, s
 		Name:   entry.Name,
 		Method: zip.Deflate,
 	}
-	// Stored mods are never meant to be executed from inside the archive, so
-	// the mode is fixed rather than copied: a source mod that happens to be
-	// executable should not install as one.
+	// Stored mods are never meant to be executed from inside the archive, so the mode
+	// is fixed rather than copied: a source mod that happens to be executable
+	// should not install as one.
 	header.SetMode(0o644)
 
 	dst, err := zw.CreateHeader(header)

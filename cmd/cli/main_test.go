@@ -19,10 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// installBuild swaps the container factory for the duration of one test. The
-// factory is a package variable because it is the only wiring main owns, and a
-// test that replaced it permanently would make every later test in this package
-// run against whatever the previous one left behind.
+// installBuild swaps the container factory for the duration of one test.
 func installBuild(
 	t *testing.T,
 	fn func(ctx context.Context, opts di.Options) (*di.Container, error),
@@ -35,8 +32,7 @@ func installBuild(
 	t.Cleanup(func() { build = original })
 }
 
-// capture runs one invocation of the entry point and returns its exit code
-// together with what it wrote.
+// capture runs one invocation of the entry point and returns what it wrote.
 func capture(t *testing.T, args []string, in string) (int, string, string) {
 	t.Helper()
 
@@ -48,12 +44,6 @@ func capture(t *testing.T, args []string, in string) (int, string, string) {
 }
 
 // isolate points every per-user environment variable at a fresh directory.
-//
-// main builds a real container, so without this a test would read and write the
-// developer's own settings file. The same variables are redirected by the
-// command package's own harness, and for the same reason: the entry point is the
-// one place that cannot be handed a configuration path without also being handed
-// a writable home.
 func isolate(t *testing.T) string {
 	t.Helper()
 
@@ -71,8 +61,7 @@ func isolate(t *testing.T) string {
 
 func TestRunReportsAVersionWithoutBuildingAnything(t *testing.T) {
 	// The version query must answer even when nothing else could: a user with a
-	// corrupt settings file still needs to be able to say which build they have,
-	// so this is the one command that must not need the disk to be in order.
+	// corrupt settings file still needs to be able to say which build they have.
 	isolate(t)
 
 	built := 0
@@ -92,8 +81,7 @@ func TestRunReportsAVersionWithoutBuildingAnything(t *testing.T) {
 
 func TestRunPassesThePathFlagsThroughToTheFactory(t *testing.T) {
 	// The path flags are the whole contract between the shell and the manager's
-	// wiring, and losing one of them would send every user to the same
-	// installation no matter what they typed.
+	// wiring; losing one would send every user to the same installation.
 	isolate(t)
 	root := t.TempDir()
 	config := filepath.Join(root, "config.json")
@@ -142,8 +130,7 @@ func TestRunPassesThePathFlagsThroughToTheFactory(t *testing.T) {
 
 func TestRunTurnsAFactoryFailureIntoAnExitCode(t *testing.T) {
 	// A refusal to start has to reach the shell as a non-zero code, and the reason
-	// has to be on stderr: a bare "1" tells a person nothing, and a message on
-	// stdout would be mistaken for output a script should parse.
+	// has to be on stderr: a bare "1" tells a person nothing.
 	isolate(t)
 	installBuild(t, func(ctx context.Context, opts di.Options) (*di.Container, error) {
 		return nil, appErrors.New(appErrors.ErrCodeConfigIO, "the settings file is unreadable")
@@ -164,11 +151,8 @@ func TestRunTurnsAFactoryFailureIntoAnExitCode(t *testing.T) {
 }
 
 func TestRunReturnsTheCancellationExitCode(t *testing.T) {
-	// Ctrl-C is not a failure, and a script driving this needs to tell the two
-	// apart: an interrupted operation leaves no partial state, while a failure
-	// might. The signal context is what main supplies in that case, so a
-	// cancelled context is the closest a test gets without raising a real signal
-	// at itself.
+	// Ctrl-C is not a failure: an interrupted operation leaves no partial state.
+	// A cancelled context stands in for main's signal context.
 	isolate(t)
 	installBuild(t, func(ctx context.Context, opts di.Options) (*di.Container, error) {
 		return nil, appErrors.New(appErrors.ErrCodeOperationCanceled, "the operation was canceled")
@@ -184,9 +168,7 @@ func TestRunReturnsTheCancellationExitCode(t *testing.T) {
 
 func TestRunBuildsOneContainerPerInvocation(t *testing.T) {
 	// Two invocations must not share a container: the first one closed it, and a
-	// second command handed the same handle would be talking to a released
-	// database. A package-level cached container would show up here as one build
-	// for two runs.
+	// second command handed the same handle would be talking to a released database.
 	isolate(t)
 
 	built := 0
@@ -210,14 +192,7 @@ func TestRunBuildsOneContainerPerInvocation(t *testing.T) {
 
 func TestRunHandsStandardInputToTheCommand(t *testing.T) {
 	// An API key is passed on standard input so it never appears in the process
-	// list. If the entry point did not pass its reader through, the documented way
-	// of supplying a secret would silently not work.
-	//
-	// The probe is aimed at a test server rather than at Nexus, for two reasons.
-	// A unit test that reaches api.nexusmods.com reports whatever that service
-	// happened to answer, and the assertion below is about the entry point's own
-	// wiring. And a key typed into a pipe that is then sent to a third party by a
-	// test run is a bad habit to encode, even with a fake key.
+	// list; if the entry point did not pass its reader through, that path would break.
 	isolate(t)
 	installBuild(t, func(ctx context.Context, opts di.Options) (*di.Container, error) {
 		return di.NewContainer(ctx, opts)
@@ -236,8 +211,7 @@ func TestRunHandsStandardInputToTheCommand(t *testing.T) {
 	writeSettings(t, config, map[string]any{
 		"sources": map[string]any{
 			// The base URL is the only knob this test needs: pointing it at the
-			// test server keeps the request off the network and lets the
-			// assertion name what the server saw.
+			// test server keeps the request off the network.
 			"nexus": map[string]any{
 				"enabled": true,
 				"options": map[string]any{"api_base": server.URL},
@@ -249,9 +223,8 @@ func TestRunHandsStandardInputToTheCommand(t *testing.T) {
 	}, "read-from-stdin\n")
 
 	require.Equal(t, commands.ExitOK, code, "stderr: %s", errOut)
-	// The key the server saw is the proof. Asserting on a complaint instead would
-	// only prove that *something* was read; asserting the request reached the
-	// source proves the value travelled all the way to the wire.
+	// The key the server saw is the proof: asserting on a complaint instead would
+	// only prove that something was read, not that it reached the wire.
 	require.Len(t, keys, 1, "the source was asked %d times, want once", len(keys))
 
 	assert.Equal(
@@ -280,10 +253,7 @@ func TestRunHandsStandardInputToTheCommand(t *testing.T) {
 	)
 }
 
-// writeSettings writes a settings file holding the given object as its whole
-// body. It is deliberately not a full configuration: the manager applies the
-// defaults to whatever it finds, and a test that only cares about one block
-// should not have to spell out the other six.
+// writeSettings writes a settings file holding the given object as its body.
 func writeSettings(t *testing.T, path string, body map[string]any) {
 	t.Helper()
 
@@ -293,10 +263,7 @@ func writeSettings(t *testing.T, path string, body map[string]any) {
 	require.NoError(t, os.WriteFile(path, encoded, 0o600), "write the settings file")
 }
 
-// settingValue reads one dotted path out of a settings file. Writing the file
-// by hand above means reading it back by hand here, and a test that asserted
-// against the in-memory configuration would prove nothing about what a user
-// gets on their disk.
+// settingValue reads one dotted path out of a settings file.
 func settingValue(t *testing.T, path string, steps ...string) string {
 	t.Helper()
 

@@ -61,9 +61,8 @@ func TestRegisterAllCoversEveryValidScriptLanguage(t *testing.T) {
 }
 
 func TestTypesMatchesDomainScriptLanguages(t *testing.T) {
-	// Types() is a documentation aid; if it drifts from the domain list, either a
-	// language is advertised but has no runner or a runner exists but is
-	// undocumented.
+	// Types() is a documentation aid: if it drifts from the domain list, either a
+	// language is advertised but has no runner or a runner is undocumented.
 	got := hooks.Types()
 
 	want := domain.ScriptLanguages()

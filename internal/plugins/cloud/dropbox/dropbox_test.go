@@ -8,8 +8,7 @@ import (
 )
 
 func TestObjectPathKeepsTheArchiveName(t *testing.T) {
-	// The id the payload carries is the path the archive was uploaded to, so
-	// the same string has to name it both ways.
+	// The payload's id is the uploaded path, so one string has to name it both ways.
 	p, err := New(Config{ClientID: "id"})
 	require.NoError(t, err)
 

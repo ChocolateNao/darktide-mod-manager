@@ -17,8 +17,7 @@ import (
 
 // --- helpers ---------------------------------------------------------------
 
-// writeModFolder creates <root>/<name> holding a mod.toml with the given body and
-// returns the folder path.
+// writeModFolder creates <root>/<name> holding a mod.toml with the given body.
 func writeModFolder(t *testing.T, root, name, manifest string) string {
 	t.Helper()
 
@@ -273,9 +272,8 @@ func TestSearchTreatsAnArchiveFileAsAMod(t *testing.T) {
 	require.NoError(t, err, "Search")
 
 	got := onlyMod(t, mods)
-	// The version suffix is stripped on purpose: "every release of a mod must
-	// collapse to one id and folder", so Better UI 1.2.0 and Better UI 2.0.0 are
-	// the same installable mod rather than two that overwrite each other.
+	// The version suffix is stripped so every release of a mod collapses to one
+	// id and folder: Better UI 1.2.0 and 2.0.0 are one installable mod.
 	assert.Equal(t, "betterui", got.ID, "archive id = %q, want betterui", got.ID)
 
 	assert.Equal(
@@ -901,9 +899,8 @@ func TestSanitizeID(t *testing.T) {
 		"  spaced  ":    "spaced",
 		"v1.2.0":        "v1.2.0",
 		"weird!@#$%^&*": "weird",
-		// Lower-casing is what makes case-only differences collide as ids on
-		// every platform, so ModService can report them instead of the user
-		// discovering the clash on a case-insensitive volume.
+		// Lower-casing makes case-only differences collide on every platform, so the
+		// clash is reported rather than found on a case-insensitive volume.
 		"BetterUI": "betterui",
 	}
 	for in, want := range cases {
@@ -936,8 +933,8 @@ func TestFirstNonBlank(t *testing.T) {
 }
 
 func TestLooksLikeVersion(t *testing.T) {
-	// Only dotted numeric runs count: "beta" is part of the mod's name, and a
-	// "v" prefix is too common in release names to treat as a version marker.
+	// Only dotted numeric runs count: "beta" is part of the mod's name, and a "v"
+	// prefix is too common in release names to treat as a version marker.
 	for _, s := range []string{"1.2.0", "2024.1", "0", "1.0"} {
 		assert.True(t, looksLikeVersion(s), "%q should look like a version", s)
 	}
@@ -1014,9 +1011,8 @@ func TestReleasesOfOneModCollapseToOneID(t *testing.T) {
 	require.NoError(t, err, "Search")
 
 	if got := modIDs(mods); len(got) != 2 {
-		// Both files are still reported, but the discovery list is per-file, so
-		// the manager must resolve which one to install through GetMod. That call
-		// is where the collision has to be reported.
+		// Both files are still reported, but discovery is per-file, so the manager
+		// resolves which one to install through GetMod, where the collision lands.
 		t.Logf("discovered %s", joinIDs(got))
 	}
 

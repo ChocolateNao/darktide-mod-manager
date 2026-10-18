@@ -22,9 +22,9 @@ type Config struct {
 	Logging      LoggingConfig           `json:"logging"`
 }
 
-// ScriptPermissions is the capability set one hook script runs with. A
-// capability not granted here is absent from the script's host API entirely —
-// there is no "deny at runtime" path, the binding simply does not exist.
+// ScriptPermissions is the capability set one hook script runs with. A capability
+// not granted here is absent from the host API entirely; there is no deny-at-runtime
+// path, the binding simply does not exist.
 type ScriptPermissions struct {
 	FSRead      bool `json:"fs_read"`
 	FSWrite     bool `json:"fs_write"`
@@ -37,9 +37,8 @@ type ScriptPermissions struct {
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
 }
 
-// DefaultScriptPermissions is the built-in capability set: scripts may read
-// the confined file system, read config, and read the storage inventory, but
-// may not write files, write config, or read the environment.
+// DefaultScriptPermissions is the built-in capability set: scripts may read the
+// confined file system, config, and the storage inventory, but not write anything.
 func DefaultScriptPermissions() ScriptPermissions {
 	return ScriptPermissions{
 		FSRead:      true,
@@ -48,9 +47,8 @@ func DefaultScriptPermissions() ScriptPermissions {
 	}
 }
 
-// Or merges other underneath p, per capability: the first true value wins, and
-// a zero timeout falls through. Resolving mod > game > default is therefore a
-// chain of Or calls, with the most specific scope on the left.
+// Or merges other underneath p, per capability: the first true value wins. Resolving
+// mod > game > default is a chain of Or calls, most specific scope on the left.
 func (p ScriptPermissions) Or(other ScriptPermissions) ScriptPermissions {
 	out := p
 	if !out.FSRead {
@@ -91,10 +89,8 @@ type HooksPermissionsConfig struct {
 	Default ScriptPermissions            `json:"default"`
 }
 
-// For returns the permissions configured for the given game and mod ids,
-// merged mod > game > default. A mod or game with no entry contributes a
-// zero-value block, which every Or call ignores in favour of the broader
-// scope.
+// For returns the permissions for the given game and mod ids, merged mod > game >
+// default. A scope with no entry contributes a zero block, which Or ignores.
 func (c HooksPermissionsConfig) For(gameID, modID string) ScriptPermissions {
 	out := c.Default
 	if perms, ok := c.Games[gameID]; ok {
@@ -141,29 +137,23 @@ type CloudSharingConfig struct {
 	AutoInstall       bool                         `json:"auto_install"`
 }
 
-// SharingConfig groups the two ways mods are handed to somebody else.
-//
-// The cloud block is kept for backwards compatibility with configurations that
-// still name it, but a share no longer needs a storage provider: the default
-// path is a direct peer-to-peer transfer, and this config only records the
-// choices a user can still make about it.
+// SharingConfig groups the two ways mods are handed to somebody else. The cloud block
+// is kept for configurations that still name it, but a share no longer needs a
+// storage provider.
 type SharingConfig struct {
 	// P2P holds the transport settings for direct sharing.
 	P2P P2PSharingConfig `json:"p2p"`
 }
 
-// P2PSharingConfig holds the transport settings for direct sharing.
-//
-// Nothing here can turn the data channel off. Mod bytes always travel
-// end-to-end over DTLS; a STUN server is used, when one is configured or by
-// default, only to discover which address the peer is reachable at.
+// P2PSharingConfig holds the transport settings for direct sharing. Nothing here can
+// turn the data channel off: bytes always travel end-to-end over DTLS, and a STUN
+// server only discovers which address the peer is reachable at.
 type P2PSharingConfig struct {
 	// STUNServers are consulted before the built-in default. A STUN server
 	// learns the client's public address and nothing else about the transfer.
 	STUNServers []string `json:"stun_servers,omitempty"`
-	// TURNRelays are relay servers to fall back on when no direct path can be
-	// found. A relay forwards every byte, so this is opt-in and never filled
-	// in by default.
+	// TURNRelays fall back when no direct path exists. A relay forwards every
+	// byte, so this is opt-in and never filled in by default.
 	TURNRelays []string `json:"turn_relays,omitempty"`
 	// ExpiryDays makes every new share expire after this many days. Zero means
 	// a share is permanent unless the sender says otherwise on the command.
@@ -183,11 +173,8 @@ type SourceConfig struct {
 
 // AutoUpdateConfig controls background update checks.
 //
-// NotifyOnUpdate defaults to true in DefaultConfig, and ApplyDefaults leaves it
-// alone: JSON cannot tell an absent boolean from an explicit false, so forcing
-// it would make the preference impossible to switch off. A hand-written config
-// that omits the key therefore reads as false, while the file the manager writes
-// itself carries the default. See ApplyDefaults.
+// NotifyOnUpdate defaults to true in DefaultConfig and ApplyDefaults leaves it alone:
+// JSON cannot tell an absent boolean from an explicit false. See ApplyDefaults.
 type AutoUpdateConfig struct {
 	LastCheck             string `json:"last_check,omitempty"`
 	CheckIntervalHours    int    `json:"check_interval_hours"`
@@ -209,10 +196,8 @@ type AdvancedConfig struct {
 	EnableExperimental bool   `json:"enable_experimental"`
 }
 
-// LoggingConfig is the persisted half of the logging settings. It deliberately
-// does not carry the process-only switches (console mirroring, redaction list,
-// the --log-dir override): those are command-line concerns, so they cannot
-// silently become permanent preferences just because a flag was used once.
+// LoggingConfig is the persisted half of the logging settings. It carries none of the
+// process-only switches, so a flag used once cannot become a permanent preference.
 type LoggingConfig struct {
 	Level      string   `json:"level"`
 	Directory  string   `json:"directory,omitempty"`
@@ -272,16 +257,13 @@ func DefaultConfig() Config {
 	}
 }
 
-// ApplyDefaults fills unset fields from DefaultConfig and repairs nonsensical
-// values, so the rest of the codebase can trust the config it is handed.
-// Explicit user values always win; only zero values are replaced, except for
-// fields where zero is never meaningful (see the max calls below).
+// ApplyDefaults fills unset fields from DefaultConfig and repairs nonsensical values,
+// so the rest of the codebase can trust the config it is handed. Explicit user values
+// always win.
 //
-// Booleans whose default is true are the awkward case: JSON cannot distinguish
-// an absent key from an explicit false, so they are read exactly as written.
-// AutoUpdate.NotifyOnUpdate is the only such field — forcing it would make the
-// preference impossible to turn off, and leaving it alone means a hand-written
-// file that omits it behaves as false rather than as the DefaultConfig value.
+// AutoUpdate.NotifyOnUpdate is the exception: JSON cannot distinguish an absent key
+// from an explicit false, so it is read exactly as written and a hand-written file
+// that omits it behaves as false.
 func (c *Config) ApplyDefaults() {
 	if c == nil {
 		return
@@ -293,10 +275,8 @@ func (c *Config) ApplyDefaults() {
 		c.Games = map[string]GameSettings{}
 	}
 
-	// Entries in Games are taken exactly as written: JSON cannot tell an
-	// absent entry from one spelled out as {}, so a present-but-zero block is
-	// a deliberate "no path, auto-detect off", not an unset one. Defaults for
-	// an unconfigured game come from ActiveSettings/GameSettingsFor instead.
+	// JSON cannot tell an absent Games entry from one spelled {}, so a
+	// present-but-zero block is deliberate, not unset.
 
 	if c.Storage.BackupRetentionDays <= 0 {
 		c.Storage.BackupRetentionDays = d.Storage.BackupRetentionDays
@@ -314,9 +294,8 @@ func (c *Config) ApplyDefaults() {
 		c.Cache.VerifyHashes = true
 	}
 
-	// A negative expiry would make every generated link dead on arrival, so it
-	// is repaired to the default. Zero is meaningful here and means "never
-	// expires", which is why it is not repaired.
+	// A negative expiry would make every link dead on arrival. Zero means
+	// "never expires", so it is left alone.
 	if c.CloudSharing.ShareExpiryDays < 0 {
 		c.CloudSharing.ShareExpiryDays = d.CloudSharing.ShareExpiryDays
 	}
@@ -378,16 +357,11 @@ func (c *Config) ApplyDefaults() {
 
 // SourceConfigFor returns the configuration for sourceID and whether it exists.
 //
-// A blank id names no source and always reports absent. The check comes first
-// because a map written by hand can hold a blank key, and answering "here is the
-// configuration for ”" would let a nonsense key masquerade as a real source.
-//
-// The exact key wins next. Failing that the keys are compared case-insensitively,
-// because these keys come from a file the user is free to edit: a config naming
-// "GitHub" describes the same source as "github", and reporting it as absent
-// would leave the user with a token they can see in their config that the
-// manager never reads. The comparison trims surrounding whitespace for the same
-// reason. A nil receiver or a nil map reports absent.
+// A blank id names no source and always reports absent, or a hand-written blank key
+// would masquerade as a real source. Otherwise the exact key wins, then a trimmed
+// case-insensitive match: these keys come from a file the user edits, and reporting
+// a "GitHub" block as absent would strand a token they can see. A nil receiver or a
+// nil map reports absent.
 func (c *Config) SourceConfigFor(sourceID string) (SourceConfig, bool) {
 	if c == nil || c.Sources == nil {
 		return SourceConfig{}, false
@@ -401,15 +375,12 @@ func (c *Config) SourceConfigFor(sourceID string) (SourceConfig, bool) {
 	return c.Sources[key], true
 }
 
-// SourceKey returns the key under which sourceID's block is stored, and reports
-// whether there is one.
+// SourceKey returns the key sourceID's block is stored under, and reports whether there
+// is one.
 //
-// SourceConfigFor has to fold ids because it reads a file the user may have
-// edited by hand; a writer needs the same answer for the opposite reason. A
-// settings screen that sends "Nexus" must land in the block already called
-// "nexus" rather than creating a second one beside it — and a second block is
-// not a harmless duplicate, because the two disagree about Enabled and the
-// disabled one wins.
+// A writer folds ids for the same reason SourceConfigFor does: a settings screen
+// sending "Nexus" must land in the block called "nexus" rather than create a second
+// one, and two blocks that disagree about Enabled do not resolve harmlessly.
 func (c *Config) SourceKey(sourceID string) (string, bool) {
 	if c == nil || c.Sources == nil {
 		return "", false
@@ -433,12 +404,8 @@ func (c *Config) SourceKey(sourceID string) (string, bool) {
 	return "", false
 }
 
-// SetSource stores the configuration for sourceID.
-//
-// An existing block is updated under the key it already has, for the reason
-// SourceKey gives. A new block is written under the folded id, because ids are
-// compared case-insensitively everywhere else and "Nexus" would otherwise be a
-// key nothing looks up.
+// SetSource stores the configuration for sourceID under the key it already has, per
+// SourceKey. A new block is written under the folded id, or nothing would look it up.
 func (c *Config) SetSource(sourceID string, sc SourceConfig) {
 	if c == nil {
 		return
@@ -460,11 +427,8 @@ func (c *Config) SetSource(sourceID string, sc SourceConfig) {
 	c.Sources[key] = sc
 }
 
-// Clone returns a deep copy, so a caller that wants to adjust a candidate
-// configuration (a "try these settings" flow, or ApplyDefaults before saving)
-// cannot accidentally mutate the live one through the Sources map.
-//
-// A nil receiver clones to nil: it mirrors the nil-safe methods above.
+// Clone returns a deep copy so a candidate configuration cannot mutate the live one
+// through the Sources map. A nil receiver clones to nil, mirroring the methods above.
 func (c *Config) Clone() *Config {
 	if c == nil {
 		return nil
@@ -502,9 +466,7 @@ func (c *Config) Clone() *Config {
 		}
 	}
 
-	// Redact is a slice, so a shallow copy would let a caller editing the clone
-	// edit the live configuration's list too. Every other block is value-only,
-	// which is why this one line is the whole of the deep copy here.
+	// Redact is a slice: a shallow copy would let a caller edit the live config.
 	if c.Logging.Redact != nil {
 		out.Logging.Redact = append([]string(nil), c.Logging.Redact...)
 	}
@@ -537,10 +499,9 @@ func (c *Config) Clone() *Config {
 	return &out
 }
 
-// GameSettingsFor returns the stored settings for a game id and whether an
-// entry exists. A config that has never touched the game reports the defaults
-// with ok=false, so a caller can tell "not configured" from "configured
-// empty".
+// GameSettingsFor returns the stored settings for a game id and whether an entry exists.
+// An untouched game reports the defaults with ok=false, so "not configured" and
+// "configured empty" stay distinguishable.
 func (c *Config) GameSettingsFor(gameID string) (GameSettings, bool) {
 	if c == nil || c.Games == nil {
 		return GameSettings{}, false
@@ -565,10 +526,8 @@ func (c *Config) SetGameSettings(gameID string, settings GameSettings) {
 	c.Games[gameID] = settings
 }
 
-// ActiveSettings returns the settings of the active game, or the defaults
-// when no entry exists yet. ActiveGame=="" is resolved by the composition
-// root against the registry; until then it names no game and the defaults
-// apply.
+// ActiveSettings returns the active game's settings, or the defaults when no entry exists
+// yet. An unresolved ActiveGame names no game, so the defaults apply.
 func (c *Config) ActiveSettings() GameSettings {
 	settings, ok := c.GameSettingsFor(c.activeGameID())
 	if !ok {
@@ -578,10 +537,9 @@ func (c *Config) ActiveSettings() GameSettings {
 	return settings
 }
 
-// UpdateActiveSettings mutates the active game's settings block in place,
-// creating the entry from the defaults when the configuration has none yet.
-// A map element cannot be addressed, so mutation goes through this callback
-// and lands back in the map in one step.
+// UpdateActiveSettings mutates the active game's settings block in place, creating it
+// from the defaults when absent. A map element cannot be addressed, so mutation goes
+// through this callback and lands back in the map in one step.
 func (c *Config) UpdateActiveSettings(fn func(*GameSettings)) {
 	if c == nil || fn == nil {
 		return
@@ -601,9 +559,8 @@ func (c *Config) UpdateActiveSettings(fn func(*GameSettings)) {
 	c.Games[id] = settings
 }
 
-// activeGameID is the key the active game's settings live under. The empty
-// id is kept as a real key so an unresolved configuration still round-trips
-// its values; the composition root replaces it once the registry is known.
+// activeGameID is the key the active game's settings live under. The empty id is kept
+// as a real key so an unresolved configuration still round-trips its values.
 func (c *Config) activeGameID() string {
 	if c == nil {
 		return ""
@@ -612,10 +569,8 @@ func (c *Config) activeGameID() string {
 	return c.ActiveGame
 }
 
-// defaultedPermissions fills a permissions block that was never configured:
-// an entirely zero block cannot be distinguished from an absent one in JSON,
-// so it is replaced wholesale by the built-in defaults. A block with any field
-// set — even one that only turns a capability off — is kept as written.
+// defaultedPermissions replaces an entirely zero block with the built-in defaults: in
+// JSON it cannot be told from an absent one. Any block with a field set is kept.
 func defaultedPermissions(p HooksPermissionsConfig) HooksPermissionsConfig {
 	if p.Default == (ScriptPermissions{}) {
 		p.Default = DefaultScriptPermissions()

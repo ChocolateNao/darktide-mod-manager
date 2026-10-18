@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDetectGameFindsTheConfiguredInstallation.
 func TestDetectGameFindsTheConfiguredInstallation(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -207,9 +206,7 @@ func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 
 	assert.Equal(t, w.modsDir, path, "GetModsPath(nil) = %q, want %q", path, w.modsDir)
 
-	// An explicit installation is answered from that installation rather than
-	// from the configuration, which is what a settings screen comparing two
-	// candidates needs.
+	// An explicit installation wins over the configuration.
 	other, err := app.Game.ValidateGamePath(w.gameDir)
 	require.NoError(t, err, "ValidateGamePath")
 

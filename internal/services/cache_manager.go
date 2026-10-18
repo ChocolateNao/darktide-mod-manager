@@ -17,10 +17,9 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// CacheStore is the slice of storage.Cache the manager depends on. Keeping it an
-// interface here means CacheManager can be tested against a fake that counts
-// calls and simulates I/O failures, while production wiring passes the real
-// *storage.Cache.
+// CacheStore is the slice of storage.Cache the manager depends on, so
+// CacheManager can be tested against a fake that counts calls and simulates I/O
+// failures while production wiring passes the real *storage.Cache.
 type CacheStore interface {
 	RootPath() string
 	Index() storage.CacheIndex
@@ -48,9 +47,7 @@ const (
 
 // CacheManager owns the download cache policy: how a mod's archive is keyed,
 // when a cached copy is reused, when it is dropped, and how much disk the cache
-// may use.
-//
-// The heavy lifting (atomic blob writes, refcounted rows) lives in
+// may use. The heavy lifting (atomic blob writes, refcounted rows) lives in
 // storage.Cache; this type owns the decisions.
 type CacheManager struct {
 	cache    CacheStore
@@ -63,11 +60,9 @@ type CacheManager struct {
 	mu       sync.Mutex
 }
 
-// Downloader fetches a mod's archive into a file the caller owns.
-//
-// It is a narrow interface rather than domain.ModSource so the cache manager can
-// be tested without a source, and so a future non-HTTP source (a local folder,
-// an S3 bucket) plugs in here without touching the cache policy.
+// Downloader fetches a mod's archive into a file the caller owns. It is a narrow
+// interface rather than domain.ModSource so the cache manager can be tested
+// without a source, and so a non-HTTP source plugs in without touching policy.
 type Downloader interface {
 	// Download writes the mod's archive to destPath and returns the path it
 	// actually wrote. destPath's parent directory already exists and the file
@@ -101,11 +96,9 @@ func NewCacheManager(deps CacheManagerDeps) (*CacheManager, error) {
 	}
 
 	cfg := deps.Config
-	// Normalised here rather than through (*domain.Config).ApplyDefaults because
-	// a CacheManager can be built from a bare CacheConfig in a test or a
-	// library embedder that has no whole-config object to hand over. Hash
-	// verification defaults on: silently skipping integrity checks because a
-	// struct field was left zero is the wrong failure direction.
+	// Normalised here because a CacheManager can be built from a bare CacheConfig.
+	// Hash verification defaults on: a zero field must not silently skip integrity
+	// checks.
 	if cfg.MaxSizeGB <= 0 {
 		cfg.MaxSizeGB = defaultMaxSizeGB
 	}
@@ -146,13 +139,11 @@ func (c *CacheManager) Config() domain.CacheConfig { return c.config }
 // RootPath is where the cache lives on disk.
 func (c *CacheManager) RootPath() string { return c.cache.RootPath() }
 
-// CacheKey derives the cache key for a mod.
-//
-// The key is the SHA256 of the download location plus the version, so the same
-// bytes fetched from a different URL still collide (deduplication) while a new
-// version of the same mod gets its own entry. The version is always part of the
-// input even when empty: hashing "url|" and "url" together would let a mod
-// without a version reuse an entry written for one that has.
+// CacheKey derives the cache key for a mod: the SHA256 of the download location
+// plus the version, so the same bytes fetched from two URLs deduplicate while a
+// new version gets its own entry. The version is always part of the input even
+// when empty, because hashing "url|" and "url" together would let an unversioned
+// mod reuse an entry written for a versioned one.
 func CacheKey(mod *domain.Mod) (string, error) {
 	if mod == nil {
 		return "", appErrors.New(
@@ -178,17 +169,12 @@ func CacheKey(mod *domain.Mod) (string, error) {
 	return h, nil
 }
 
-// DownloadLocation extracts the source-relative locator a mod is fetched from.
-//
-// Sources store this in SourceData under "download_url". A source that resolves a
-// URL later (a Nexus file id, a Vortex download id) stores an opaque locator
-// instead, and this must accept that without guessing at a scheme.
-//
-// The URL-shaped keys come first because a source that publishes a URL always
-// wants to be cached by URL. "local_path" comes last and names the payload of a
-// source that has no URL at all — the bundled local source, whose mods live in a
-// folder the user chose. Without it that source could be listed, searched and
-// described but never installed, because the cache key is derived from here.
+// DownloadLocation extracts the source-relative locator a mod is fetched from,
+// stored in SourceData. The URL-shaped keys come first because a source that
+// publishes a URL always wants to be cached by URL; "local_path" comes last and
+// names the payload of a source with no URL at all, whose mods live in a folder
+// the user chose. Without it that source could be listed and described but never
+// installed, since the cache key is derived from here.
 func DownloadLocation(mod *domain.Mod) string {
 	if mod == nil {
 		return ""
@@ -206,11 +192,9 @@ func DownloadLocation(mod *domain.Mod) string {
 }
 
 // GetOrDownload returns the path to a local copy of the mod's archive,
-// downloading it only when the cache cannot satisfy the request.
-//
-// A cached blob whose checksum no longer matches is discarded and re-fetched
-// rather than returned: handing back a corrupt archive would make the install
-// fail with a much less obvious error later, or worse, install broken files.
+// downloading it only when the cache cannot satisfy the request. A cached blob
+// whose checksum no longer matches is discarded and re-fetched rather than
+// returned, since handing back a corrupt archive would install broken files.
 func (c *CacheManager) GetOrDownload(ctx context.Context, mod *domain.Mod) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -225,14 +209,12 @@ func (c *CacheManager) GetOrDownload(ctx context.Context, mod *domain.Mod) (stri
 		return "", err
 	}
 
-	// Fast path: a usable blob is already there.
 	if path, ok, err := c.cached(ctx, key, mod); err != nil {
 		return "", err
 	} else if ok {
 		return path, nil
 	}
 
-	// Slow path: join (or start) the in-flight download for this key.
 	return c.downloadOrJoin(ctx, key, mod)
 }
 
@@ -245,10 +227,8 @@ func (c *CacheManager) cached(
 	entry, err := c.cache.Entry(ctx, key)
 	if err != nil {
 		if appErrors.IsAppError(err, appErrors.ErrCodeCacheMiss) {
-			// Nothing recorded for this key. Notably this path must not write:
-			// a caller that merely missed the cache would otherwise delete the row
-			// another goroutine had just written, and two installs of the same mod
-			// would each force the other to re-download.
+			// Nothing recorded for this key, and this path must not write: a caller
+			// that merely missed would delete the row another goroutine just wrote.
 			return "", false, nil
 		}
 
@@ -261,9 +241,7 @@ func (c *CacheManager) cached(
 	}
 
 	if !ok {
-		// A row whose file has been deleted behind our back. Dropping the row is
-		// safe here because the caller is the one who then downloads, and the
-		// download re-inserts it.
+		// A row whose file vanished: the caller downloads next, which re-inserts it.
 		if err := c.cache.Remove(ctx, key); err != nil {
 			return "", false, err
 		}
@@ -280,10 +258,8 @@ func (c *CacheManager) cached(
 			return "", false, err
 		}
 	}
-	// A blob whose size no longer matches the index row is not reusable: that
-	// is the truncated-download and partial-write case. The key itself is
-	// derived from the download location, so it cannot be used to check the
-	// bytes; the source's own checksum (below) is what proves the content.
+	// A size mismatch means a truncated download, and the key comes from the
+	// location rather than the bytes, so the source's checksum is the real proof.
 	if corrupt, err := sizeMismatch(ctx, c.cache, key, path); err != nil {
 		return "", false, err
 	} else if corrupt {
@@ -296,9 +272,8 @@ func (c *CacheManager) cached(
 
 	if c.download != nil && c.config.VerifyHashes {
 		if err := c.download.Verify(ctx, mod, path); err != nil {
-			// The source's own expectation disagrees with what we hold. It may
-			// just be a re-release under the same URL, so the blob is dropped
-			// and re-fetched rather than trusted.
+			// The source expects different bytes, so drop and re-fetch rather than
+			// trust a possible re-release under the same URL.
 			if !appErrors.IsAppError(err, appErrors.ErrCodeIntegrity) {
 				return "", false, appErrors.Wrap(err, appErrors.ErrCodeIntegrity,
 					"cached copy of mod %q failed verification", mod.ID)
@@ -327,9 +302,8 @@ func (c *CacheManager) fetch(ctx context.Context, key string, mod *domain.Mod) (
 	if inflight, ok := c.inflight[key]; ok {
 		inflight.waiters++
 		c.mu.Unlock()
-		// Waiting on the other caller rather than starting a second download.
-		// The wait is not context-aware on purpose: abandoning the transfer
-		// would leave a half-written blob the other caller is still writing.
+		// The wait is deliberately not context-aware: abandoning it would strand a
+		// half-written blob the other caller is still writing.
 		<-inflight.done
 
 		return inflight.path, inflight.err
@@ -349,12 +323,11 @@ func (c *CacheManager) fetch(ctx context.Context, key string, mod *domain.Mod) (
 	return job.path, job.err
 }
 
-// downloadOrJoin runs the transfer unless the cache was filled between the caller's
-// miss and this goroutine reaching the lock.
-//
-// Without this re-check, callers queued behind a slow transfer all miss, all
-// arrive at the lock after the winner has already finished, and each starts its
-// own download — the exact thundering herd the in-flight map exists to prevent.
+// downloadOrJoin runs the transfer unless the cache was filled between the
+// caller's miss and this goroutine reaching the lock. Without the re-check,
+// callers queued behind a slow transfer would all arrive at the lock after the
+// winner finished and each start its own download — the thundering herd the
+// in-flight map exists to prevent.
 func (c *CacheManager) downloadOrJoin(
 	ctx context.Context,
 	key string,
@@ -416,14 +389,12 @@ func (c *CacheManager) downloadOnce(
 		)
 	}
 
-	// The downloader may write somewhere else entirely (a source that names its
-	// own temp file), so the returned path is what gets validated and moved,
-	// and both it and the staging name are cleaned up on failure.
+	// A downloader may write somewhere else entirely, so the returned path is what
+	// gets validated and moved.
 	written, err := c.download.Download(ctx, mod, staging)
 	if err != nil {
 		// The partial file is removed rather than left behind: the next attempt
-		// would find it and either resume into a corrupt file or fail
-		// confusingly.
+		// would find it and either resume into a corrupt file or fail oddly.
 		discardStaging(staging, written)
 		return "", wrapDownloadError(mod, err)
 	}
@@ -432,12 +403,8 @@ func (c *CacheManager) downloadOnce(
 		written = staging
 	}
 
-	// Some sources describe their payload as a folder rather than as one file —
-	// a local mod folder is the ordinary case, since a folder is what a person
-	// actually has. The cache's contract is one blob file per key, and the
-	// installer reads archives, so the folder is zipped here. Enforcing it here
-	// rather than in one source means the next source that returns a folder
-	// works without being taught about it.
+	// A folder payload is zipped here, not in each source: the cache holds one blob
+	// per key, and folding it in means the next folder-returning source works.
 	written, err = c.normaliseStaged(ctx, mod, written)
 	if err != nil {
 		discardStaging(staging, written)
@@ -455,8 +422,7 @@ func (c *CacheManager) downloadOnce(
 		return "", err
 	}
 	// A blob with no index row is invisible to every later lookup and to
-	// pruning, so the row is written before the call reports success. The
-	// acquire that follows takes the reference the caller is about to hold.
+	// pruning, so the row is written before the call reports success.
 	if err := c.cache.Index().Put(
 		ctx,
 		&storage.CacheEntry{Hash: key, Path: dest, SizeBytes: size},
@@ -475,9 +441,8 @@ func (c *CacheManager) downloadOnce(
 }
 
 // discardStaging removes whichever of the two paths the downloader actually
-// wrote. A no-op on the empty string, and it never touches a path that is not
-// inside the cache: the downloader is external code and its choice of temp file
-// is not ours to police.
+// wrote. It never touches a path outside the cache: the downloader is external
+// code and its choice of temp file is not ours to police.
 func discardStaging(paths ...string) {
 	for _, p := range paths {
 		if strings.TrimSpace(p) == "" {
@@ -489,17 +454,15 @@ func discardStaging(paths ...string) {
 		}
 
 		// A folder-shaped download that failed leaves a directory behind, and a
-		// plain Remove cannot clear one. Nothing downstream reads staging, so
-		// removing the tree is the only way to stop it accumulating.
+		// plain Remove cannot clear one.
 		_ = os.RemoveAll(p)
 	}
 }
 
-// installBlob moves src onto dst, replacing whatever is there.
-//
-// The destination is removed first because Windows cannot rename onto an
-// existing file. That is safe here: dest is keyed by the cache key, so it only
-// ever holds bytes for this same download.
+// installBlob moves src onto dst, replacing whatever is there. The destination
+// is removed first because Windows cannot rename onto an existing file; that is
+// safe because dest is keyed by the cache key and only holds bytes for this same
+// download.
 func installBlob(src, dst string) error {
 	if src == dst {
 		return nil
@@ -521,14 +484,10 @@ func installBlob(src, dst string) error {
 }
 
 // normaliseStaged turns whatever a source wrote into the single file the cache
-// promises, and returns the path to it.
-//
-// A source that writes one file is already done, and the same path comes back so
-// the caller keeps working on exactly what it had. A source that writes a folder
-// gets it zipped next to the staging path — next to, so installBlob's rename stays
-// on one filesystem and therefore atomic — and the folder is then removed, because
-// leaving it would leak a temporary copy of somebody's mod folder into the temp
-// directory for as long as the process lives.
+// promises, and returns the path to it. A folder is zipped next to the staging
+// path — next to, so installBlob's rename stays on one filesystem and stays
+// atomic — and then removed, since leaving it would leak a temporary copy of a
+// mod folder for the life of the process.
 func (c *CacheManager) normaliseStaged(
 	ctx context.Context,
 	mod *domain.Mod,
@@ -537,8 +496,8 @@ func (c *CacheManager) normaliseStaged(
 	info, err := os.Stat(written)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Nothing was written at all; validateStaged reports that in terms
-			// of the mod, which is what the user needs to read.
+			// validateStaged reports this in terms of the mod, which is what the
+			// user needs to read.
 			return written, nil
 		}
 
@@ -561,8 +520,7 @@ func (c *CacheManager) normaliseStaged(
 	}
 
 	if err := os.RemoveAll(written); err != nil {
-		// The archive is good; a leftover folder is untidy rather than broken.
-		// It is logged because it accumulates and nobody else would notice.
+		// The archive is good; a leftover folder accumulates unnoticed, so it is logged.
 		c.log.Warn().
 			Str("op", "cache-download").
 			Str("mod", modLabel(mod)).
@@ -582,11 +540,8 @@ func (c *CacheManager) normaliseStaged(
 }
 
 // packFolder zips a folder a source downloaded, naming the mod in every message
-// it produces.
-//
-// The mod is named here rather than only by the caller because these are the
-// messages a user sees when their download went wrong, and "no files to pack"
-// tells them nothing about which mod to go and look at.
+// it produces: these are the messages a user sees when their download went
+// wrong, and "no files to pack" tells them nothing about which mod.
 func packFolder(ctx context.Context, root, dest, label string) (*storage.PackResult, error) {
 	entries, err := storage.CollectTree(root)
 	if err != nil {
@@ -614,11 +569,10 @@ func packFolder(ctx context.Context, root, dest, label string) (*storage.PackRes
 }
 
 // validateStaged checks a freshly downloaded file before it becomes the cached
-// blob, so a corrupt archive is never reachable through the cache index.
-//
-// An empty file is always rejected: a "successful" download of zero bytes means
-// the server answered with an error page the source did not check for, or the
-// connection dropped in a way the source treated as EOF.
+// blob, so a corrupt archive is never reachable through the cache index. An
+// empty file is always rejected: a "successful" download of zero bytes means the
+// server answered with an error page, or the connection dropped where the source
+// treated it as EOF.
 func (c *CacheManager) validateStaged(
 	ctx context.Context,
 	mod *domain.Mod,
@@ -692,13 +646,10 @@ func (c *CacheManager) Store(ctx context.Context, hash string, src io.Reader) (s
 	return entry.Path, nil
 }
 
-// Verify checks that a file against the checksum the source published for it.
-//
-// Unlike the internal size check this is a real content check, so it is what
-// backs the "verify hashes" configuration option: a mod that declares a SHA256
-// has its archive compared against it, and a mismatch is ErrCodeIntegrity. A
-// mod with no declared checksum passes, because there is nothing to compare
-// against and inventing one would be worse than skipping the check.
+// Verify checks that a file against the checksum the source published for it,
+// which is what backs the "verify hashes" option. A mod with no declared
+// checksum passes: there is nothing to compare against, and inventing one would
+// be worse than skipping the check.
 func (c *CacheManager) Verify(ctx context.Context, hash, path string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -754,20 +705,15 @@ func (c *CacheManager) Verify(ctx context.Context, hash, path string) error {
 }
 
 // sizeMismatch reports whether the blob at path no longer matches the size its
-// index row recorded.
-//
-// This is a cheap structural check, not a content check: the cache key is
-// derived from the download location rather than from the bytes, so comparing
-// hashes would be meaningless. A changed size still catches the realistic
-// failures — a truncated download, a partial write left by a crash, or a file
-// replaced by something else entirely — without reading the whole archive on
-// every cache hit.
+// index row recorded. This is a cheap structural check, not a content check: the
+// cache key is derived from the download location rather than from the bytes, so
+// comparing hashes would be meaningless. A changed size still catches the
+// realistic failures without reading the whole archive on every cache hit.
 func sizeMismatch(ctx context.Context, cache CacheStore, key, path string) (bool, error) {
 	entry, err := cache.Entry(ctx, key)
 	if err != nil {
 		if appErrors.IsAppError(err, appErrors.ErrCodeCacheMiss) {
-			// No row means no recorded size to disagree with; the caller has
-			// already confirmed the file exists.
+			// No row means no recorded size to disagree with.
 			return false, nil
 		}
 
@@ -787,9 +733,8 @@ func sizeMismatch(ctx context.Context, cache CacheStore, key, path string) (bool
 }
 
 // Release drops one reference to a cached blob, as the caller finishes with it.
-// It is separate from GetOrDownload because the reference outlives the call
-// that took it: the extracted mod on disk keeps referencing the archive until
-// the mod is uninstalled.
+// It is separate from GetOrDownload because the reference outlives the call that
+// took it: the extracted mod keeps referencing the archive until uninstall.
 func (c *CacheManager) Release(ctx context.Context, hash string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -810,13 +755,11 @@ func (c *CacheManager) Remove(ctx context.Context, hash string) error {
 	return c.cache.Remove(ctx, hash)
 }
 
-// Prune enforces the size and age limits and reports what it freed.
-//
-// Entries are considered least-recently-accessed first, which is the whole
-// point of tracking last_access: the archive someone just installed is the last
-// thing that should go. Age is checked before size so a single ancient archive
-// is removed even when the cache is well under its size limit — an archive from
-// two years ago is stale regardless of how small it is.
+// Prune enforces the size and age limits and reports what it freed. Entries go
+// least-recently-accessed first, which is the point of tracking last_access: the
+// archive someone just installed is the last thing that should disappear. Age is
+// checked before size so a single ancient archive goes even when the cache is
+// well under its limit.
 func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -826,13 +769,13 @@ func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) err
 		return canceledError(err)
 	}
 	// Zero or negative means "no limit on this axis", which is how an operator
-	// disables half of the policy without disabling all of it.
+	// disables half the policy without disabling all of it.
 	entries, err := c.cache.Index().List(ctx)
 	if err != nil {
 		return err
 	}
-	// List already orders by last access ascending, oldest first, but sorting
-	// here too keeps the guarantee local to the code that depends on it.
+	// List already orders by last access, oldest first; sorting here keeps the
+	// guarantee local to the code that depends on it.
 	sort.SliceStable(
 		entries,
 		func(i, j int) bool { return entries[i].LastAccess.Before(entries[j].LastAccess) },
@@ -864,8 +807,7 @@ func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) err
 		}
 
 		if err := c.cache.Remove(ctx, e.Hash); err != nil {
-			// One undeletable entry must not stop the sweep; the next prune
-			// will try it again.
+			// One undeletable entry must not stop the sweep.
 			continue
 		}
 
@@ -915,8 +857,7 @@ func (c *CacheManager) GetCacheInfo(ctx context.Context) (domain.CacheInfo, erro
 	for _, e := range entries {
 		info.TotalSize += e.SizeBytes
 		if e.LastAccess.IsZero() {
-			// An entry with no timestamp cannot order against the others, so it
-			// is skipped rather than making the bounds meaningless.
+			// An entry with no timestamp cannot order against the others.
 			continue
 		}
 
@@ -938,11 +879,9 @@ func (c *CacheManager) GetCacheInfo(ctx context.Context) (domain.CacheInfo, erro
 	return info, nil
 }
 
-// ClearCache empties the cache.
-//
-// Referenced blobs are kept: an installed mod may still be extracting from one,
-// and deleting it mid-install produces a half-written mod folder. Stale rows are
-// dropped so the index does not accumulate entries that no longer exist.
+// ClearCache empties the cache. Referenced blobs are kept: an installed mod may
+// still be extracting from one, and deleting it mid-install produces a half-written
+// mod folder.
 func (c *CacheManager) ClearCache(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()

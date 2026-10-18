@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// tokenServer is a stand-in for a provider's token endpoint. It records what it
-// was asked and answers with whatever the test wants it to say.
+// tokenServer is a stand-in for a provider's token endpoint that answers with
+// whatever the test wants it to say.
 type tokenServer struct {
 	server   *httptest.Server
 	token    string
@@ -142,8 +142,8 @@ func TestAccessFailsWithoutARefreshToken(t *testing.T) {
 
 func TestRefreshKeepsARefreshTokenTheProviderOmitted(t *testing.T) {
 	ts := newTokenServer(t)
-	// A response that omits the refresh token is the provider keeping the one
-	// it was already sent, not revoking it.
+	// A refresh response that omits the refresh token is the provider keeping the
+	// one it was already sent, not revoking it.
 	ts.body = `{"access_token":"next","expires_in":3600}`
 
 	s := ts.session()
@@ -272,8 +272,7 @@ func TestDomainSentinelChains(t *testing.T) {
 }
 
 func TestBasicAuthIsBase64Encoded(t *testing.T) {
-	// Guards the header a provider-decoding test would otherwise miss: the
-	// value is base64(user:pass), not the plain credential.
+	// The value is base64(user:pass), not the plain credential.
 	raw := "client-id:client-secret"
 	assert.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)),
 		basicAuth("client-id", "client-secret"))

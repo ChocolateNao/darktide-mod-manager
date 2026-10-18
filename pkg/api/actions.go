@@ -21,12 +21,9 @@ type (
 	GameActionOption = domain.ActionOption
 )
 
-// actionsRunner returns the runner that executes actions.
-//
-// The runner is a separate dependency from the registry on purpose: listing an
-// action needs nothing but a table lookup, while running one needs a game
-// locator, an opener and a command runner. A client built without those — a
-// test, or a CLI path that only reads — can still list actions.
+// actionsRunner returns the runner that executes actions. Separate from the
+// registry on purpose: listing needs only a table lookup, running needs a game
+// locator, an opener and a command runner.
 func (c *Client) actionsRunner() (*actions.Runner, error) {
 	if c == nil {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "the client is not initialised")
@@ -44,9 +41,8 @@ func (c *Client) actionsRunner() (*actions.Runner, error) {
 	return c.deps.ActionRunner, nil
 }
 
-// actionRegistry returns the registry of code-defined actions, or an empty
-// registry so listing actions is never an error: a build that ships no actions
-// answers with none rather than refusing the question.
+// actionRegistry returns the registry of code-defined actions, or an empty one so
+// listing actions is never an error: a build shipping no actions answers none.
 func (c *Client) actionRegistry() (*actions.Registry, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -59,10 +55,8 @@ func (c *Client) actionRegistry() (*actions.Registry, error) {
 	return c.deps.Actions, nil
 }
 
-// ListGameActions returns every action the given game defines, sorted by id.
-//
-// Passing the empty string lists the actions of every registered game, which is
-// what the CLI's `actions list` does when the user has not named a game.
+// ListGameActions returns every action the given game defines, sorted by id. The
+// empty string lists every registered game's, as `actions list` does unprompted.
 func (c *Client) ListGameActions(gameID string) ([]domain.GameAction, error) {
 	registry, err := c.actionRegistry()
 	if err != nil {
@@ -76,11 +70,9 @@ func (c *Client) ListGameActions(gameID string) ([]domain.GameAction, error) {
 	return registry.ListByGame(gameID), nil
 }
 
-// ListAvailableGameActions returns the actions of a game that can run on the
-// given platform — the set a menu should offer, since an action the machine
-// cannot perform is worse than no entry at all.
-//
-// An empty platform means the platform the manager is running on.
+// ListAvailableGameActions returns the actions of a game that can run on the given
+// platform — the set a menu should offer, since an action the machine cannot perform
+// is worse than no entry at all. An empty platform means the current one.
 func (c *Client) ListAvailableGameActions(
 	gameID string,
 	platform domain.Platform,
@@ -129,10 +121,8 @@ func (c *Client) GetGameAction(actionID domain.ActionID) (*domain.GameAction, er
 	return &action, nil
 }
 
-// ExecuteGameAction runs an action and returns what it produced.
-//
-// Args are keyed by option name; see GameActionOption for the names and types a
-// given action accepts. Values are coerced to the declared type, so a frontend
+// ExecuteGameAction runs an action and returns what it produced. Args are keyed by
+// option name (see GameActionOption) and coerced to the declared type, so a frontend
 // may send a form's strings without converting them itself.
 func (c *Client) ExecuteGameAction(
 	ctx context.Context,

@@ -51,11 +51,10 @@ const (
 	ErrCodeSourceExists      Code = "SOURCE_EXISTS"
 	ErrCodeSourceDisabled    Code = "SOURCE_DISABLED"
 
-	// ErrCodeSourceRejected is a request the source understood and refused: a 4xx
-	// that is not about the credential, the rate limit or a missing object. It is
-	// deliberately distinct from ErrCodeSourceUnavailable, which means the far end
-	// could not be reached or could not answer. Telling those apart is what keeps a
-	// retry loop from hammering a service that is healthy and refusing everything.
+	// ErrCodeSourceRejected is a request the source understood and refused: a 4xx that is
+	// neither credential, rate limit nor missing object. It is distinct from
+	// ErrCodeSourceUnavailable (the far end could not be reached or could not answer),
+	// which is what keeps a retry loop off a service that is healthy and refusing.
 	ErrCodeSourceRejected Code = "SOURCE_REJECTED"
 
 	ErrCodeAuthFailed     Code = "AUTH_FAILED"
@@ -70,21 +69,16 @@ const (
 
 	// Plugins.
 	ErrCodeRunnerNotFound Code = "RUNNER_NOT_FOUND"
-	// ErrCodeHookDenied is a hook script reaching for a capability its
-	// permissions do not grant. It is distinct from ErrCodeHookInvalid (the
-	// declaration itself is fine) and from ErrCodeHookFailed (the script ran,
-	// but refused): a denied capability is a policy outcome, and a mod author
-	// debugging one needs to see exactly that.
+	// ErrCodeHookDenied is a hook script reaching for a capability its permissions do not
+	// grant, as distinct from ErrCodeHookInvalid (the declaration is fine) and ErrCodeHookFailed
+	// (the script ran but refused): a denial is a policy outcome, and the author needs to see it.
 	ErrCodeHookDenied Code = "HOOK_DENIED"
 	ErrCodeDuplicate  Code = "DUPLICATE"
 
-	// Game actions.
-	//
-	// An action failing to *resolve* is an argument mistake and is reported as
-	// ErrCodeInvalidArgument; these three describe a real action that could not
-	// be looked up, is not offered on this platform, or was found and then
-	// failed. Splitting them is what lets a frontend disable the right button
-	// (unavailable) instead of showing an error after the user pressed it.
+	// Game actions. An action failing to *resolve* is an argument mistake and is reported as
+	// ErrCodeInvalidArgument; these three cover a real action that could not be looked up, is
+	// not offered on this platform, or was found and then failed. Splitting them is what lets a
+	// frontend disable the button instead of showing an error after the user pressed it.
 	ErrCodeActionNotFound    Code = "ACTION_NOT_FOUND"
 	ErrCodeActionUnavailable Code = "ACTION_UNAVAILABLE"
 	ErrCodeActionFailed      Code = "ACTION_FAILED"
@@ -129,14 +123,10 @@ func Wrap(err error, code Code, format string, args ...any) error {
 	return &AppError{Code: code, Message: fmt.Sprintf(format, args...), Cause: err}
 }
 
-// Annotate adds context to err the way Wrap does, except that it does not restate
-// a code err already carries.
-//
-// Wrapping an error with the code it already has prints that code twice —
-// "GAME_NOT_FOUND: could not locate an installation: GAME_NOT_FOUND: none found" —
-// which reads as two separate failures where there is one. In that case only the
-// inner *message* is borrowed. The cause is still attached, so errors.Is keeps
-// finding the original error and a caller can still walk the chain.
+// Annotate adds context to err the way Wrap does, except that it does not restate a code err
+// already carries. Wrapping an error with the code it already has prints that code twice, which
+// reads as two failures where there is one; only the inner *message* is borrowed. The cause is
+// still attached, so errors.Is keeps finding the original error.
 func Annotate(err error, code Code, format string, args ...any) error {
 	if err == nil {
 		return nil
@@ -179,13 +169,8 @@ func (e *AppError) Error() string {
 	if e.Cause == nil {
 		return fmt.Sprintf("%s: %s", e.Code, msg)
 	}
-	// A message that already ends with the cause's own rendering must not have
-	// it appended again. Wrapping with `"do %s", err` is a natural thing to write
-	// and was written in many places here; the cause is already carried, so
-	// appending it a second time prints it twice and makes every such error look
-	// like it is complaining twice about the same thing. Testing for the suffix
-	// rather than rewriting the call sites keeps the guard honest if one slips
-	// through: nothing is lost either way, because the text is still present.
+	// A message that already ends with the cause's rendering must not have it appended
+	// again — the cause is already carried, so appending twice prints it twice.
 	if cause := e.Cause.Error(); cause != "" && strings.HasSuffix(msg, cause) {
 		return fmt.Sprintf("%s: %s", e.Code, msg)
 	}

@@ -154,9 +154,8 @@ func TestShareStoreGetByLink(t *testing.T) {
 }
 
 func TestShareStoreSchemaHasGameIDColumn(t *testing.T) {
-	// The column is in the schema from the first version, so there is no
-	// migration to write later. A store built over any schema without it
-	// would fail here rather than silently losing the game id.
+	// The column is in the first schema, so there is no later migration: a store
+	// over an older one fails here rather than silently losing the game id.
 	db := openMemory(t)
 
 	rows, err := db.Query(`SELECT game_id FROM shares LIMIT 1`)

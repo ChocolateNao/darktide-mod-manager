@@ -11,17 +11,12 @@ import (
 // carries the settings parked under the provisional empty key across to it. It
 // reports whether it changed anything.
 //
-// An empty active_game is legal — it means "whichever game the registry lists
-// first" — but the id "" is useless as a map key. Settings written while it is
-// unresolved (the install path being the obvious one) land under a key that no
-// later lookup asks for, so the moment the user switches to another game and
-// back, the setting is gone. Resolving the id once, at the boundary where a
-// configuration enters the program, leaves every later reader, writer and lookup
-// working with a single concrete id.
-//
-// The carried-over entry is never allowed to clobber one the user has since
-// written for the real id: an explicit setting always wins over a provisional
-// one.
+// An empty active_game is legal — "whichever game the registry lists first" —
+// but "" is useless as a map key, so settings written while it is unresolved land
+// under a key no later lookup asks for. Resolving it once, where a configuration
+// enters the program, leaves every later reader with a single concrete id. The
+// carried-over entry never clobbers one the user has since written: an explicit
+// setting always wins over a provisional one.
 func ResolveActiveGame(cfg *domain.Config) bool {
 	if cfg == nil {
 		return false
@@ -31,9 +26,8 @@ func ResolveActiveGame(cfg *domain.Config) bool {
 	if !ok {
 		def, ok = games.Get(games.DefaultID())
 		if !ok {
-			// Nothing is registered, so there is no id to resolve to. Leaving
-			// the configuration untouched keeps the error the caller is about
-			// to get anyway ("active game is not registered") intact.
+			// Nothing is registered, so there is no id to resolve to; leaving the
+			// configuration untouched keeps the caller's own error intact.
 			return false
 		}
 	}
@@ -60,12 +54,9 @@ func ResolveActiveGame(cfg *domain.Config) bool {
 }
 
 // gameStore wraps a ConfigStore so that every configuration the program reads
-// or writes already names a registered game.
-//
-// Healing here rather than in each caller is what makes the fix hold: the game
-// locator, the settings API and the source registry all read through the same
-// store, so one write to `config set game.path` cannot leave a path stranded
-// under the empty key while another path resolves the id correctly.
+// or writes already names a registered game. Healing here rather than in each
+// caller is what makes the fix hold, because the game locator, the settings API
+// and the source registry all read through the same store.
 type gameStore struct {
 	inner ConfigStore
 }

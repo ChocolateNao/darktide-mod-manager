@@ -13,9 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEventTypesListsWhatTheManagerPublishes. A frontend binds to events by name,
-// so the list has to be the real one rather than a copy the caller could drift
-// away from.
+// TestEventTypesListsWhatTheManagerPublishes. A frontend binds by name, so the
+// list must be the real one rather than a copy the caller could drift from.
 func TestEventTypesListsWhatTheManagerPublishes(t *testing.T) {
 	got := New(Deps{}).EventTypes()
 
@@ -49,8 +48,7 @@ func TestEventTypesListsWhatTheManagerPublishes(t *testing.T) {
 }
 
 // TestHookTypesAndPhasesMatchTheDomain: the hook editor offers what the executor
-// can actually run, and offering a phase that does not exist means a script that
-// never fires.
+// can run, and offering a phase that does not exist means a script never fires.
 func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 	app := New(Deps{})
 	{
@@ -82,9 +80,8 @@ func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 	}
 }
 
-// TestSupportsHookTypeForEveryTypeThisBuildCanRun. Every type the domain considers
-// valid must have a runner, or offering it in the editor produces a mod that fails
-// every time it is enabled.
+// TestSupportsHookTypeForEveryTypeThisBuildCanRun. Every valid type must have a
+// runner, or offering it in the editor produces a mod that fails every time.
 func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	for _, hookType := range domain.ScriptLanguages() {
@@ -104,8 +101,7 @@ func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 }
 
 // TestHookTimeoutIsReportedInMilliseconds: the number is what a frontend hands to
-// setTimeout, and a duration would not survive the bridge as something JavaScript
-// recognises.
+// setTimeout, and a duration would not survive the bridge.
 func TestHookTimeoutIsReportedInMilliseconds(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -129,7 +125,6 @@ func TestHookTimeoutIsReportedInMilliseconds(t *testing.T) {
 	assert.EqualValues(t, 15_000, ms, "overridden timeout = %v ms, want 15000", ms)
 }
 
-// TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen.
 func TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -152,10 +147,9 @@ func TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen(t *testing.T) {
 	}
 }
 
-// TestEventsReachAHandlerSuppliedThroughTheContainer. This is the route a GUI
-// uses, and it is the only way the command layer's work becomes visible to the
-// frontend at all — a window that never hears that an install finished is a window
-// that shows a spinner forever.
+// TestEventsReachAHandlerSuppliedThroughTheContainer. This is the only route that
+// makes the command layer's work visible to the frontend, and a window that never
+// hears an install finished shows a spinner forever.
 func TestEventsReachAHandlerSuppliedThroughTheContainer(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)

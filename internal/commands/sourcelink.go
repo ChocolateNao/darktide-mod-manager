@@ -7,14 +7,13 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 )
 
-// SourceLinkCommands answers the question a mod screen has to answer about
-// every mod: "where does this thing come from, and how do I get it again?".
+// SourceLinkCommands answers the question a mod screen has to ask about every
+// mod: "where does this thing come from, and how do I get it again?".
 //
-// Not every source can be downloaded from programmatically — Nexus hands out
-// files only to a signed-in client, and some sources change a mod's version
-// without changing anything the manager can fetch. For those, the link is the
-// interface, so it has to be readable from the frontend, refreshable, and
-// openable, rather than something the user has to reconstruct from memory.
+// Not every source can be downloaded from programmatically — Nexus hands files
+// only to a signed-in client, and some sources change a mod's version without
+// changing anything the manager can fetch. For those the link is the interface,
+// so it has to be readable, refreshable and openable.
 type SourceLinkCommands struct {
 	*base
 }
@@ -67,9 +66,8 @@ func (c *SourceLinkCommands) ModSourceLinks() (map[string]api.ModSourceLink, err
 // OpenModSource opens a mod's page in the browser.
 //
 // target names which link to open — the mod page, the download, or the update
-// page — and "auto" lets the manager choose the most useful one. The fallback is
-// returned alongside the error so a frontend can still say what to do by hand
-// when the requested link is missing.
+// page — and "auto" lets the manager choose. The fallback is returned alongside
+// the error so a frontend can still say what to do by hand.
 func (c *SourceLinkCommands) OpenModSource(modID, target string) (*api.ModLinkFallback, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -86,11 +84,8 @@ func (c *SourceLinkCommands) OpenModSource(modID, target string) (*api.ModLinkFa
 }
 
 // linkTargets is the order a user reads the choices in: the mod's page first,
-// then its download, then the page to check for a newer version.
-//
-// It is a package variable rather than a slice literal inside the method so the
-// frontend receives a copy: a caller that appended to the result would otherwise
-// rewrite what every other caller sees.
+// then its download, then the page to check for a newer version. It is a package
+// variable so the frontend receives a copy rather than something it can rewrite.
 var linkTargets = []string{"auto", "source", "download", "update"}
 
 // LinkTargets lists the link kinds a frontend may offer.

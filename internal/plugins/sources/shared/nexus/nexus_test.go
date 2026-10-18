@@ -50,18 +50,13 @@ func message(err error) string {
 	return appErrors.Message(err)
 }
 
-// The tests in this file drive the plugin against a local server, because the
-// things worth checking about a transport are all about the wire: which verb
-// reaches which path, which header is on which request, and what a status code
-// turns into. Those cannot be observed through the pure conversions in
-// models_test.go.
+// These tests drive the plugin against a local server: what matters on a transport is
+// the wire — which verb reaches which path, and what a status turns into.
 
-// stubServer answers the endpoints the plugin uses, with per-endpoint overrides
-// so a test can put any endpoint into any state.
-//
-// Every branch honours its own status override. A stub that ignores the override
-// it was given makes the test that sets it pass for an unrelated reason, which is
-// how a status-mapping test ends up proving nothing at all.
+// stubServer answers the endpoints the plugin uses, with per-endpoint overrides so a
+// test can put any endpoint into any state. Every branch honours its own status
+// override: a stub that ignores the one it was given makes a status-mapping test
+// pass for an unrelated reason.
 type stubServer struct {
 	srv                   *httptest.Server
 	versionsBody          string
@@ -117,9 +112,7 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	// The separator is written out rather than assumed: a request log that
-	// concatenates the path and the query without it cannot tell a query string
-	// from a path suffix, which is the difference between a mint that carried
-	// its authorization and one that carried a mangled path.
+	// concatenates path and query cannot tell a query string from a path suffix.
 	target := r.URL.Path
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
@@ -134,13 +127,8 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	switch {
 	case path == "/v3/mods/batch":
-		// The body is checked before the status is applied, because a stub that
-		// only watches statuses cannot tell a plugin that encodes its request
-		// correctly from one that does not: the credential probe once handed
-		// pre-encoded bytes to a client that encoded them again, and every test
-		// here passed while the live API answered 422 with a body shape this
-		// plugin has never written. Mirroring the real endpoint is what makes
-		// that class of bug fail here instead of in a user's terminal.
+		// The body is checked before the status: a stub that only watches statuses
+		// cannot tell a plugin that encodes correctly from one that encodes twice.
 		if detail := batchBodyProblem(body); detail != "" {
 			s.writeJSON(w, http.StatusUnprocessableEntity,
 				`{"type":"about:blank","title":"Unprocessable Content","status":422,`+
@@ -155,9 +143,8 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/mods/900"):
 		s.writeJSON(w, s.modStatus, s.modBody)
 	case strings.HasPrefix(path, "/v3/games/darktide/mods/"):
-		// Any other mod the feed names is answered with a record echoing its own
-		// id back, so a test about the feed does not depend on which mod happens to
-		// be hard-coded here — and so two feed entries cannot collapse into one.
+		// Any other mod the feed names is answered with a record echoing its own id, so
+		// a test about the feed does not depend on which mod is hard-coded here.
 		id := strings.TrimPrefix(path, "/v3/games/darktide/mods/")
 		s.writeJSON(w, s.modStatus, `{"data":{"id":"uid-`+id+`","game_scoped_id":"`+id+
 			`","game_id":"3834","name":"Mod `+id+`"}}`)
@@ -166,11 +153,8 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(path, "/download-repacked"):
 		s.writeJSON(w, s.dlStatus, s.dlBody)
 	case strings.HasSuffix(path, "/download_link"):
-		// Which number this endpoint accepts is not the manager's business: the
-		// same path has answered for the number a pasted link carries and for the
-		// version's game-scoped id. The fixture can therefore name the one id it
-		// authorizes and refuse every other, which is what the fallback needs to
-		// be tested against.
+		// Which number this endpoint accepts is not the manager's business, so the
+		// fixture can name the one id it authorizes and refuse every other.
 		if want, got := s.dlLinkFileID, fileIDOfDownloadLink(path); want != "" && got != want {
 			s.writeJSON(w, http.StatusNotFound,
 				`{"code":404,"message":"No File found for mod"}`)
@@ -181,15 +165,12 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 		s.writeJSON(w, s.dlLinkStatus, s.dlLinkBody)
 	case strings.HasSuffix(path, "/dependencies"):
 		s.writeJSON(w, s.depStatus, s.depBody)
-	// The single-version read is the only path that is exactly
-	// /v3/mod-file-versions/{id}; every other endpoint under that prefix has a
-	// further segment, and a prefix match tested before the suffixes above would
-	// swallow them.
+	// The only path that is exactly /v3/mod-file-versions/{id}: a prefix match
+	// tested before the suffixes above would swallow the rest of that namespace.
 	case strings.HasPrefix(path, "/v3/mod-file-versions/"):
 		s.writeJSON(w, s.versionStatus, s.versionBody)
-	// A version read by the legacy file number a pasted link carries. It is the
-	// one read that also names the mod file, which is what makes such a link
-	// resolvable, so it is routed separately from the read by v3 version id.
+	// A version read by the legacy file number a pasted link carries: it is the one
+	// read that also names the mod file, which is what makes such a link resolvable.
 	case strings.Contains(path, "/games/") && strings.Contains(path, "/mod-file-versions/"):
 		s.writeJSON(w, s.versionByScopedIDStatus, s.versionByScopedIDBody)
 	case strings.HasSuffix(path, "/versions"):
@@ -205,9 +186,8 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(s.assetBody)
 	default:
-		// Anything unrouted is a 404 with the API's own problem shape, so a
-		// request the plugin should not have made is reported as such rather than
-		// quietly answered.
+		// Anything unrouted is a 404 in the API's own problem shape, so a request the
+		// plugin should not have made is reported rather than quietly answered.
 		s.writeJSON(
 			w,
 			http.StatusNotFound,
@@ -216,11 +196,9 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// writeJSON writes body with the given status, defaulting to 200.
-// fileIDOfDownloadLink pulls the file id out of a legacy download_link path.
-//
-// The path is /v1/games/{domain}/mods/{mod}/files/{id}/download_link, so the id
-// is read from the end rather than counted from the front.
+// fileIDOfDownloadLink pulls the file id out of a legacy download_link path:
+// /v1/games/{domain}/mods/{mod}/files/{id}/download_link, so the id is read from
+// the end rather than counted from the front.
 func fileIDOfDownloadLink(path string) string {
 	_, rest, found := strings.Cut(path, "/files/")
 	if !found {
@@ -292,15 +270,11 @@ func (s *stubServer) countOf(want string) int {
 
 func (s *stubServer) saw(want string) bool { return s.countOf(want) > 0 }
 
-// batchBodyProblem returns the complaint POST /mods/batch makes about body, or the
-// empty string when the body is one the endpoint accepts. The wording is the
-// live API's own, so a test that trips over one here trips over the same text a
-// user would.
-//
-// The accepted shape is an object carrying mod_ids as a non-empty array of
-// strings. Everything else — a bare array, a bare string, a number, or bytes that
-// were encoded once too often and arrived as a quoted base64 string — decodes
-// into neither, which is exactly how the real endpoint turns it away.
+// batchBodyProblem returns the complaint POST /mods/batch makes about body, or the empty
+// string when the body is one the endpoint accepts, in the live API's own wording so a
+// test that trips over one here trips over the text a user would. The accepted shape is
+// an object carrying mod_ids as a non-empty array of strings; a bare array, a bare
+// string, a number, or bytes encoded once too often decode into neither.
 func batchBodyProblem(body []byte) string {
 	var request struct {
 		ModIDs []string `json:"mod_ids"`
@@ -317,9 +291,8 @@ func batchBodyProblem(body []byte) string {
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures. Each is the exact shape the specification declares for its endpoint,
-// including the wrappers, because a fixture that omits one would let a decoding
-// bug pass.
+// Fixtures. Each carries the wrappers the real endpoint sends, because a fixture
+// that omitted one would let a decoding bug pass.
 // ---------------------------------------------------------------------------
 
 func modFixtureJSON() string {
@@ -343,11 +316,8 @@ func fileFixtureJSON() string {
 }
 
 func versionsFixtureJSON() string {
-	// 8003 is old_version — a release the author has superseded. That is the one
-	// category the manager refuses, because a file's newest version is often
-	// exactly that, and installing it in place of the current one would be a
-	// downgrade the user never asked for. A category the manager has never heard
-	// of is offered rather than skipped; see TestPickVersionOffersAnUnrecognisedCategory.
+	// 8003 is old_version, the one category the manager refuses, because a file's
+	// newest version is often exactly that; see TestPickVersionOffersAnUnrecognisedCategory.
 	return `{"data":{"versions":[
 		{"id":"8001","file":{"id":"7001","name":"Better UI Main"},"position":"1.0",
 		 "game_scoped_id":"900","name":"Better UI 1.0.0","version":"1.0.0",
@@ -685,12 +655,9 @@ func TestValidateCredentialsWithoutAKeyMakesNoRequest(t *testing.T) {
 	}
 }
 
-// TestBatchBodyProblemRefusesAnOverEncodedBody is the regression test for the bug
-// this file's stub used to hide. The credential probe handed already-encoded
-// bytes to a client that encoded them again, and the double encoding arrived as a
-// quoted base64 string; the live API answered 422 with a complaint about a body
-// shape this plugin has never written. Asserting the acceptance boundary here
-// means that mistake now fails in a unit test rather than in a user's terminal.
+// TestBatchBodyProblemRefusesAnOverEncodedBody is the regression test for the bug the
+// stub used to hide: pre-encoded bytes went to a client that encoded them again, and the
+// live API answered 422 about a body shape this plugin has never written.
 func TestBatchBodyProblemRefusesAnOverEncodedBody(t *testing.T) {
 	encoded, err := json.Marshal(modsBatchRequest{ModIDs: []string{credentialProbeID}})
 	require.NoError(t, err, "marshal the documented probe")
@@ -738,11 +705,8 @@ func TestValidateCredentialsProbesWithTheKey(t *testing.T) {
 			key,
 		)
 	}
-	// The probe body must be the documented object — an id that does not exist, so
-	// a good key answers with an empty list rather than a 404 that could also mean a
-	// hidden key. Comparing the decoded value rather than searching the raw text
-	// keeps a body that merely mentions the id, such as a quoted base64 blob, from
-	// passing.
+	// The probe body must be the documented object — an id that does not exist, so a
+	// good key answers with an empty list rather than a 404 that could mean a hidden key.
 	bodies := s.bodyLog()
 	require.NotEmpty(t, bodies, "probe sent no body; it made %v", s.callLog())
 
@@ -934,9 +898,8 @@ func TestGetModReadsTheDependencyResponse(t *testing.T) {
 }
 
 func TestGetModRecordsADependencyFailureInsteadOfFailing(t *testing.T) {
-	// The mod is installable either way. Losing the distinction between "needs
-	// nothing" and "could not be read" would make a conflict report look
-	// authoritative when it is not.
+	// The mod is installable either way, and losing the distinction between "needs
+	// nothing" and "could not be read" would make a conflict report look authoritative.
 	s := armedStub(t)
 	s.depStatus = http.StatusInternalServerError
 	src := newSource(t, s)
@@ -1005,11 +968,8 @@ func TestGetModReportsAMissingFile(t *testing.T) {
 	if mod != nil {
 		assert.Fail(t, "GetMod returned a mod for a file the API does not have")
 	}
-	// A file the v3 endpoint does not have is then asked about as the legacy
-	// number a pasted link carries, because the two numberings differ and only
-	// the link knows which one it has. Both failing is still "no such file"; what
-	// must not happen is going on to ask about versions of a file that is not
-	// there.
+	// A file the v3 endpoint lacks is then asked about as the legacy number a pasted
+	// link carries; both failing is still "no such file", but the versions must not be.
 	want := []string{
 		"GET /v3/mod-files/7001",
 		"GET /v3/games/darktide/mod-file-versions/7001",
@@ -1023,15 +983,10 @@ func TestGetModReportsAMissingFile(t *testing.T) {
 	}
 }
 
-// TestGetModResolvesALegacyFileIDFromALink covers the reason the file half of a
-// mod id is read through modFileForID.
-//
-// A link pasted from the website numbers a file the legacy way, and that number
-// is not the v3 mod file id: the two differ for the same file, and only the v3
-// id is what the file endpoint understands. The legacy number is a version's
-// game-scoped id, and one request against the version endpoint turns it into
-// the v3 id — which is also the id the mod ends up stored under, so a mod
-// installed from a link and a mod installed from a stored id are the same entry.
+// TestGetModResolvesALegacyFileIDFromALink covers the reason the file half of a mod id
+// is read through modFileForID. A pasted link numbers a file the legacy way, which is
+// not the v3 mod file id: the legacy number is a version's game-scoped id, and one
+// request against the version endpoint turns it into the v3 id the mod is stored under.
 func TestGetModResolvesALegacyFileIDFromALink(t *testing.T) {
 	s := armedStub(t)
 	s.missingFileID = "7001"
@@ -1052,16 +1007,13 @@ func TestGetModResolvesALegacyFileIDFromALink(t *testing.T) {
 	if mod == nil {
 		require.FailNow(t, "GetMod returned no mod for a legacy file id the API does have")
 	}
-	// The mod is stored under the v3 file id, not the legacy number that was
-	// pasted: the two differ, and the manager's identity for a mod should not
-	// depend on which link happened to name it.
+	// The mod is stored under the v3 file id, not the number that was pasted: the
+	// manager's identity for a mod must not depend on which link named it.
 	wantID := ModID("1419", "8094444")
 	assert.Equal(t, wantID, mod.ID, "mod id = %q, want %q", mod.ID, wantID)
 
-	// The link named one specific file version, and the lookup that resolved it
-	// already read that version. The version list is not consulted: re-picking
-	// from it would install a release the site's one-time grant never authorised,
-	// and would fail outright on a file whose newest entry is superseded.
+	// The link named one version and the lookup that resolved it already read that
+	// version; re-picking from the list would install a release the grant never authorised.
 	want := []string{
 		"GET /v3/mod-files/7001",
 		"GET /v3/games/darktide/mod-file-versions/7001",
@@ -1111,9 +1063,8 @@ func TestGetModReportsAFileWithNoInstallableVersion(t *testing.T) {
 		message(err),
 	)
 
-	// "has no downloadable version" on its own sent the user looking at the
-	// Nexus site for an explanation the API already had. The categories are the
-	// explanation, so they are in the message.
+	// "has no downloadable version" alone sent the user to the Nexus site for an
+	// explanation the API already had, so the categories are in the message.
 	assert.Contains(
 		t,
 		message(err),
@@ -1123,10 +1074,9 @@ func TestGetModReportsAFileWithNoInstallableVersion(t *testing.T) {
 	)
 }
 
-// A file whose versions all carry a category this build has never heard of must
-// still resolve. This is the case that produced "has no downloadable version"
-// on a perfectly good link: the filter refused everything it did not recognise,
-// so the candidate set came back empty and the grant went unused.
+// A file whose versions all carry a category this build has never heard of must still
+// resolve: refusing everything unrecognised emptied the candidate set and the grant
+// went unused.
 func TestGetModAcceptsAnUnrecognisedCategory(t *testing.T) {
 	s := armedStub(t)
 	s.versionsBody = `{"data":{"versions":[
@@ -1142,9 +1092,8 @@ func TestGetModAcceptsAnUnrecognisedCategory(t *testing.T) {
 }
 
 func TestGetModReportsAShapeItCannotUse(t *testing.T) {
-	// A 200 whose body has nothing in it means the payload changed shape. Saying
-	// "no such file" would send the user looking for a mod they already
-	// installed.
+	// A 200 whose body has nothing in it means the payload changed shape; saying "no
+	// such file" would send the user looking for a mod they already installed.
 	for name, body := range map[string]string{
 		"empty object":       `{}`,
 		"data with no file":  `{"data":{}}`,
@@ -1173,9 +1122,8 @@ func TestGetModReportsAShapeItCannotUse(t *testing.T) {
 const fileAggregateBare = `{"id":"7001","name":"Better UI Main","is_active":true}`
 
 func TestGetModFailsWhenTheModRecordIsThin(t *testing.T) {
-	// The mod record is where the name comes from, and the file and version
-	// responses carry none, so a mod with no name has to fall back rather than
-	// present as empty.
+	// The mod record is where the name comes from, and the file and version responses
+	// carry none, so a mod with no name has to fall back rather than present as empty.
 	s := armedStub(t)
 	s.modBody = `{"data":{"id":"1234567890123","game_scoped_id":"900","game_id":"3834","name":null}}`
 	src := newSource(t, s)
@@ -1288,9 +1236,8 @@ func TestSearchExpandsTheTrendingFeed(t *testing.T) {
 }
 
 func TestSearchReportsAMissingKeyRatherThanNothingMatching(t *testing.T) {
-	// Every entry has to be expanded before it can be listed, and that needs a
-	// key. An empty list would read as "nothing trending matched", which is a
-	// statement about Nexus rather than about the user's configuration.
+	// Every entry needs expanding before it can be listed, and that needs a key; an
+	// empty list would read as "nothing trending matched" rather than "no key".
 	s := armedStub(t)
 	src := newSource(t, s)
 	src.apiKey = ""
@@ -1319,9 +1266,7 @@ func TestSearchReportsARejectedKey(t *testing.T) {
 }
 
 func TestSearchToleratesOneUnreachableMod(t *testing.T) {
-	// One broken mod must not empty a feed of five. The rule is the same one the
-	// registry's fan-out uses: an empty feed caused entirely by one cause is that
-	// cause, and a partial feed is still a feed.
+	// One broken mod must not empty a feed of five: a partial feed is still a feed.
 	s := armedStub(t)
 	src := newSource(t, s)
 	// One mod's record is made unreadable. The route is by mod id, so the second
@@ -1562,14 +1507,12 @@ func TestDownloadPostsForTheURLThenFetchesIt(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The keyed download.
-//
-// A free account cannot mint a download URL: POST download-repacked answers 403
-// to a key without premium. The website's own answer is to hand a registered
-// nxm:// handler a link carrying key, expires and user_id, and those three are
-// what the legacy download_link endpoint needs in exchange for a signed URL.
-// These tests pin the whole path, because every step in it is a place the real
-// API has already disagreed with a plausible assumption.
+// The keyed download. A free account cannot mint a download URL: POST
+// download-repacked answers 403 to a key without premium. The website's own answer
+// is to hand a registered nxm:// handler a link carrying key, expires and user_id,
+// and those three are what the legacy download_link endpoint wants in exchange for
+// a signed URL. Every step in the path is a place the real API has already
+// disagreed with a plausible assumption.
 // ---------------------------------------------------------------------------
 
 func TestV1BaseFollowsTheConfiguredBase(t *testing.T) {
@@ -1854,10 +1797,9 @@ func TestDownloadReportsBothFileIDsWhenNeitherIsAuthorized(t *testing.T) {
 	assert.NoFileExists(t, dest, "a refused download must not leave a file behind")
 }
 
-// An id the server refuses is worth guessing past; a key it rejects, a network
-// failure or a 500 will answer the same way for every number, and repeating the
-// request would turn one failure into several — with a one-time grant,
-// possibly spending it.
+// An id the server refuses is worth guessing past; a network failure or a 500 answers
+// the same for every number, and repeating would turn one failure into several with a
+// one-time grant.
 func TestDownloadDoesNotRetryTheSecondIDOnANonRefusalError(t *testing.T) {
 	s := armedStub(t)
 	src := newSource(t, s)
@@ -1968,10 +1910,8 @@ func TestDownloadReportsAKeyedMintTheEndpointRefused(t *testing.T) {
 
 	_, err := src.Download(t.Context(), mod, dest)
 	assert.True(t, isCode(err, appCodeAuthFailed), "the failure is %v, want AUTH_FAILED", err)
-	// The grant survives a refusal. The endpoint answered 403 rather than
-	// minting a URL, which means the one-time key was not spent — and a key
-	// burned on a failure that might have succeeded on a retry is a key the
-	// user has to go back to the website to replace.
+	// The grant survives a refusal: 403 means the key was not spent, and burning one on
+	// a retryable failure means the user has to fetch a replacement.
 	if _, _, _, ok := nxmGrant(mod); !ok {
 		assert.Fail(t, "a refused mint dropped the grant; the key was never spent")
 	}
@@ -2244,9 +2184,8 @@ func TestDownloadToleratesCancellation(t *testing.T) {
 }
 
 func TestVerifyAcceptsEverything(t *testing.T) {
-	// v3 publishes no digest, size or checksum for any downloadable object, so
-	// there is nothing to compare against. A check that cannot fail is worse than
-	// no check, because it is reported as one.
+	// v3 publishes no digest, size or checksum for any downloadable object, so a check
+	// that cannot fail is worse than none, because it is reported as one.
 	src := newSource(t, armedStub(t))
 
 	cases := []struct {
@@ -2269,11 +2208,8 @@ func TestVerifyAcceptsEverything(t *testing.T) {
 }
 
 func TestValidateCredentialsDiscardsOnlyAKeyThatWasRefused(t *testing.T) {
-	// A refused key has to go, or the next attempt fails with the same message
-	// while the user has been told to paste a new one. A key that was never
-	// refused has to stay: a timeout says nothing about whether the credential is
-	// good, and making somebody retype a working key because the network
-	// hiccuped is a punishment for somebody else's outage.
+	// A refused key has to go; a key that merely timed out stays, because a timeout says
+	// nothing about whether the credential is good.
 	s := armedStub(t)
 
 	src := newSource(t, s)
@@ -2376,8 +2312,10 @@ func TestForgetCredentialsStopsSendingTheHeader(t *testing.T) {
 
 	if _, err := src.Search(t.Context(), domain.SearchQuery{}); !isCode(err, appCodeAuthRequired) {
 		assert.Fail(t, "Search after forgetting = %v, want ErrCodeAuthRequired", err)
-	} else if !strings.Contains(err.Error(), "dmm source auth nexus --api-key-stdin") {
-		assert.Fail(t, "error %q does not say how to store a key", err)
+	} else if !strings.Contains(err.Error(), "requires an API key") {
+		// The message is read in a dialog, not a terminal, so it must name the
+		// requirement rather than a command the frontend cannot run.
+		assert.Fail(t, "error %q does not say what is missing", err)
 	}
 
 	for i, key := range s.keys[before:] {
@@ -2394,9 +2332,8 @@ func TestForgetCredentialsStopsSendingTheHeader(t *testing.T) {
 
 // ------------------------------------------ game defaults through the factory
 
-// theFactory returns the factory the package registered from init, which is
-// what the registry actually calls: asserting on New alone would leave the
-// game-default wiring untested.
+// theFactory returns the factory the package registered from init: asserting on
+// New alone would leave the game-default wiring untested.
 func theFactory(t *testing.T) services.SourceFactory {
 	t.Helper()
 

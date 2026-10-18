@@ -70,11 +70,9 @@ func configPtr(cfg domain.Config) *domain.Config {
 	return &cfg
 }
 
-// configStoreStub is an in-memory services.ConfigStore. Load answers from the
-// struct, Save counts writes so a test can assert how often the settings file
-// would have been touched, and last reports the configuration the store is
-// holding. The mutex matters because a client may finish work on a goroutine
-// while the test reads the store back.
+// configStoreStub is an in-memory services.ConfigStore: Load answers from the struct,
+// Save counts writes, and last reports the stored configuration. The mutex matters
+// because a client may finish work on a goroutine while the test reads the store back.
 type configStoreStub struct {
 	loadErr error
 	cfg     *domain.Config
@@ -105,15 +103,14 @@ func (s *configStoreStub) Save(cfg *domain.Config) error {
 	return nil
 }
 
-// SaveIfChanged counts as a save whenever it is asked to write: the client
-// calls it on every persist path, so a test asserting "the store was asked to
-// save" sees the call.
+// SaveIfChanged counts as a save whenever asked to write: the client calls it on
+// every persist path.
 func (s *configStoreStub) SaveIfChanged(cfg *domain.Config) (bool, error) {
 	return true, s.Save(cfg)
 }
 
-// last reports the configuration the store is holding — the file's contents
-// before the first save and the saved value after it.
+// last reports the stored configuration: the file's contents before the first save,
+// the saved value after.
 func (s *configStoreStub) last() *domain.Config {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,10 +118,8 @@ func (s *configStoreStub) last() *domain.Config {
 	return s.cfg
 }
 
-// Every key in the three tables above must exist in configFields, and every key in
-// configFields must be in one of them. Without this, adding a setting to the table
-// and forgetting to test it — or testing a key that no longer exists — would both
-// pass.
+// The three tables and configFields must cover each other exactly: otherwise adding a
+// setting and forgetting to test it — or testing a key that no longer exists — passes.
 func TestEveryConfigFieldIsCoveredByATestTable(t *testing.T) {
 	covered := make(map[string]string)
 	for key := range stringConfigFields {
@@ -218,9 +213,8 @@ func TestConfigValueReadsEverySetting(t *testing.T) {
 
 		assert.Equal(t, want, got, "ConfigValue(%q)", key)
 	}
-	// A boolean round-trips through both spellings of both values: the table says
-	// which value the setting should hold, and each is written twice, once in the
-	// word a person types and once in the word a machine writes.
+	// Each boolean is written twice, once as a person types it and once as a
+	// machine writes it, and must read back as the table says.
 	for key, want := range boolConfigFields {
 		for _, value := range []bool{want, !want} {
 			for _, spelling := range boolSpellings(value) {
@@ -272,8 +266,8 @@ func boolText(v bool) string {
 }
 
 func TestConfigValueAcceptsEveryBooleanSpelling(t *testing.T) {
-	// Someone typing into a settings field writes "yes" and "no" as often as
-	// "true"; refusing them would be pedantry that generates bug reports.
+	// Someone typing into a settings field writes "yes" and "no" as often as "true";
+	// refusing them would be pedantry that generates bug reports.
 	cfg := configPtr(domain.DefaultConfig())
 	for _, value := range []string{"true", "TRUE", " yes ", "on", "1"} {
 		require.NoError(
@@ -314,7 +308,7 @@ func TestConfigValueAcceptsEveryBooleanSpelling(t *testing.T) {
 }
 
 func TestSetConfigValueRefusesNumbersOutOfRange(t *testing.T) {
-	// A cache limit of -1 would be read by the cache manager as "no limit", which
+	// A cache limit of -1 would read as "no limit" to the cache manager, which
 	// is not what someone typing -1 into a size field meant.
 	cfg := configPtr(domain.DefaultConfig())
 
@@ -348,8 +342,8 @@ func TestSetConfigValueRefusesNumbersOutOfRange(t *testing.T) {
 			)
 		}
 	}
-	// The accepted edges are the boundaries themselves: a value of zero means
-	// "no limit" for a cache axis, which is a legitimate setting.
+	// The edges are the boundaries themselves: zero means "no limit" for a cache
+	// axis, which is a legitimate setting.
 	for key, value := range map[string]string{
 		"cache.max_size_gb":                "0",
 		"cache.max_age_days":               "0",
@@ -452,7 +446,7 @@ func TestSourceConfigKeysReadAndWrite(t *testing.T) {
 	got, _ := ConfigValue(cfg, "sources.vortex.enabled")
 	assert.Equal(t, "false", got, "sources.vortex.enabled reads")
 	// The source block is created by the write, which is how a block appears in a
-	// hand-written configuration in the first place.
+	// hand-written configuration at all.
 	block, ok := cfg.SourceConfigFor("vortex")
 	require.True(t, ok, "no configuration block for vortex after writing to it")
 
@@ -511,8 +505,8 @@ func TestSourceConfigKeyKeepsTheSourceIDVerbatim(t *testing.T) {
 }
 
 func TestSourceConfigKeyIsCaseInsensitiveWhenReading(t *testing.T) {
-	// Reading, unlike writing, goes through SourceConfigFor — which folds case —
-	// so a caller asking about "vortex" finds a block written as "Vortex".
+	// Reading, unlike writing, goes through SourceConfigFor, which folds case, so
+	// a caller asking about "vortex" finds a block written as "Vortex".
 	cfg := configPtr(domain.DefaultConfig())
 	cfg.Sources["Vortex"] = domain.SourceConfig{Enabled: false, APIKey: "k"}
 
@@ -585,8 +579,8 @@ func TestSourceConfigKeyRejectsABlankSourceID(t *testing.T) {
 	}
 }
 
-// A credential is writable and not readable. That asymmetry is the whole reason a
-// UI cannot accidentally render one into a diagnostics dump.
+// A credential is writable and not readable — the asymmetry that stops a UI
+// rendering one into a diagnostics dump.
 func TestSourceConfigKeyRefusesToReadAnAPIKey(t *testing.T) {
 	cfg := configPtr(domain.DefaultConfig())
 	require.NoError(t, SetConfigValue(cfg, "sources.vortex.api_key", "secret"), "SetConfigValue")
@@ -644,7 +638,7 @@ func TestConfigKeysListsEverythingAddressable(t *testing.T) {
 
 func TestMergeSourceBlockLeavesTheFileAlone(t *testing.T) {
 	// A caller supplying one source's token must not silently unconfigure the
-	// others, and must not reset the file's own values for that source.
+	// others, nor reset the file's own values for that source.
 	existing := domain.SourceConfig{
 		Enabled: false,
 		APIKey:  "from-file",
@@ -698,8 +692,7 @@ func TestMergeSourceBlockLeavesTheFileAlone(t *testing.T) {
 
 	assert.NotNil(t, untouched.Options, "merge built a new options map when the override had none")
 	// The file's own map must not be written through: merge rebuilds it, so the
-	// block that came straight out of the loaded configuration file stays exactly
-	// as it was read.
+	// block that came straight out of the loaded file stays exactly as read.
 	assert.Equal(
 		t,
 		"mods",

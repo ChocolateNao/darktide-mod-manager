@@ -14,9 +14,8 @@ import (
 )
 
 func TestPaginateAlwaysReturnsASlice(t *testing.T) {
-	// An empty result set is the common case for a search that matched nothing.
-	// Returning nil here would force every caller to nil-check before ranging,
-	// and a nil range silently skips the loop instead of reporting "no results".
+	// An empty result set is the common case for a search that matched nothing, and
+	// a nil range silently skips the loop instead of reporting "no results".
 	got := Paginate(nil, 1, 20)
 	if got == nil {
 		require.FailNow(t, "Paginate(nil) returned nil; callers cannot tell it from a bug")
@@ -266,10 +265,8 @@ func TestSummarizeSkipsNilAndEmpty(t *testing.T) {
 }
 
 func TestSummarizeDistinguishesNoProblemFromUnnameableProblem(t *testing.T) {
-	// A nil entry is "this provider was fine": it must not appear anywhere. A
-	// non-nil error with an empty message is a real problem we simply cannot
-	// describe, so it stays in the "and N more" count — under-counting would tell
-	// the user one fewer thing went wrong than actually did.
+	// A nil entry is "this provider was fine" and must not appear anywhere; a
+	// non-nil error with an empty message stays in the count.
 	bare := errors.New("")
 	four := []error{
 		appErrors.New(appErrors.ErrCodeNotFound, "one"),
@@ -386,9 +383,8 @@ func TestOptionListAcceptsEveryJSONShape(t *testing.T) {
 }
 
 func TestStringOfSurvivesAJSONRoundTrip(t *testing.T) {
-	// A value written by a plugin comes back as a string; one written by hand as
-	// JSON number or boolean comes back as float64/bool. Neither may crash a
-	// source that just wants to put it in a query string.
+	// A value written by a plugin comes back as a string; one written by hand as a
+	// JSON number or boolean comes back as float64/bool. Neither may crash a caller.
 	cases := []struct {
 		name string
 		in   any
@@ -452,9 +448,8 @@ func TestEnsureDirCreatesAndReportsFailures(t *testing.T) {
 		err,
 	)
 
-	// An existing directory is not an error. An existing *file* is: the caller
-	// asked for a directory and there is one in the way, so reporting success
-	// would let the download fail later with a much less obvious message.
+	// An existing directory is not an error, but an existing *file* is: the caller
+	// asked for a directory, so reporting success defers a much vaguer failure.
 	err = EnsureDir(filepath.Join(root, "a"))
 	assert.NoError(t, err, "EnsureDir over an existing directory = %v, want nil", err)
 
@@ -469,9 +464,8 @@ func TestEnsureDirCreatesAndReportsFailures(t *testing.T) {
 }
 
 func TestFileSHA256MissingFileIsACacheMiss(t *testing.T) {
-	// The cache manager branches on CACHE_MISS to decide it should download;
-	// reporting a generic I/O error would make it treat a vanished blob as a
-	// fatal failure.
+	// The cache manager branches on CACHE_MISS to decide it should download; a
+	// generic I/O error would make it treat a vanished blob as a fatal failure.
 	_, err := FileSHA256(filepath.Join(t.TempDir(), "absent"))
 	if err == nil {
 		require.FailNow(t, "FileSHA256 on a missing file returned nil")
@@ -545,8 +539,7 @@ func TestFileSHA256ReportsADirectoryAsAnIOError(t *testing.T) {
 
 func TestModLabelNeverDereferencesNil(t *testing.T) {
 	// A nil mod reaches here when a download fails after the source lost track of
-	// which mod it was fetching; dereferencing it would turn a reportable error
-	// into a panic in the middle of an install.
+	// which mod it was fetching; dereferencing it turns a reportable error into a panic.
 	got := ModLabel(nil)
 	assert.Equal(t, "<unknown>", got, "ModLabel(nil) = %q, want %q", got, "<unknown>")
 
@@ -589,9 +582,8 @@ func TestCredValueAcceptsEverySpelling(t *testing.T) {
 }
 
 func TestCredValueIgnoresBlankValues(t *testing.T) {
-	// An empty API key in the config means "not configured". Returning it would
-	// make Authenticate succeed with an empty token and every request fail later
-	// with an opaque 401.
+	// An empty API key in the config means "not configured"; returning it would make
+	// Authenticate succeed with no token and every later request fail with a 401.
 	creds := domain.AuthCredentials{"token": "   ", "api_key": "real"}
 	got := CredValue(creds, "token", "api_key")
 	assert.Equal(t, "real", got, "CredValue = %q, want real", got)

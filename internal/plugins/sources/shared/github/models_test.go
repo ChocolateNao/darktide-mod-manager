@@ -18,9 +18,8 @@ func TestValidRepoRef(t *testing.T) {
 	for _, ref := range good {
 		assert.True(t, validRepoRef(ref), "validRepoRef(%q) = false, want true", ref)
 	}
-	// A ref is used to build "{apiBase}/repos/{ref}/releases", so anything with
-	// a different number of slashes would address a different resource (or, with
-	// "..", a resource outside the API entirely).
+	// A ref is used to build "{apiBase}/repos/{ref}/releases", so a different number
+	// of slashes would address a different resource, or with ".." one outside the API.
 	bad := []string{
 		"",
 		"owner",
@@ -85,8 +84,7 @@ func TestModIDRoundTripsThroughRepoFromModID(t *testing.T) {
 
 // ModID with only one half present produces an id with no separator in it, which
 // repoFromModID refuses. That is deliberate: the caller recovers the repository
-// from a stored mod id, so an id it cannot decode would fail later and further
-// from the mistake. validRepoRef means neither half is ever actually blank.
+// from a stored mod id, and validRepoRef means neither half is ever blank.
 func TestModIDWithOneHalfIsNotDecodable(t *testing.T) {
 	for _, tc := range []struct{ owner, repo, want string }{
 		{"owner", "", "owner"},
@@ -170,9 +168,8 @@ func TestNormalizeVersion(t *testing.T) {
 		{"V1.2.0", "1.2.0"},
 		{"refs/tags/v2.0.0", "2.0.0"},
 		{"refs/tags/3.1", "3.1"},
-		// A leading v is only a version prefix when a digit follows it. "vanilla"
-		// is a word, not a version, and mangling it would change the tag a
-		// maintainer chose.
+		// A leading v is only a version prefix when a digit follows it: "vanilla"
+		// is a word, and mangling it would change the tag a maintainer chose.
 		{"vanilla", "vanilla"},
 		{"vNext", "vNext"},
 		// A maintainer is entitled to tag a release something the semver parser
@@ -213,9 +210,8 @@ func TestPayloadAssetPicksTheLargestArchive(t *testing.T) {
 }
 
 // A release whose only assets are documentation has no payload to install, so
-// payloadAsset must report nothing rather than hand back the README. A
-// zero-sized archive is still a payload: size is only used to pick between
-// several candidates, never to reject the last one.
+// payloadAsset must report nothing rather than hand back the README. A zero-sized
+// archive is still a payload: size only picks between candidates, never rejects.
 func TestPayloadAssetIgnoresNonArchives(t *testing.T) {
 	if _, ok := payloadAsset(nil); ok {
 		assert.Fail(t, "payloadAsset claimed to have found something in an empty asset list")
@@ -322,9 +318,8 @@ func TestModForProducesOneModPerRelease(t *testing.T) {
 			TagName: "v2.0.0",
 			Assets:  []asset{{Name: "p.zip", BrowserDownloadURL: "https://example.test/2"}},
 		},
-		// A draft still maps to a mod here, because its tag parses. The caller
-		// (releases) is what filters drafts, and it has to: indexing a draft
-		// whose tag parses would offer a mod whose download 404s.
+		// A draft still maps to a mod here because its tag parses; the caller (releases)
+		// is what filters drafts, since indexing one would offer a 404 download.
 		{
 			Draft:   true,
 			TagName: "v9.9.9",
@@ -383,10 +378,9 @@ func TestModForPropagatesTheDeclaredGameVersion(t *testing.T) {
 	)
 }
 
-// searchQuery renders GitHub's repository-search syntax: the user's text
-// followed by the topic qualifier. The topic is appended unconditionally so a
-// user query cannot widen the search to all of GitHub, which would burn the
-// anonymous rate limit in seconds.
+// searchQuery renders GitHub's repository-search syntax: the user's text followed
+// by the topic qualifier, appended unconditionally so a query cannot widen the
+// search to all of GitHub and burn the anonymous rate limit in seconds.
 func TestSearchQueryAlwaysCarriesTheTopic(t *testing.T) {
 	got, want := searchQuery(
 		"better ui",
@@ -409,9 +403,8 @@ func TestSearchQueryAlwaysCarriesTheTopic(t *testing.T) {
 
 	got, want = searchQuery("   \t\n ", "darktide-mod"), "topic:darktide-mod"
 	assert.Equal(t, want, got, "searchQuery with a whitespace-only query = %q, want %q", got, want)
-	// A query that already names the topic keeps it: the text matches on
-	// repository metadata, the qualifier filters on topics, so they are
-	// different constraints rather than a duplicate.
+	// A query that already names the topic keeps it: the text matches repository
+	// metadata, the qualifier filters on topics, so they are different constraints.
 	got, want = searchQuery(
 		"darktide-mod",
 		"darktide-mod",

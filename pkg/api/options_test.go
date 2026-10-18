@@ -15,9 +15,8 @@ import (
 )
 
 func TestPathOptionsRejectBlankValues(t *testing.T) {
-	// A blank path is not "unset", it is a path of "" that every later join turns
-	// into the working directory. Refusing it at construction means the caller
-	// learns their option was ignored before anything has been written.
+	// A blank path becomes the working directory in every later join, so refusing it
+	// here tells the caller before anything has been written.
 	options := map[string]Option{
 		"WithConfigPath":  WithConfigPath("   "),
 		"WithGamePath":    WithGamePath(""),
@@ -125,9 +124,8 @@ func TestWithSourceConfigMergesRepeatedCalls(t *testing.T) {
 }
 
 func TestWithSourceConfigKeepsAnExplicitDisable(t *testing.T) {
-	// Once a caller has turned a source off, a later call that adjusts its token
-	// must not turn it back on. That is the whole reason enabledStated is tracked
-	// separately from the block.
+	// Turning a source off must survive a later call that adjusts its token, which
+	// is why enabledStated is tracked separately from the block.
 	set, err := applyOptions([]Option{
 		WithSourceConfig("nexus", map[string]any{"enabled": false}),
 		WithSourceConfig("nexus", map[string]any{"api_key": "k"}),
@@ -143,10 +141,8 @@ func TestWithSourceConfigKeepsAnExplicitDisable(t *testing.T) {
 		set.sourceConfigs["nexus"].APIKey,
 		"the later block's api key was not applied",
 	)
-	// The stated flag has to survive too, and not only the merged block. The
-	// wiring asks "did the caller say anything about enabled?" and uses the
-	// answer to decide whether the file's value still applies; a second call that
-	// stays silent must not answer "no" and hand the file back its say.
+	// The wiring asks whether the caller said anything about enabled, so a second call
+	// that stays silent must not answer "no" and hand the file back its say.
 	assert.True(
 		t,
 		set.sourceEnabledStated["nexus"],
@@ -155,9 +151,8 @@ func TestWithSourceConfigKeepsAnExplicitDisable(t *testing.T) {
 }
 
 func TestWithSourceConfigEnablesASourceNobodyConfigured(t *testing.T) {
-	// The option path seeds a never-seen source as enabled, which is what makes
-	// `NewClient(ctx, WithSourceConfig("vortex", ...))` a source the caller can
-	// actually search rather than one that is silently off.
+	// A never-seen source is seeded as enabled, so WithSourceConfig gives the caller
+	// one it can actually search rather than one that is silently off.
 	set, err := applyOptions([]Option{WithSourceConfig("vortex", map[string]any{"api_key": "k"})})
 	require.NoError(t, err, "applyOptions")
 
@@ -217,9 +212,8 @@ func TestSourceConfigFromAcceptsEveryCredentialSpelling(t *testing.T) {
 }
 
 func TestSourceConfigFromTurnsUnknownKeysIntoOptions(t *testing.T) {
-	// The api package cannot enumerate every plugin's private keys, so anything
-	// it does not recognise is handed to the source as a provider option. That is
-	// what makes a new plugin option a non-breaking change.
+	// Unrecognised keys are handed to the source as a provider option, so adding a
+	// plugin option stays a non-breaking change.
 	block, stated, err := sourceConfigFrom("github", map[string]any{
 		"api_base":     "https://api.invalid",
 		"repositories": []any{"owner/one", "owner/two"},

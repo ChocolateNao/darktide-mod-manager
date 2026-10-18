@@ -14,14 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newModHooksCommand assembles `dmm mod hooks`.
-//
-// Every subcommand here is a read-modify-write over one mod's whole hook set,
-// because that is the only write the manager offers: UpdateModHooks replaces
-// the set rather than merging into it. Reading the current set first is
-// therefore not an optimisation, it is the only way to add one script without
-// losing the others — and it is also why a change racing another change loses
-// one of them, which is stated in the help rather than papered over.
+// newModHooksCommand assembles `dmm mod hooks`. Every subcommand is a
+// read-modify-write over one mod's whole hook set, because UpdateModHooks
+// replaces the set rather than merging into it, so a racing change loses one.
 func newModHooksCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "hooks",
@@ -48,10 +43,8 @@ type hookView struct {
 	Env        []string `json:"env,omitempty"`
 	Position   int      `json:"position"`
 	Timeout    int      `json:"timeout,omitempty"`
-	// EffectiveTimeout is the timeout the executor would actually apply — the
-	// declared one after the configured default, game, and permission caps —
-	// in seconds. It differs from Timeout whenever the declared value is zero
-	// or clamped.
+	// EffectiveTimeout is what the executor would apply — the declared value
+	// after the configured default, game and permission caps — in seconds.
 	EffectiveTimeout int `json:"effective_timeout"`
 }
 
@@ -77,11 +70,8 @@ func newHooksListCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			// The mod is what permission scopes hang off, so the effective
-			// timeout is only exact with it in hand. The hooks were readable,
-			// so the mod exists; a failure here is still tolerated rather than
-			// failing the listing — the columns would then show the
-			// game-and-default scopes only.
+			// Permission scopes hang off the mod, so the effective timeout is only
+			// exact with it in hand; the hooks were readable, so a miss is tolerated.
 			mod, err := client.GetMod(ctx, args[0])
 			if err != nil {
 				mod = nil
@@ -233,11 +223,8 @@ func newHooksRemoveCommand(s *session) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Whether --index was given at all has to be asked of the flag set, not
-			// of the value: 0 is the zero value of the variable whether the user
-			// typed --index 0 or typed nothing, and reading the value would make
-			// "--index 0" — which names no script, because the position is 1-based —
-			// silently clear the whole phase instead.
+			// Asked of the flag set, not the value: 0 is the zero value whether
+			// the user typed --index 0 or typed nothing, and positions are 1-based.
 			givenIndex := cmd.Flags().Changed("index")
 			if givenIndex && index <= 0 {
 				return fatalf("--index is 1-based, got %d; 0 names no script", index)
@@ -278,9 +265,8 @@ func newHooksRemoveCommand(s *session) *cobra.Command {
 				return fatalf("%s of %s has %s; there is no script %d",
 					parsedPhase, modID, plural(len(existing), "script", "scripts"), index)
 			default:
-				// Removing from the middle keeps the other scripts' order, which
-				// matters: two hooks in one phase run in listing order and a
-				// setup script that ran after the one it prepares would break.
+				// Removing from the middle keeps the other scripts' order: two
+				// hooks in one phase run in listing order, and a setup that ran last breaks.
 				kept := make([]domain.HookScript, 0, len(existing)-1)
 				kept = append(kept, existing[:index-1]...)
 				kept = append(kept, existing[index:]...)
@@ -359,11 +345,9 @@ func newHooksEditCommand(s *session) *cobra.Command {
 	return command
 }
 
-// readHooksFile reads a hook set from JSON on disk.
-//
-// Every failure is reported with the file name: "unexpected end of JSON input"
-// with no path sends the user looking through their shell history for which
-// file they just wrote.
+// readHooksFile reads a hook set from JSON on disk. Every failure names the file:
+// "unexpected end of JSON input" with no path sends the user hunting through
+// their shell history.
 func readHooksFile(path string) (api.ModHooks, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -388,12 +372,9 @@ func readHooksFile(path string) (api.ModHooks, error) {
 	return hooks, nil
 }
 
-// hookContent returns the script body from --content or --file.
-//
-// Exactly one of the two must be given. Two blank bodies reach the executor as
-// a hook that does nothing, and a hook that does nothing still runs the
-// process and still fails on a timeout; a script with no content is a mistake,
-// so it is refused here where the message can say so.
+// hookContent returns the script body from --content or --file, exactly one of
+// which must be given. A blank body reaches the executor as a hook that still
+// runs and still times out, so it is refused here.
 func hookContent(content, file string) (string, error) {
 	content = strings.TrimSpace(content)
 
@@ -415,11 +396,8 @@ func hookContent(content, file string) (string, error) {
 	}
 }
 
-// validateEnvEntry checks a NAME=VALUE pair before it reaches the manager.
-//
-// The executor refuses a malformed entry too, but it refuses it after the mod
-// has been fetched and the command has printed nothing useful. Checking here
-// means the mistake is reported before any work is done.
+// validateEnvEntry checks a NAME=VALUE pair before it reaches the manager, which
+// refuses it too but only after fetching the mod and printing nothing useful.
 func validateEnvEntry(entry string) error {
 	name, _, found := strings.Cut(entry, "=")
 	if !found {
@@ -448,13 +426,9 @@ func parseHookPhase(text string) (domain.HookPhase, error) {
 	return phase, nil
 }
 
-// parseHookLanguage turns a --type argument into a script language.
-//
-// The comparison is case-insensitive because a shell user types `LUA` and
-// means lua, but the stored value is always the canonical lower-case one: the
-// executor's registry is keyed by the exact language, so a capitalised value
-// would find no runner and fail at enable time. The flag keeps its --type
-// name because that is what scripts and muscle memory already use.
+// parseHookLanguage turns a --type argument into a script language. The
+// comparison is case-insensitive because a shell user types `LUA` and means lua,
+// but the stored value is the canonical lower-case one the executor's registry is keyed by.
 func parseHookLanguage(text string) (domain.ScriptLanguage, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {

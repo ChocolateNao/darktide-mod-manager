@@ -33,10 +33,8 @@ func TestErrorAppendsTheCauseOnce(t *testing.T) {
 	// A message that does not restate the cause gains it as a suffix.
 	plain := Wrap(cause, ErrCodeConfigIO, "query mods")
 	assert.Equal(t, "CONFIG_IO: query mods: no such column: modsx", plain.Error(), "Error()")
-	// A message that already ends with the cause's own rendering must not have
-	// it appended again. `Wrap(err, code, "do %s", err)` is a natural thing to
-	// write and appears throughout this codebase; without the guard every such
-	// error reads as complaining twice about the same thing.
+	// `Wrap(err, code, "do %s", err)` appears throughout this codebase; without the
+	// guard every such error complains twice about the same thing.
 	restated := Wrap(cause, ErrCodeConfigIO, "query mods: %v", cause)
 	assert.Equal(
 		t,

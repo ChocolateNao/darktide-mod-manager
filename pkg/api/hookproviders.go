@@ -12,9 +12,8 @@ import (
 )
 
 // The providers handed to the hook sandbox. They are the only bridge between a
-// script and the manager's state: the host checks its permissions first, then
-// calls through one of these, and nothing else in the process is reachable
-// from a hook.
+// script and the manager's state: the host checks permissions first, then calls
+// through one of these.
 
 // hookConfigAccess lets a script read and write the configuration through the
 // same dotted-key API the CLI and the GUI use.
@@ -32,11 +31,9 @@ func (a hookConfigAccess) Get(key string) (string, error) {
 	return ConfigValue(cfg, key)
 }
 
-// Set writes one dotted key and saves the configuration.
-//
-// The hooks.permissions namespace is refused here as well as in the host: the
-// permission model must not be editable by the code it constrains, even if a
-// future host forgets to check.
+// Set writes one dotted key and saves the configuration. The hooks.permissions
+// namespace is refused here as well as in the host: the permission model must not be
+// editable by the code it constrains, even if a future host forgets to check.
 func (a hookConfigAccess) Set(key, value string) error {
 	normalized := normalizeConfigKey(key)
 	if normalized == "hooks.permissions" ||

@@ -2,11 +2,10 @@ package domain
 
 import "strings"
 
-// GameDefinition describes one supported game: the facts the manager needs to
-// find its installation, validate it, locate its mods folder, and give each
-// source its per-game defaults. Every supported game implements this interface
-// and is registered in internal/games; the rest of the program depends on the
-// interface, never on a concrete game.
+// GameDefinition describes one supported game: what the manager needs to find and
+// validate its installation, locate its mods folder, and give each source its
+// per-game defaults. The rest of the program depends on the interface, never on a
+// concrete game.
 type GameDefinition interface {
 	// ID is the registry key, used in paths, the database and the config.
 	ID() string
@@ -40,9 +39,8 @@ type GameDefinition interface {
 	LoadOrderFile() string
 	// InstallModes lists the ModInstallMode values this game supports.
 	InstallModes() []ModInstallMode
-	// SourceDefaults gives per-source option defaults, keyed by source id
-	// then option name — e.g. {"nexus": {"game_domain": "..."}}. A value in
-	// the user's source config always wins over these.
+	// SourceDefaults gives per-source option defaults, keyed by source id then
+	// option name. The user's source config always wins over these.
 	SourceDefaults() map[string]map[string]string
 	// GameActions returns code-defined special actions for this game.
 	GameActions() []GameAction
@@ -64,26 +62,26 @@ func ValidInstallMethod(m string) bool {
 
 // GameSettings is one game's slice of the configuration: where its
 // installation is, which launcher to prefer when detecting it, where its mods
-// live, and how mods reach the game folder. The map key in Config.Games is the
-// game's registry id.
+// live, how mods reach the game folder, and which icon represents it in the
+// rail. The map key in Config.Games is the game's registry id.
 type GameSettings struct {
+	// Icon names a lucide icon for the rail. Here rather than on
+	// GameDefinition because it is one user's choice on one machine.
+	Icon               string     `json:"icon,omitempty"`
 	Path               string     `json:"path,omitempty"`
 	Source             GameSource `json:"source,omitempty"`
 	ModsFolderOverride string     `json:"mods_folder_override,omitempty"`
 	// InstallMethod overrides how mods reach the game folder: symlinks or a
-	// direct copy. Empty means "whatever the game definition prefers", which is
-	// the answer for a game the user has never expressed an opinion about.
+	// direct copy. Empty means "whatever the game definition prefers".
 	InstallMethod string `json:"install_method,omitempty"`
 	AutoDetect    bool   `json:"auto_detect"`
 }
 
-// InstallMethodOrDefault reports the install method to prefer for this game:
-// the configured override when it is one of the known methods, and otherwise
-// the game definition's own preference.
+// InstallMethodOrDefault reports the install method to prefer: the configured
+// override when it is one of the known methods, otherwise the definition's own.
 //
-// An unrecognised stored value falls through to the definition rather than
-// failing: a configuration written by a newer version should not stop the
-// manager from deploying anything at all.
+// An unrecognised stored value falls through rather than failing, so a config
+// written by a newer version still deploys.
 func (s GameSettings) InstallMethodOrDefault(def GameDefinition) string {
 	if ValidInstallMethod(s.InstallMethod) {
 		return s.InstallMethod
@@ -101,11 +99,14 @@ func (s GameSettings) InstallMethodOrDefault(def GameDefinition) string {
 	return ""
 }
 
-// SourceDefault reads one per-source default out of a game definition, e.g.
-// SourceDefault(def, "nexus", "game_domain"). A nil definition or a missing
-// entry yields "", which callers treat as "fall back to the source's own
-// default" — so a game that says nothing about a source still gets a working
-// build of it.
+// SourceDomainKey is the SourceDefaults key naming the sub-domain a game occupies on
+// a hosted source. It lives here so a game, a source plugin and the code that maps a
+// link back to a game all spell it the same way.
+const SourceDomainKey = "game_domain"
+
+// SourceDefault reads one per-source default out of a game definition. A nil
+// definition or a missing entry yields "", which callers read as "fall back to the
+// source's own default".
 func SourceDefault(def GameDefinition, sourceID, key string) string {
 	if def == nil {
 		return ""

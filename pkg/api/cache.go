@@ -21,12 +21,9 @@ func (c *Client) cacheManager() (*services.CacheManager, error) {
 	return c.deps.Cache, nil
 }
 
-// GetCacheInfo reports what the download cache holds: how many files, how many
-// bytes, and the age range of the contents.
-//
-// It returns an error rather than an empty CacheInfo on failure. The document
-// sketches this without one, which would force the caller to render "0 files,
-// 0 bytes" on a broken cache and tell the user to free space they are not using.
+// GetCacheInfo reports what the download cache holds. An error, not an empty
+// CacheInfo, on failure — an empty answer would read as "0 files, 0 bytes" on a
+// broken cache.
 func (c *Client) GetCacheInfo(ctx context.Context) (CacheInfo, error) {
 	mgr, err := c.cacheManager()
 	if err != nil {
@@ -36,12 +33,9 @@ func (c *Client) GetCacheInfo(ctx context.Context) (CacheInfo, error) {
 	return mgr.GetCacheInfo(ctx)
 }
 
-// ClearCache deletes every downloaded archive.
-//
-// It ignores reference counts: an install that is mid-extraction is holding a
-// reference, but the user asked for the cache to go, and refusing would leave a
-// button that silently does nothing. The staged file for an in-flight download is
-// already outside the cache and is cleaned up by the operation that created it.
+// ClearCache deletes every downloaded archive, ignoring reference counts: an
+// install mid-extraction holds one, but the user asked for the cache to go. The
+// staged file of an in-flight download is already outside the cache.
 func (c *Client) ClearCache(ctx context.Context) error {
 	mgr, err := c.cacheManager()
 	if err != nil {
@@ -52,10 +46,8 @@ func (c *Client) ClearCache(ctx context.Context) error {
 }
 
 // PruneCache deletes the least recently used archives until the cache fits.
-//
-// maxSizeGB and maxAgeDays are limits, not targets: a value of zero or less means
-// "no limit on that axis". The defaults come from the configuration, so
-// PruneCacheWithDefaults applies what the user actually configured.
+// maxSizeGB and maxAgeDays are limits, not targets: zero or less means "no limit on
+// that axis". The defaults come from the configuration.
 func (c *Client) PruneCache(ctx context.Context, maxSizeGB, maxAgeDays int) error {
 	mgr, err := c.cacheManager()
 	if err != nil {

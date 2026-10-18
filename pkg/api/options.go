@@ -17,13 +17,11 @@ type Logger interface {
 	Printf(format string, args ...any)
 }
 
-// LoggerFunc adapts a plain function to Logger, so a caller that wants to
-// collect manager output in a slice, or write it somewhere other than the
-// standard logger, does not have to declare a type for it.
-//
-// A nil LoggerFunc is usable and discards: WithLogger already drops a nil
-// logger, and the alternative — a nil-receiver panic on the first diagnostic —
-// would turn a missing option into a crash in the middle of start-up.
+// LoggerFunc adapts a plain function to Logger, so a caller wanting to collect manager
+// output in a slice, or write it somewhere other than the standard logger, need not
+// declare a type for it. A nil LoggerFunc is usable and discards: WithLogger already
+// drops a nil logger, and a nil-receiver panic on the first diagnostic would turn a
+// missing option into a crash in the middle of start-up.
 type LoggerFunc func(format string, args ...any)
 
 // Printf implements Logger.
@@ -53,13 +51,11 @@ type settings struct {
 	loggingOpts         LoggingOptions
 }
 
-// WithLogging supplies a log service that wire() adopts instead of building one.
-//
-// The caller keeps constructing it: this option only decides who owns the
-// configuration. Ownership of the *lifetime* still belongs to the returned
-// bundle, which closes the service with its other resources, because a log sink
-// that outlives the services that write to it loses the lines they were about to
-// write.
+// WithLogging supplies a log service that wire() adopts instead of building one. The
+// caller keeps constructing it: this option only decides who owns the configuration.
+// Ownership of the *lifetime* still belongs to the returned bundle, which closes the
+// service with its other resources, because a log sink that outlives the services
+// writing to it loses the lines they were about to write.
 func WithLogging(service *logging.Service) Option {
 	return func(s *settings) error {
 		if service == nil {
@@ -81,13 +77,11 @@ func WithLoggingOptions(opts LoggingOptions) Option {
 	}
 }
 
-// Option configures a client before anything is opened.
-//
-// The type takes a *settings rather than the *Client the document sketches. The
-// difference matters: an option that needs to validate its argument, or that has
-// to run before the first file is opened, cannot do either if it is handed a
-// half-built client. Returning an error keeps a mistyped option a construction
-// failure instead of a confusing failure on the first mod install.
+// Option configures a client before anything is opened. It takes a *settings rather
+// than the *Client, which matters: an option that must validate its argument, or run
+// before the first file is opened, cannot do either if handed a half-built client.
+// Returning an error keeps a mistyped option a construction failure instead of a
+// confusing failure on the first mod install.
 type Option func(*settings) error
 
 // normalizeSourceID matches the registry's own key rule so that an option naming
@@ -135,13 +129,11 @@ func WithConfigPath(path string) Option {
 	}
 }
 
-// WithGamePath points the manager at a specific Darktide installation.
-//
-// The path is validated before it is stored, and the configuration is written
-// so a later start-up reuses it. That is a side effect of an option that looks
-// like a value assignment, and it is deliberate: the alternative is a game path
-// that only lasts for the lifetime of the client, so the CLI would need the same
-// path on every invocation.
+// WithGamePath points the manager at a specific Darktide installation. The path is
+// validated before it is stored and the configuration written so a later start-up
+// reuses it. That side effect in an option that looks like a value assignment is
+// deliberate: the alternative is a game path lasting only as long as the client, so
+// the CLI would need the same path on every invocation.
 func WithGamePath(path string) Option {
 	return func(s *settings) error {
 		trimmed := strings.TrimSpace(path)
@@ -156,13 +148,11 @@ func WithGamePath(path string) Option {
 	}
 }
 
-// WithGame starts the client on a specific registered game, overriding
-// active_game from the file for this run. An id the registry does not know is
-// a construction failure rather than a silent fallback — a typo must not
-// quietly start the game the user was trying to avoid.
-//
-// The choice is not written back here: wire() runs before anything can
-// persist, and a start-up that fails afterwards must not have changed the
+// WithGame starts the client on a specific registered game, overriding active_game
+// from the file for this run. An id the registry does not know is a construction
+// failure rather than a silent fallback — a typo must not quietly start the game the
+// user was trying to avoid. The choice is not written back: wire() runs before
+// anything can persist, and a start-up failing afterwards must not have changed the
 // file. UseGame is how a running process switches and keeps the switch.
 func WithGame(id string) Option {
 	return func(s *settings) error {
@@ -210,28 +200,21 @@ func WithStoragePath(path string) Option {
 	}
 }
 
-// WithSourceConfig configures one mod source.
-//
-// The block is a plain map so a caller can build it from JSON without importing
-// anything from this package. Four keys are structural and every other key is
-// handed to the source as a provider option:
+// WithSourceConfig configures one mod source. The block is a plain map so a caller
+// can build it from JSON without importing anything from this package. The keys below
+// are structural; every other key is handed to the source as a provider option:
 //
 //	enabled  bool or "true"/"false"/"1"/"0"/"yes"/"no" — a source is enabled
 //	         unless this says otherwise
 //	api_key  string — the source's credential
 //	paths    string list — only meaningful to the local source
 //
-// Everything else becomes an option the source itself reads, which is how
-// `{"api_base": ...}` or `{"repositories": [...]}` reach a plugin without this
-// package having to know every provider's private keys. A list of scalars is
-// joined with commas, because the providers split their string options on
-// commas — so a value read back from the configuration file and a value passed
-// here behave identically.
+// Scalar lists are joined with commas, because the providers split their string
+// options on commas, so a value read from the configuration file and one passed here
+// behave identically.
 //
-// Unknown keys are *not* rejected. Enumerating them here would make adding a
-// plugin option a breaking change to this package, and a typo lands as an
-// option the plugin ignores, which is the same outcome the configuration file
-// already has.
+// Unknown keys are *not* rejected: enumerating them would make adding a plugin option
+// a breaking change here, and a typo lands as an option the plugin ignores.
 func WithSourceConfig(sourceID string, cfg map[string]any) Option {
 	return func(s *settings) error {
 		id := normalizeSourceID(sourceID)
@@ -248,24 +231,17 @@ func WithSourceConfig(sourceID string, cfg map[string]any) Option {
 		if err != nil {
 			return err
 		}
-		// A later call for the same source merges over the earlier one rather
-		// than replacing it wholesale, so a caller can set a token and then
-		// adjust one option without repeating the first.
-		//
-		// A source nobody has configured yet starts enabled, which is the same
-		// rule the registry applies to a missing block: a manager that lists no
-		// sources on a fresh install looks broken. Naming a source in an option is
-		// a statement that the caller wants it, not a statement that it is off.
+		// A later call for the same source merges over the earlier one, and an
+		// unconfigured source starts enabled — the registry's rule for a missing
+		// block, since a manager listing no sources on a fresh install looks broken.
 		existing, seen := s.sourceConfigs[id]
 		if !seen {
 			existing = domain.SourceConfig{Enabled: true}
 		}
 
 		s.sourceConfigs[id] = mergeSourceBlock(existing, block, enabledStated)
-		// "Stated" is sticky. A later block for the same source that mentions only
-		// a token has not retracted an earlier explicit disable, and recording
-		// false here would let the wiring treat that disable as never stated and
-		// switch the source back on.
+		// "Stated" is sticky: a later block mentioning only a token has not retracted
+		// an earlier explicit disable, so recording false here would switch it back on.
 		if enabledStated {
 			s.sourceEnabledStated[id] = true
 		}
@@ -274,14 +250,12 @@ func WithSourceConfig(sourceID string, cfg map[string]any) Option {
 	}
 }
 
-// mergeSourceBlock folds an override onto an existing block.
-//
-// enabledStated is the whole reason this function takes three arguments. A bool
-// field cannot distinguish "left alone" from "set to false", and a source block
-// from a caller that mentioned only a token must not decide whether the source
-// is enabled. Every other field merges the same way: a non-empty override wins,
-// a list is appended to rather than replacing, so a caller can add one path
-// without restating the others.
+// mergeSourceBlock folds an override onto an existing block. enabledStated is the
+// whole reason this takes three arguments: a bool field cannot distinguish "left
+// alone" from "set to false", and a block mentioning only a token must not decide
+// whether the source is enabled. Every other field merges the same way — a non-empty
+// override wins, a list is appended to — so a caller can add one path without
+// restating the others.
 func mergeSourceBlock(
 	existing, override domain.SourceConfig,
 	enabledStated bool,
@@ -298,10 +272,9 @@ func mergeSourceBlock(
 	if len(override.Paths) > 0 {
 		merged.Paths = append(append([]string(nil), existing.Paths...), override.Paths...)
 	}
-	// The options map is always rebuilt rather than written through. `existing` is a
-	// struct copy, so its map is the caller's; writing into it would silently edit
-	// the block that was passed in — which, in the wiring, is a block that came
-	// straight out of the loaded configuration file.
+	// The options map is always rebuilt rather than written through: `existing` is a
+	// struct copy, so its map is the caller's, and writing into it would silently edit
+	// the block passed in — which, in the wiring, came straight out of the config file.
 	if len(existing.Options) > 0 || len(override.Options) > 0 {
 		merged.Options = make(map[string]string, len(existing.Options)+len(override.Options))
 		for k, v := range existing.Options {
@@ -318,11 +291,9 @@ func mergeSourceBlock(
 	return merged
 }
 
-// sourceConfigFrom converts a caller's map into the domain block. It is
-// separated from the option so the conversion is testable on its own.
-//
-// The second result reports whether the block actually mentioned `enabled`; see
-// mergeSourceBlock for why the domain type cannot carry that itself.
+// sourceConfigFrom converts a caller's map into the domain block, separated from the
+// option so the conversion is testable on its own. The second result reports
+// whether the block actually mentioned `enabled`; see mergeSourceBlock.
 func sourceConfigFrom(id string, cfg map[string]any) (domain.SourceConfig, bool, error) {
 	block := domain.SourceConfig{Enabled: true}
 
@@ -368,8 +339,8 @@ func sourceConfigFrom(id string, cfg map[string]any) (domain.SourceConfig, bool,
 			block.Paths = list
 		case "options":
 			// The nested form mirrors domain.SourceConfig, so a caller can hand
-			// over a block decoded straight from JSON. It is also the only key
-			// whose value is a map.
+			// over a block decoded straight from JSON. It is also the only key whose
+			// value is a map.
 			nested, err := optionMap(value)
 			if err != nil {
 				return domain.SourceConfig{}, false, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -393,10 +364,9 @@ func sourceConfigFrom(id string, cfg map[string]any) (domain.SourceConfig, bool,
 			if block.Options == nil {
 				block.Options = make(map[string]string)
 			}
-			// The key is stored verbatim rather than folded. The providers read
-			// their own option names — api_base, game_domain, timeout_seconds,
-			// repositories — and folding separators away would rename every one
-			// of them. Only the structural keys above are matched loosely.
+			// Stored verbatim rather than folded: providers read their own option names
+			// — api_base, game_domain, timeout_seconds, repositories — and folding
+			// separators away would rename every one of them.
 			block.Options[strings.TrimSpace(key)] = s
 		}
 	}
@@ -581,12 +551,10 @@ func stringList(value any) ([]string, error) {
 	return []string{s}, nil
 }
 
-// WithEventHandler subscribes a handler to the client's event bus.
-//
-// Handlers are subscribed before anything is wired, so the very first event of a
-// client's life — a source being registered, a mod install starting — is
-// delivered. A nil handler is dropped rather than refused, so a caller can pass
-// one unconditionally.
+// WithEventHandler subscribes a handler to the client's event bus. Handlers are
+// subscribed before anything is wired, so the very first event of a client's life — a
+// source being registered, a mod install starting — is delivered. A nil handler is
+// dropped rather than refused, so a caller can pass one unconditionally.
 func WithEventHandler(handler EventHandler) Option {
 	return func(s *settings) error {
 		if handler == nil {

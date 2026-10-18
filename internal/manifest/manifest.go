@@ -1,9 +1,7 @@
 // Package manifest owns the mod manifest: the mod.toml a mod folder may carry,
 // the names it is allowed to have, and how it is written.
 //
-// Every part of the manager that touches the format goes through here — the
-// local source that discovers mods, the deployer that must never expose a
-// manifest to the game, and the command that scaffolds a new one. A format
+// Every part of the manager that touches the format goes through here. A format
 // with three owners has three answers to "what does a manifest look like", and
 // only one of them is true.
 package manifest
@@ -61,15 +59,12 @@ func Has(dir string) bool {
 	return ok
 }
 
-// Read parses the manifest of a mod folder. The first recognised manifest file
-// wins, matching the deployer's own priority order.
+// Read parses the manifest of a mod folder, the first recognised file winning.
 //
-// Every field is optional: a manifest that only sets an id is a valid mod, and
-// a mod folder with no manifest at all is discovered under its folder name.
-// That leniency is the point — mod authors are not going to write perfect
-// manifests, and a reader that rejected incomplete ones would mostly report
-// "nothing found". A folder with no manifest yields an empty one, never nil,
-// so callers can read fields off the result without checking.
+// Every field is optional: a manifest that only sets an id is a valid mod, and a
+// folder with no manifest at all is discovered under its folder name. That
+// leniency is the point — mod authors are not going to write perfect manifests,
+// and a reader that rejected incomplete ones would mostly report "nothing found".
 func Read(dir string) (*Manifest, error) {
 	_, path, ok := Find(dir)
 	if !ok {
@@ -87,9 +82,9 @@ func Read(dir string) (*Manifest, error) {
 			"parse manifest %q: %v", path, err)
 	}
 
-	// Hook languages are validated here, at parse time: a manifest that names
-	// an unknown script language is a broken mod, and reporting it while the
-	// manifest is read keeps discovery from half-loading it.
+	// Hook languages are validated here, at parse time: a manifest naming an unknown
+	// script language is a broken mod, and reporting it now keeps discovery from
+	// half-loading it.
 	if _, err := m.DomainHooks(); err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidMod,
 			"parse manifest %q: %v", path, err)
@@ -148,11 +143,9 @@ type HookEntry struct {
 
 // Script returns the domain script for this manifest entry.
 //
-// The type must name a known script language ("lua" or "javascript"): a blank
-// or unrecognised one is an error at manifest-parse time rather than something
-// normalised away, so a typo is reported while the manifest is read instead of
-// resurfacing as a mysterious hook failure later. Blank content yields a zero
-// script, which the caller drops.
+// The type must name a known script language ("lua" or "javascript"): a blank or
+// unrecognised one is an error at manifest-parse time rather than something
+// normalised away, so a typo surfaces while the manifest is read.
 func (e HookEntry) Script() (domain.HookScript, error) {
 	lang, err := domain.ParseScriptLanguage(e.Type)
 	if err != nil {
@@ -175,9 +168,8 @@ type phasePair struct {
 }
 
 // phaseEntries pairs each manifest hook table with its domain phase. It is
-// written out in the same order as domain.HookPhases so adding a phase to the
-// domain model without a manifest mapping shows up as a zero field here rather
-// than as a silently ignored manifest table.
+// written out in the same order as domain.HookPhases so adding a phase there
+// without a manifest mapping shows up as a zero field here.
 func (m *Manifest) phaseEntries() []phasePair {
 	if m == nil {
 		return nil
@@ -199,12 +191,10 @@ func (m *Manifest) phaseEntries() []phasePair {
 
 // DomainHooks converts the manifest's hook tables into the domain model.
 //
-// Every entry's type must parse as a script language, even when its content is
-// blank: a manifest that names an unknown language is broken, and reporting it
-// here is cheaper than letting the script silently vanish. A script with blank
-// content is then dropped rather than stored: the hook executor rejects blank
-// content, so keeping it would make an otherwise-working mod fail to enable
-// over a manifest line that carries no information.
+// Every entry's type must parse as a script language even when its content is
+// blank, because a manifest naming an unknown language is broken. A script with
+// blank content is then dropped: the hook executor rejects it, so keeping it would
+// make an otherwise-working mod fail to enable over an empty line.
 func (m *Manifest) DomainHooks() (domain.ModHooks, error) {
 	var out domain.ModHooks
 
@@ -257,12 +247,11 @@ func TrimmedList(in []string) []string {
 	return out
 }
 
-// Init writes a blank manifest into the mod folder at dir and returns the path
-// it wrote. The folder is created when it does not exist yet, because
-// scaffolding a mod is the reason this is called.
+// Init writes a blank manifest into the mod folder at dir and returns the path it
+// wrote, creating the folder if needed.
 //
-// An existing manifest is never overwritten: it holds work, and a command
-// whose job is to create a starter file is the wrong place to destroy one.
+// An existing manifest is never overwritten: it holds work, and a command whose
+// job is to create a starter file is the wrong place to destroy one.
 func Init(dir string) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument, "a mod folder is required")
