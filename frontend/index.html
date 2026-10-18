@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Darktide Mod Manager</title>
+    <script>
+      // Runs before first paint on purpose. The persisted ui cache is read here
+      // rather than in React because a first frame of light navy followed by a
+      // dark repaint is exactly the flash §10.1 exists to prevent, and React
+      // cannot get to it soon enough.
+      (() => {
+        try {
+          const raw = window.localStorage.getItem("dmm.ui.v1");
+          const cached = raw ? JSON.parse(raw)?.state : undefined;
+          const theme = cached?.theme ?? "dark";
+          const resolved =
+            theme === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : theme;
+          document.documentElement.classList.toggle("dark", resolved === "dark");
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.dataset.compact = String(cached?.compact === true);
+        } catch {
+          // A malformed cache is not worth a blank window; dark is the default
+          // anyway, which is why the element ships with class="dark" above.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./src/main.tsx" type="module"></script>
+  </body>
+</html>

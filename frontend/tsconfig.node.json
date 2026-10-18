@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    /*
+     * `tsc -b` type-checks this project, but it must not write `vite.config.js`
+     * next to `vite.config.ts`: Vite resolves the `.js` first, so the emitted
+     * copy silently shadows the real config and every dev-time setting in it
+     * stops applying. A referenced composite project may not disable emit, so
+     * the emit is redirected into node_modules instead of turned off.
+     */
+    "outDir": "./node_modules/.tmp/tsconfig-node",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
+}
