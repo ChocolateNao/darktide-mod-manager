@@ -12,25 +12,21 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	// The logger writes to standard error rather than to a file or to the
-	// webview: start-up diagnostics have to be readable when the window never
-	// opens, which is exactly when they matter most.
+	// The logger writes to standard error; it does not write to a file or the
+	// webview: start-up diagnostics must be readable when the window never opens.
 	logger := api.LoggerFunc(func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	})
 
-	// The container is built before wails.Run, and therefore before the window
-	// exists, because the command sets have to be bound to something and a
-	// window that comes up with nothing behind it would show an empty interface
-	// and no explanation. A configuration that cannot be loaded is fatal here
-	// for the same reason: the alternative is a running window that cannot do
-	// anything.
+	// The container is built before wails.Run, before the window exists, because
+	// the command sets must bind to something; a config that cannot load is fatal.
 	container, err := di.NewContainer(context.Background(), di.Options{Logger: logger})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "darktide-mod-manager cannot start: %v\n", err)
@@ -42,9 +38,13 @@ func main() {
 		}
 	}()
 
+	// The command sets log through the manager's own logger, because every failed
+	// command is what a user pastes into a support request and stderr is not read.
+	commandLogger := api.NewZerologLogger(container.Logging.Logger())
+
 	app := commands.New(commands.Deps{
 		Client:  container.Client,
-		Logger:  logger,
+		Logger:  commandLogger,
 		Logging: container.Logging,
 	})
 
@@ -58,12 +58,19 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.Startup,
-		// Wails passes a context to OnShutdown that the shutdown path has
-		// already cancelled by the time it is called — the runtime is tearing
-		// the window down — so it is dropped rather than stored. Cancelling the
-		// command scope is the whole job here, and that needs no context.
-		OnShutdown: func(context.Context) { app.Shutdown() },
+		OnStartup: func(ctx context.Context) {
+			startNotifications(ctx)
+			forwardEvents(ctx, container.Client)
+			app.Startup(ctx)
+		},
+		// Wails hands OnShutdown a context the shutdown path has already
+		// cancelled, so it is dropped; cancelling the command scope needs none.
+		OnShutdown: func(ctx context.Context) {
+			// CleanupNotifications closes the D-Bus connection the notification
+			// channel opened on, which process exit would not do tidily on Linux.
+			wailsruntime.CleanupNotifications(ctx)
+			app.Shutdown()
+		},
 		Bind: []any{
 			app.Mods,
 			app.Sources,
@@ -71,6 +78,10 @@ func main() {
 			app.Cache,
 			app.Config,
 			app.Logs,
+			app.P2PShares,
+			app.Actions,
+			app.SourceLinks,
+			app.Paths,
 			&lifecycle{app: app},
 		},
 	})
@@ -80,14 +91,39 @@ func main() {
 	}
 }
 
+// forwardEvents republishes every manager event into the webview under one name,
+// so the frontend has a single listener and a single unsubscribe. The handler
+// only marshals: the bus delivers on the publishing goroutine, so a slow
+// subscriber there would stall the install reporting progress. The subscription
+// is left alone — the client owns the bus and its Close tears everything down.
+func forwardEvents(ctx context.Context, client *api.Client) {
+	if client == nil {
+		return
+	}
+
+	client.Events().Subscribe(func(e api.Event) {
+		wailsruntime.EventsEmit(ctx, webviewEventName, e)
+	})
+}
+
+// webviewEventName is the single Wails event channel the manager publishes on.
+const webviewEventName = "mod-manager:event"
+
+// startNotifications opens the native notification channel from here rather than
+// from the frontend: InitializeNotifications establishes the connection the
+// JavaScript side borrows. A failure is reported and swallowed, so a desktop
+// without a notification daemon degrades to in-app toasts instead of refusing to
+// start.
+func startNotifications(ctx context.Context) {
+	if err := wailsruntime.InitializeNotifications(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "native notifications unavailable: %v\n", err)
+	}
+}
+
 // lifecycle is the part of the application the frontend needs that is not a
-// command: the event and hook vocabulary it has to know about before it can
-// draw anything, and the cancel button that stops a download in flight.
-//
-// It is a separate bound object rather than the commands.App itself because
-// App.Startup takes a context.Context, which cannot cross the Wails bridge — the
-// bridge has no way to hand a Go context to a JavaScript call, and the binding
-// generator rejects the type outright.
+// command: the event and hook vocabulary it must know before it can draw, and the
+// cancel button that stops a download. It is bound separately from App because
+// App.Startup takes a context.Context, which the binding generator rejects.
 type lifecycle struct {
 	app *commands.App
 }
@@ -106,11 +142,9 @@ func (l *lifecycle) SupportsHookType(name string) bool {
 	return l.app.SupportsHookType(name)
 }
 
-// HookTimeout reports how long a script may run, in milliseconds.
-//
-// Milliseconds rather than seconds because that is what the frontend's
-// setTimeout takes, and converting in the browser would put a rounding step
-// between the number the manager decided and the number the timer uses.
+// HookTimeout reports how long a script may run, in milliseconds. That is the
+// unit the frontend's setTimeout takes; converting in the browser would put a
+// rounding step between the manager's decision and the timer.
 func (l *lifecycle) HookTimeout(script api.HookScript, mod *api.Mod) (float64, error) {
 	return l.app.HookTimeout(script, mod)
 }
@@ -119,6 +153,14 @@ func (l *lifecycle) HookTimeout(script api.HookScript, mod *api.Mod) (float64, e
 // form can refuse a broken one without a round trip through a real hook run.
 func (l *lifecycle) ValidateHookScript(script api.HookScript, mod *api.Mod) error {
 	return l.app.ValidateHookScript(script, mod)
+}
+
+// RunHookScript executes one script under the same containment rules a real hook
+// run uses. It is bound so a mod author can ask "does this work?" from the editor
+// instead of installing the mod. Output is not returned: a hook's writes go to the
+// manager's log, which the console panel already reads from the hook events.
+func (l *lifecycle) RunHookScript(script api.HookScript, mod *api.Mod) error {
+	return l.app.RunHookScript(script, mod)
 }
 
 // CancelAll stops every operation in flight.
