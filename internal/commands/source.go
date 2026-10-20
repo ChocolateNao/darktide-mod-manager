@@ -9,13 +9,11 @@ import (
 // SourceCommands is the mod sources as a frontend sees them: which are
 // available, what they can do, how to sign in, and what they are offering.
 type SourceCommands struct {
-	// base is embedded rather than held as a named field so the lifecycle
-	// methods reach a set directly: a caller holding a single set needs to be
-	// able to shut it down without knowing the shape of the aggregate.
+	// Embedded so a caller holding one set can shut it down without the
+	// aggregate.
 	*base
 }
 
-// NewSourceCommands builds the source command set.
 func NewSourceCommands(deps Deps) *SourceCommands {
 	return &SourceCommands{base: newBase(deps)}
 }
@@ -24,14 +22,10 @@ func newSourceCommands(b *base) *SourceCommands {
 	return &SourceCommands{base: b}
 }
 
-// ListSources describes every available source.
-//
-// Unlike the methods that install or sign in, this one takes no context of its
-// own and cannot fail in a way a frontend should show as an error: it degrades to
-// a source with Enabled false and an empty name, because a settings screen with a
-// blank entry and a reason beats one that refuses to draw. The method still
-// reports the not-initialised and shutting-down cases, which are programming
-// errors rather than data.
+// ListSources describes every available source. It degrades to Enabled false with
+// an empty name, because a blank entry beats a settings screen that refuses to
+// draw. Not-initialised and shutting-down are still reported: those are
+// programming errors.
 func (c *SourceCommands) ListSources() ([]api.ModSourceInfo, error) {
 	client, _, _, err := c.ready()
 	if err != nil {
@@ -40,9 +34,8 @@ func (c *SourceCommands) ListSources() ([]api.ModSourceInfo, error) {
 
 	infos := client.ListSources(c.Context())
 	if infos == nil {
-		// api documents a nil result as "no sources at all". Over the bridge nil
-		// becomes null, and a frontend iterating the result would have to guard
-		// against a shape the service never returns otherwise.
+		// api documents nil as "no sources at all", but over the bridge nil is
+		// null and a frontend iterating it guards a shape never otherwise returned.
 		return []api.ModSourceInfo{}, nil
 	}
 
@@ -65,11 +58,8 @@ func (c *SourceCommands) SourceInfo(sourceID string) (api.ModSourceInfo, error) 
 	return info, nil
 }
 
-// SearchSource searches one source.
-//
-// A source that cannot search is refused rather than answered with an empty
-// list: an empty list is a real answer the user would believe, and "this source
-// does not support searching" is the true one.
+// SearchSource searches one source. A source that cannot search is refused,
+// because an empty list is a real answer the user would believe.
 func (c *SourceCommands) SearchSource(sourceID, query string) ([]api.Mod, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -117,16 +107,36 @@ func (c *SourceCommands) GetSourceMod(sourceID, modID string) (*api.Mod, error) 
 	return mod, nil
 }
 
-// AuthenticateSource signs a source in.
-//
-// The credentials arrive as a map because every source asks for a different set
-// — a token, a username and a key — and a per-source command signature would put
-// that knowledge in the frontend. A nil map is passed through rather than
-// replaced by an empty one, because "no credentials" and "credentials with no
-// usable entries" are the same request to every source and the source decides.
-//
-// A successful call stores the credentials: the key has to outlive the process or
-// the user signs in again on every launch.
+// InspectDroppedPath describes the mod a drop gesture landed on, because the drop
+// overlay has to name what it is about to install and no other command can:
+// Search needs a query and GetMod needs an id. The recognised flag lets the
+// overlay refuse an unclaimed path in its own wording. The returned DroppedMod is
+// *api.DroppedMod in the generated binding.
+func (c *SourceCommands) InspectDroppedPath(path string) (*api.DroppedMod, bool, error) {
+	client, ctx, cancel, err := c.ready()
+	if err != nil {
+		return nil, false, err
+	}
+	defer cancel()
+
+	mod, recognised, err := client.InspectDroppedPath(ctx, strings.TrimSpace(path))
+	if err != nil {
+		return nil, false, c.fail(err, "inspect dropped path %q", path)
+	}
+
+	if !recognised {
+		return nil, false, nil
+	}
+
+	return mod, true, nil
+}
+
+// AuthenticateSource signs a source in. The credentials arrive as a map because
+// every source asks for a different set, and a per-source signature would put that
+// knowledge in the frontend. A nil map passes through: "no credentials" and
+// "credentials with no usable entries" are the same request, and the source
+// decides. A successful call stores the credentials, since the key has to outlive
+// the process.
 func (c *SourceCommands) AuthenticateSource(sourceID string, creds map[string]string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -142,10 +152,10 @@ func (c *SourceCommands) AuthenticateSource(sourceID string, creds map[string]st
 	return nil
 }
 
-// SetSourceAPIKey stores an API key without asking the source whether it works.
-//
-// The frontend uses it for the offline case: a user who pasted a key before
-// connecting, or who would rather not wait for a round trip while typing.
+// SetSourceAPIKey signs a source in with a single key. The source is asked before
+// the key is stored, so a key the provider refuses never reaches the settings file
+// and a key it accepts works immediately: the registry caches built sources for
+// the process's life.
 func (c *SourceCommands) SetSourceAPIKey(sourceID, apiKey string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -161,8 +171,8 @@ func (c *SourceCommands) SetSourceAPIKey(sourceID, apiKey string) error {
 }
 
 // ClearSourceAPIKey forgets a stored key, in the settings file and in the live
-// source. It is what a "sign out" button calls; nothing about the key comes back
-// to the frontend, because nothing about the key ever left the backend.
+// source. It is what a "sign out" button calls; nothing about the key reaches the
+// frontend.
 func (c *SourceCommands) ClearSourceAPIKey(sourceID string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -194,11 +204,9 @@ func (c *SourceCommands) TestSourceConnection(sourceID string) error {
 }
 
 // SetSourceAuthenticated records the result of a sign-in the frontend performed
-// itself, for the badge in the sources list.
-//
-// It reports success for an unknown source rather than failing: the flag is
-// bookkeeping for display, and a source that has been unregistered since the
-// screen was drawn has nothing left to badge.
+// itself, for the badge in the sources list. An unknown source reports success:
+// the flag is bookkeeping for display, and a source unregistered since the screen
+// was drawn has nothing to badge.
 func (c *SourceCommands) SetSourceAuthenticated(sourceID string, authenticated bool) error {
 	if _, _, _, err := c.ready(); err != nil {
 		return err

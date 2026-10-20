@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// modWorkspace builds a workspace with a game, a configured game path and one
-// local mod archive ready to install.
 func modWorkspace(t *testing.T) (*workspace, *App) {
 	t.Helper()
 	w := newWorkspace(t)
@@ -26,7 +24,6 @@ func modWorkspace(t *testing.T) (*workspace, *App) {
 	return w, w.mustApp(t)
 }
 
-// findLocalMod returns the id of the one mod the local source offers.
 func findLocalMod(t *testing.T, app *App) string {
 	t.Helper()
 
@@ -38,11 +35,6 @@ func findLocalMod(t *testing.T, app *App) string {
 	return mods[0].ID
 }
 
-// TestModLifecycleThroughTheCommandLayer walks one mod through every state a
-// frontend drives it through, against a real game folder, a real archive, the
-// real deployer and the real database. Everything the command layer adds is the
-// context it derives and the trimming it does, so the only way to see whether it
-// did that correctly is to let a real operation run under a real scope.
 func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 	w, app := modWorkspace(t)
 	id := findLocalMod(t, app)
@@ -85,8 +77,6 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 		assert.NoError(t, err, "the payload was not extracted: %v", err)
 	}
 
-	// The mods folder holds one entry per top-level payload entry, and the
-	// manifest never reaches the game.
 	{
 		_, err := os.Lstat(filepath.Join(w.modsDir, "textures"))
 		assert.NoError(t, err, "the mod was not deployed: %v", err)
@@ -97,7 +87,6 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 		assert.Error(t, err, "mod.toml was deployed into the game folder")
 	}
 
-	// A padded id is what a user pastes from a filename, and it must still work.
 	padded, err := app.Mods.GetMod("  " + id + "  ")
 	require.NoError(t, err, "GetMod with a padded id")
 
@@ -216,9 +205,6 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 	}
 }
 
-// TestInstallWithoutAGameFolderLeavesTheModDisabled is the first-run case: there
-// is nowhere to deploy to, and a mod that reported itself enabled would be a lie
-// the user discovers at launch.
 func TestInstallWithoutAGameFolderLeavesTheModDisabled(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -245,9 +231,6 @@ func TestInstallWithoutAGameFolderLeavesTheModDisabled(t *testing.T) {
 	}
 }
 
-// TestUninstallWithPurgeDropsTheCachedArchive pins the difference between the two
-// uninstall forms. Keeping the archive is usually what a user wants, so the
-// simple command must keep it and only the explicit form may remove it.
 func TestUninstallWithPurgeDropsTheCachedArchive(t *testing.T) {
 	_, app := modWorkspace(t)
 
@@ -303,9 +286,6 @@ func TestUninstallWithPurgeDropsTheCachedArchive(t *testing.T) {
 	)
 }
 
-// TestModCommandsReportAnUnknownMod: every id-taking command has to agree that the
-// mod does not exist. A frontend showing "no such mod" for one button and a bare
-// failure for the next one is a support ticket nobody can act on.
 func TestModCommandsReportAnUnknownMod(t *testing.T) {
 	_, app := modWorkspace(t)
 
@@ -353,8 +333,6 @@ func TestModCommandsReportAnUnknownMod(t *testing.T) {
 	}
 }
 
-// TestCancelUpdateIsSilentWhenNothingIsRunning: the caller wanted the update to
-// stop and it is stopped, so there is nothing to report.
 func TestCancelUpdateIsSilentWhenNothingIsRunning(t *testing.T) {
 	_, app := modWorkspace(t)
 	{
@@ -363,7 +341,6 @@ func TestCancelUpdateIsSilentWhenNothingIsRunning(t *testing.T) {
 	}
 }
 
-// TestUpdateModHooksRoundTripsAndRefusesABadSet.
 func TestUpdateModHooksRoundTripsAndRefusesABadSet(t *testing.T) {
 	_, app := modWorkspace(t)
 
@@ -403,8 +380,6 @@ func TestUpdateModHooksRoundTripsAndRefusesABadSet(t *testing.T) {
 		stored.PostInstall,
 	)
 
-	// A rejected set must leave the stored one alone, or one bad script in a
-	// settings form would silently clear the rest.
 	bad := api.ModHooks{
 		PreEnable:  []api.HookScript{{Language: api.LangJS, Content: "kept"}},
 		PostEnable: []api.HookScript{{Language: "powershell", Content: "boom"}},
@@ -431,9 +406,6 @@ func TestUpdateModHooksRoundTripsAndRefusesABadSet(t *testing.T) {
 	)
 }
 
-// TestResolveConflictRefusesAnUnknownResolution. The complaint has to list the
-// spellings, because the caller supplied one and the useful next step is to see
-// what the alternative is.
 func TestResolveConflictRefusesAnUnknownResolution(t *testing.T) {
 	_, app := modWorkspace(t)
 
@@ -452,9 +424,6 @@ func TestResolveConflictRefusesAnUnknownResolution(t *testing.T) {
 	}
 }
 
-// TestResolveConflictReportsAStaleReportID: the resolution is checked against the
-// conflicts found now, because the two mods may have changed since the report was
-// listed.
 func TestResolveConflictReportsAStaleReportID(t *testing.T) {
 	_, app := modWorkspace(t)
 
@@ -467,8 +436,6 @@ func TestResolveConflictReportsAStaleReportID(t *testing.T) {
 	)
 }
 
-// TestReorderModsRefusesADuplicate: a duplicated entry would give the same mod two
-// positions and the load order would depend on which one the file reader saw last.
 func TestReorderModsRefusesADuplicate(t *testing.T) {
 	_, app := modWorkspace(t)
 	{
@@ -480,4 +447,52 @@ func TestReorderModsRefusesADuplicate(t *testing.T) {
 			appErrors.ErrCodeInvalidArgument,
 		), "error = %v, want INVALID_ARGUMENT for a duplicated id", err)
 	}
+}
+
+func TestCollectModFilesListsWhatIsInside(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFixture(t, filepath.Join(root, "mod.toml"), "[mod]\nid = \"demo\"\n")
+	writeFixture(t, filepath.Join(root, "scripts", "main.lua"), "print(1)\n")
+
+	files, err := collectModFiles(root)
+	require.NoError(t, err)
+
+	byPath := make(map[string]ModFile, len(files))
+	for _, file := range files {
+		byPath[file.Path] = file
+	}
+
+	require.Contains(t, byPath, "mod.toml")
+	assert.Equal(t, int64(18), byPath["mod.toml"].Size)
+	assert.False(t, byPath["mod.toml"].IsDir)
+
+	require.Contains(t, byPath, filepath.Join("scripts"))
+	assert.True(t, byPath[filepath.Join("scripts")].IsDir)
+
+	require.Contains(t, byPath, filepath.Join("scripts", "main.lua"))
+	assert.Equal(t, "main.lua", byPath[filepath.Join("scripts", "main.lua")].Name)
+}
+
+func TestCollectModFilesAnswersEmptyForAFileOrNothing(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	path := filepath.Join(root, "archive.zip")
+	writeFixture(t, path, "not a directory")
+
+	files, err := collectModFiles(path)
+	require.NoError(t, err)
+	assert.Empty(t, files)
+
+	_, err = collectModFiles(filepath.Join(root, "missing"))
+	require.Error(t, err)
+}
+
+func writeFixture(t *testing.T, path, body string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 }

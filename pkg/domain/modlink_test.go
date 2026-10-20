@@ -1,37 +1,37 @@
-package commands
+package domain
 
 import (
+	"net/url"
 	"testing"
 
-	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestShareLinkBuildsEachLaunchersOwnForm(t *testing.T) {
-	// The mod stores number a file separately from a mod, and the file id is
-	// what the manager installs. A link carrying only the mod id would resolve to
-	// a different file, so both halves have to be there and in the launcher's
-	// own order.
+	// A link carrying only the mod id would resolve to a different file, so both
+	// halves have to be there and in the launcher's own order.
 	tests := []struct {
 		name string
 		want string
 		note string
-		mod  api.Mod
+		mod  Mod
 	}{
 		{
 			name: "nexus",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "nexus-900-7001", SourceID: "nexus",
-				SourceData: map[string]any{"mod_id": 900, "file_id": 7001},
+				SourceData: map[string]any{
+					"mod_id": 900, "file_id": 7001, "game_domain": "warhammer40kdarktide",
+				},
 			},
 			want: "nxm link warhammer40kdarktide/900/7001",
 			note: "the plain form is what people paste into chat; a launcher link is a long URL",
 		},
 		{
 			name: "github uses the release page",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "owner.pack", SourceID: "github",
 				SourceData: map[string]any{
 					"release_url": "https://github.com/owner/pack/releases/tag/v1.2.0",
@@ -42,18 +42,22 @@ func TestShareLinkBuildsEachLaunchersOwnForm(t *testing.T) {
 		},
 		{
 			name: "the source id is matched without regard to case or padding",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "nexus-900-7001", SourceID: "  NEXUS  ",
-				SourceData: map[string]any{"mod_id": 900, "file_id": 7001},
+				SourceData: map[string]any{
+					"mod_id": 900, "file_id": 7001, "game_domain": "warhammer40kdarktide",
+				},
 			},
 			want: "nxm link warhammer40kdarktide/900/7001",
 			note: "a source id is normalised everywhere else, so it must be here too",
 		},
 		{
 			name: "a whole float is accepted",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "nexus-900-7001", SourceID: "nexus",
-				SourceData: map[string]any{"mod_id": 900.0, "file_id": 7001.0},
+				SourceData: map[string]any{
+					"mod_id": 900.0, "file_id": 7001.0, "game_domain": "warhammer40kdarktide",
+				},
 			},
 			want: "nxm link warhammer40kdarktide/900/7001",
 			note: "JSON has one number type, so a mod that has been through the database carries every id as a float64",
@@ -61,10 +65,10 @@ func TestShareLinkBuildsEachLaunchersOwnForm(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := shareLink(test.mod)
-			require.NoError(t, err, "shareLink")
+			got, err := ModLinkForMod(test.mod)
+			require.NoError(t, err, "ModLinkForMod")
 
-			assert.Equal(t, test.want, got, "shareLink = %q, want %q", got, test.want)
+			assert.Equal(t, test.want, got, "ModLinkForMod = %q, want %q", got, test.want)
 		})
 	}
 }
@@ -74,17 +78,17 @@ func TestShareLinkRefusesWhatCannotBeShared(t *testing.T) {
 		name string
 		want string
 		note string
-		mod  api.Mod
+		mod  Mod
 	}{
 		{
 			name: "a local mod has no link",
-			mod:  api.Mod{ID: "betterui", SourceID: "local"},
+			mod:  Mod{ID: "betterui", SourceID: "local"},
 			want: "local",
 			note: "a local mod only exists on this machine, and printing a link for it would be a lie",
 		},
 		{
 			name: "a nexus mod missing its file id",
-			mod: api.Mod{
+			mod: Mod{
 				ID:         "nexus-900-7001",
 				SourceID:   "nexus",
 				SourceData: map[string]any{"mod_id": 900},
@@ -94,19 +98,29 @@ func TestShareLinkRefusesWhatCannotBeShared(t *testing.T) {
 		},
 		{
 			name: "a nexus mod with no source data at all",
-			mod:  api.Mod{ID: "nexus-900-7001", SourceID: "nexus"},
+			mod:  Mod{ID: "nexus-900-7001", SourceID: "nexus"},
 			want: "nexus",
 			note: "a nil map is what a mod built by hand looks like, and it must not panic",
 		},
 		{
+			name: "a nexus mod recorded before it carried a game domain",
+			mod: Mod{
+				ID:         "nexus-900-7001",
+				SourceID:   "nexus",
+				SourceData: map[string]any{"mod_id": 900, "file_id": 7001},
+			},
+			want: "nexus",
+			note: "guessing the game's sub-domain here is how a link names a different mod",
+		},
+		{
 			name: "a github mod with no release url",
-			mod:  api.Mod{ID: "owner.pack", SourceID: "github"},
+			mod:  Mod{ID: "owner.pack", SourceID: "github"},
 			want: "github",
 			note: "the release page is the whole link, so there is nothing to fall back to",
 		},
 		{
 			name: "a github mod with a blank release url",
-			mod: api.Mod{
+			mod: Mod{
 				ID:         "owner.pack",
 				SourceID:   "github",
 				SourceData: map[string]any{"release_url": "   "},
@@ -116,13 +130,13 @@ func TestShareLinkRefusesWhatCannotBeShared(t *testing.T) {
 		},
 		{
 			name: "a source with no name at all",
-			mod:  api.Mod{ID: "mystery"},
+			mod:  Mod{ID: "mystery"},
 			want: "-",
 			note: "the message has to stay readable when there is nothing to name",
 		},
 		{
 			name: "an id written as a string",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "nexus-900-7001", SourceID: "nexus",
 				SourceData: map[string]any{"mod_id": "900", "file_id": "7001"},
 			},
@@ -131,7 +145,7 @@ func TestShareLinkRefusesWhatCannotBeShared(t *testing.T) {
 		},
 		{
 			name: "a fractional id",
-			mod: api.Mod{
+			mod: Mod{
 				ID: "nexus-900-7001", SourceID: "nexus",
 				SourceData: map[string]any{"mod_id": 900.0, "file_id": 7001.5},
 			},
@@ -141,7 +155,7 @@ func TestShareLinkRefusesWhatCannotBeShared(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := shareLink(test.mod)
+			got, err := ModLinkForMod(test.mod)
 			require.Error(t, err, "shareLink returned %q, want a refusal", got)
 
 			assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
@@ -235,22 +249,20 @@ func TestParseModLinkAcceptsBothSpellings(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			source, mod, _, err := parseModLink(test.link)
-			require.NoError(t, err, "parseModLink(%q)", test.link)
+			source, mod, _, _, err := ParseModLink(test.link)
+			require.NoError(t, err, "ParseModLink(%q)", test.link)
 
-			assert.Equal(t, test.wantSource, source, "parseModLink(%q) = %q, %q; want %q, %q",
+			assert.Equal(t, test.wantSource, source, "ParseModLink(%q) = %q, %q; want %q, %q",
 				test.link, source, mod, test.wantSource, test.wantMod)
-			assert.Equal(t, test.wantMod, mod, "parseModLink(%q) = %q, %q; want %q, %q",
+			assert.Equal(t, test.wantMod, mod, "ParseModLink(%q) = %q, %q; want %q, %q",
 				test.link, source, mod, test.wantSource, test.wantMod)
 		})
 	}
 }
 
 func TestParseNexusLinkReadsTheDownloadAuthorization(t *testing.T) {
-	// A keyed link is the website authorizing one specific download, which is
-	// the only way a free account can fetch an archive: the v3 mint is
-	// premium-only. The three parts travel in the query string, so a link either
-	// carries all of them or carries no authorization at all.
+	// A keyed link is the website authorizing one specific download — the only
+	// way a free account can fetch an archive. It travels in the query string.
 	for _, test := range []struct {
 		name      string
 		link      string
@@ -297,15 +309,15 @@ func TestParseNexusLinkReadsTheDownloadAuthorization(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, _, grant, err := parseNexusLink(test.link)
-			require.NoError(t, err, "parseNexusLink(%q)", test.link)
+			_, _, _, grant, err := ParseModLink(test.link)
+			require.NoError(t, err, "ParseModLink(%q)", test.link)
 
 			require.Equal(
 				t,
 				test.wantGrant,
-				grant.authorized(),
-				"grant.authorized() = %v, want %v",
-				grant.authorized(),
+				grant != nil,
+				"grant = %v, want a grant: %v",
+				grant,
 				test.wantGrant,
 			)
 
@@ -313,47 +325,23 @@ func TestParseNexusLinkReadsTheDownloadAuthorization(t *testing.T) {
 				return
 			}
 
-			assert.Equal(
-				t,
-				test.wantKey,
-				grant.key,
-				"grant.key = %q, want %q",
-				grant.key,
-				test.wantKey,
-			)
-
-			assert.Equal(
-				t,
-				test.wantExp,
-				grant.expires,
-				"grant.expires = %q, want %q",
-				grant.expires,
-				test.wantExp,
-			)
-
-			assert.Equal(
-				t,
-				test.wantUser,
-				grant.userID,
-				"grant.userID = %q, want %q",
-				grant.userID,
-				test.wantUser,
-			)
+			assert.Equal(t, test.wantKey, grant["nxm_key"], "the grant carries %v", grant)
+			assert.Equal(t, test.wantExp, grant["nxm_expires"], "the grant carries %v", grant)
+			assert.Equal(t, test.wantUser, grant["nxm_user_id"], "the grant carries %v", grant)
 		})
 	}
 }
 
 func TestNXMGrantSourceDataIsNilUnlessTheGrantIsComplete(t *testing.T) {
-	// A partial grant rendered as SourceData would reach the source as an
-	// authorization, and the endpoint answers 403 to one — a 403 that blames the
-	// account rather than the link.
-	got := (nxmGrant{}).sourceData()
+	// A partial grant reaches the source as an authorization and draws a 403 that
+	// blames the account; only the parser can tell it is incomplete.
+	got := nxmGrantFromQuery(url.Values{})
 	assert.Nil(t, got, "an empty grant rendered %v, want nil", got)
 
-	got = (nxmGrant{key: "k", expires: "1"}).sourceData()
+	got = nxmGrantFromQuery(url.Values{"key": {"k"}, "expires": {"1"}})
 	assert.Nil(t, got, "a partial grant rendered SourceData, want nil")
 
-	got = nxmGrant{key: "k", expires: "1", userID: "2"}.sourceData()
+	got = nxmGrantFromQuery(url.Values{"key": {"k"}, "expires": {"1"}, "user_id": {"2"}})
 
 	want := map[string]any{"nxm_key": "k", "nxm_expires": "1", "nxm_user_id": "2"}
 	for key, value := range want {
@@ -364,15 +352,15 @@ func TestNXMGrantSourceDataIsNilUnlessTheGrantIsComplete(t *testing.T) {
 func TestParseModLinkCarriesAKeyedGrantThrough(t *testing.T) {
 	// The grant has to survive the trip from the parser to the caller intact:
 	// it is the whole reason a keyed link is worth pasting.
-	source, mod, grant, err := parseModLink(
+	source, mod, _, grant, err := ParseModLink(
 		"nxm://warhammer40kdarktide/mods/1419/files/8847?key=k&expires=1&user_id=2")
-	require.NoError(t, err, "parseModLink")
+	require.NoError(t, err, "ParseModLink")
 
 	require.Equal(
 		t,
 		"nexus",
 		source,
-		"parseModLink = %q/%q, want nexus/nexus-1419-8847",
+		"ParseModLink = %q/%q, want nexus/nexus-1419-8847",
 		source,
 		mod,
 	)
@@ -380,21 +368,20 @@ func TestParseModLinkCarriesAKeyedGrantThrough(t *testing.T) {
 		t,
 		"nexus-1419-8847",
 		mod,
-		"parseModLink = %q/%q, want nexus/nexus-1419-8847",
+		"ParseModLink = %q/%q, want nexus/nexus-1419-8847",
 		source,
 		mod,
 	)
 
-	data := grant.sourceData()
-	require.Equal(t, "k", data["nxm_key"], "the grant reached the caller as %v", data)
-	require.Equal(t, "1", data["nxm_expires"], "the grant reached the caller as %v", data)
-	require.Equal(t, "2", data["nxm_user_id"], "the grant reached the caller as %v", data)
+	require.Equal(t, "k", grant["nxm_key"], "the grant reached the caller as %v", grant)
+	require.Equal(t, "1", grant["nxm_expires"], "the grant reached the caller as %v", grant)
+	require.Equal(t, "2", grant["nxm_user_id"], "the grant reached the caller as %v", grant)
 	// A plain link yields nothing rather than an empty map, so the caller's
 	// install options are unchanged by a link that carried no authorization.
-	_, _, plain, err := parseModLink("nxm://warhammer40kdarktide/mods/1419/files/8847")
-	require.NoError(t, err, "parseModLink")
+	_, _, _, plain, err := ParseModLink("nxm://warhammer40kdarktide/mods/1419/files/8847")
+	require.NoError(t, err, "ParseModLink")
 
-	assert.Nil(t, plain.sourceData(), "a plain link rendered %v, want nil", plain.sourceData())
+	assert.Nil(t, plain, "a plain link rendered %v, want nil", plain)
 }
 
 func TestParseModLinkRefusesWhatItCannotInstall(t *testing.T) {
@@ -466,18 +453,11 @@ func TestParseModLinkRefusesWhatItCannotInstall(t *testing.T) {
 			showsForm: true,
 			note:      "Nexus numbers its files from one, so zero is not a file",
 		},
-		{
-			name:      "a nexus link for another game",
-			link:      "nxm link fallout4/900/7001",
-			want:      "this manager only handles",
-			showsForm: false,
-			note:      "installing it would be wrong rather than merely useless",
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			source, mod, _, err := parseModLink(test.link)
-			require.Error(t, err, "parseModLink(%q) accepted it as %q/%q", test.link, source, mod)
+			source, mod, _, _, err := ParseModLink(test.link)
+			require.Error(t, err, "ParseModLink(%q) accepted it as %q/%q", test.link, source, mod)
 
 			assert.True(
 				t,
@@ -510,22 +490,21 @@ func TestParseModLinkRefusesWhatItCannotInstall(t *testing.T) {
 }
 
 func TestParseModLinkRoundTripsWhatShareLinkBuilds(t *testing.T) {
-	// The two halves of the share/import pair are only useful together if one
-	// accepts exactly what the other produces. A Nexus mod is keyed by the
-	// (mod, file) pair, so a link has to carry enough for the source to
-	// rebuild exactly the id it published — a link that carried only one half
-	// would install a different file than the one the sender meant.
-	mod := api.Mod{
-		ID:         "nexus-900-7001",
-		SourceID:   "nexus",
-		SourceData: map[string]any{"mod_id": 900, "file_id": 7001},
+	// A Nexus mod is keyed by the (mod, file) pair, so a link carrying one half would
+	// install a different file than the sender meant.
+	mod := Mod{
+		ID:       "nexus-900-7001",
+		SourceID: "nexus",
+		SourceData: map[string]any{
+			"mod_id": 900, "file_id": 7001, "game_domain": "warhammer40kdarktide",
+		},
 	}
 
-	link, err := shareLink(mod)
-	require.NoError(t, err, "shareLink(%s)", mod.SourceID)
+	link, err := ModLinkForMod(mod)
+	require.NoError(t, err, "ModLinkForMod(%s)", mod.SourceID)
 
-	source, got, _, err := parseModLink(link)
-	require.NoError(t, err, "parseModLink(%q)", link)
+	source, got, _, _, err := ParseModLink(link)
+	require.NoError(t, err, "ParseModLink(%q)", link)
 
 	assert.Equal(
 		t,
@@ -581,4 +560,39 @@ func TestPositiveInt(t *testing.T) {
 
 		assert.Equal(t, test.wantI, got, "positiveInt(%q) = %d, want %d", test.in, got, test.wantI)
 	}
+}
+
+func TestShareLinkNamesTheGameTheModCameFrom(t *testing.T) {
+	// The link format knows no games, so only the mod itself can put the right
+	// sub-domain in: stamping one game's slug would send another's link elsewhere.
+	mod := Mod{
+		ID:       "nexus-900-7001",
+		SourceID: "nexus",
+		SourceData: map[string]any{
+			"mod_id": 900, "file_id": 7001, "game_domain": "someotherslug",
+		},
+	}
+
+	link, err := ModLinkForMod(mod)
+	require.NoError(t, err, "ModLinkForMod")
+
+	assert.Equal(t, "nxm link someotherslug/900/7001", link, "ModLinkForMod named the wrong game")
+
+	source, got, game, _, err := ParseModLink(link)
+	require.NoError(t, err, "ParseModLink(%q)", link)
+
+	assert.Equal(t, "nexus", source, "ParseModLink(%q)", link)
+	assert.Equal(t, "nexus-900-7001", got, "ParseModLink(%q)", link)
+	assert.Equal(t, "someotherslug", game, "the sub-domain must survive the trip")
+}
+
+func TestParseModLinkReportsTheGameRatherThanRefusingIt(t *testing.T) {
+	// Which games exist is the registry's question, not the parser's, so the
+	// parser hands the slug back and lets the caller refuse.
+	source, mod, game, _, err := ParseModLink("nxm://someotherslug/900/7001")
+	require.NoError(t, err, "the parser must not decide which games are installed")
+
+	assert.Equal(t, "nexus", source)
+	assert.Equal(t, "nexus-900-7001", mod)
+	assert.Equal(t, "someotherslug", game)
 }

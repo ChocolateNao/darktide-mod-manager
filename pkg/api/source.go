@@ -28,12 +28,10 @@ func (c *Client) sourceRegistry() (*services.SourceRegistry, error) {
 	return c.deps.Sources, nil
 }
 
-// ListSources describes every registered source.
-//
-// It cannot fail: describing a source is reading its capabilities, and a source
-// that cannot be built is still described — with Enabled false — because a source
-// silently missing from the list is the one failure mode a user cannot diagnose.
-// A closed client returns nil.
+// ListSources describes every registered source. It cannot fail: a source that cannot
+// be built is still described, with Enabled false, because a source silently missing
+// from the list is the one failure mode a user cannot diagnose. A closed client
+// returns nil.
 func (c *Client) ListSources(ctx context.Context) []ModSourceInfo {
 	registry, err := c.sourceRegistry()
 	if err != nil {
@@ -42,8 +40,7 @@ func (c *Client) ListSources(ctx context.Context) []ModSourceInfo {
 
 	infos := registry.Infos()
 	// One read for the whole list: the answer is the same for every row, and a
-	// settings screen asking for the list should not read the file once per
-	// source.
+	// settings screen asking for the list should not read the file once per source.
 	cfg := c.storedConfig()
 	for i := range infos {
 		infos[i] = withStoredKey(infos[i], cfg)
@@ -64,13 +61,9 @@ func (c *Client) SourceInfo(ctx context.Context, sourceID string) (ModSourceInfo
 		return ModSourceInfo{}, appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"source id must not be blank")
 	}
-	// Has, not Get: describing a source must not build it, so a source that is
-	// switched off or misconfigured is still described — and a source that does
-	// not exist is reported as missing rather than as the same empty
-	// description. Info answers from the registry without building anything, so
-	// a broken source still gets described rather than failing here; the registry
-	// reports a source it could not build as disabled, which is exactly what a
-	// caller wants to see.
+	// Has, not Get: describing a source must not build it, so a switched-off or
+	// misconfigured source is still described, and a missing one is reported as missing
+	// rather than as the same empty description.
 	if !registry.Has(id) {
 		return ModSourceInfo{}, appErrors.New(appErrors.ErrCodeSourceNotFound,
 			"no mod source with id %q is registered", id)
@@ -79,16 +72,12 @@ func (c *Client) SourceInfo(ctx context.Context, sourceID string) (ModSourceInfo
 	return withStoredKey(registry.Info(id), c.storedConfig()), nil
 }
 
-// storedConfig reads the current configuration, or returns nil when it cannot be
-// read.
-//
-// It exists for one fact. The registry judges "is a key stored?" against the
-// configuration it was built with — the composition root merges the command line
-// over the file into that value and hands it over on purpose — so a key stored
-// through this API is invisible to it until the next launch. A user who signs in
-// and is then told the source has no key has been told something false about
-// their own machine. The store is the thing that changed, so the store is what is
-// asked.
+// storedConfig reads the current configuration, or nil when it cannot be read. It
+// exists for one fact: the registry judges "is a key stored?" against the configuration
+// it was built with — the composition root merges the command line over the file into
+// that value on purpose — so a key stored through this API is invisible to it until the
+// next launch, and a user who signs in and is then told the source has no key has been
+// told something false. The store is what changed, so the store is what is asked.
 func (c *Client) storedConfig() *domain.Config {
 	if c == nil || c.deps.Config == nil {
 		return nil
@@ -116,14 +105,11 @@ func withStoredKey(info ModSourceInfo, cfg *domain.Config) ModSourceInfo {
 	return info
 }
 
-// SearchSource searches one source by name.
-//
-// Only the free-text part of a SearchQuery is exposed here; a caller that needs
-// tags, paging or an explicit sort uses Search and passes a SearchQuery. Searching
-// a source that does not support search reports ErrCodeSourceUnavailable, which
-// is more useful than an empty list: the difference between "this source has
-// nothing matching" and "this source cannot be searched" is the difference
-// between a user trying another word and a user filing a bug.
+// SearchSource searches one source by name. Only the free-text part of a SearchQuery is
+// exposed here; a caller needing tags, paging or an explicit sort uses Search. A
+// source that cannot be searched reports ErrCodeSourceUnavailable, which beats an
+// empty list: "nothing matches" and "cannot be searched" are the difference between a
+// user trying another word and a user filing a bug.
 func (c *Client) SearchSource(ctx context.Context, sourceID, query string) ([]Mod, error) {
 	registry, err := c.sourceRegistry()
 	if err != nil {
@@ -148,13 +134,55 @@ func (c *Client) SearchSource(ctx context.Context, sourceID, query string) ([]Mo
 	return mods, nil
 }
 
-// Search runs a full query against every searchable source at once.
+// DroppedMod is what a source recognises at a filesystem path, projected for a
+// drop-and-confirm overlay. A projection rather than a domain.Mod because the overlay
+// must say what it is about to install before an install exists; LocalPath and
+// SourceData are withheld because nothing about the payload is needed to confirm it,
+// and the install re-reads the path itself.
+type DroppedMod struct {
+	SourceID string `json:"source_id"`
+	ModID    string `json:"mod_id"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Author   string `json:"author,omitempty"`
+	Path     string `json:"path"`
+}
+
+// InspectDroppedPath asks the registered sources what mod sits at path.
 //
-// A source that fails does not fail the search: the remaining results are
-// returned and only an error is reported when every source failed, because
-// returning an error alongside a partial result invites the caller to discard
-// the results that are good. Use ListSources and SearchSource when a caller needs
-// to know which provider answered.
+// The recognised flag is separate from the error so the caller can refuse an
+// unrecognised drop with a reason of its own wording, while a genuine failure
+// still arrives as a failure.
+func (c *Client) InspectDroppedPath(ctx context.Context, path string) (*DroppedMod, bool, error) {
+	registry, err := c.sourceRegistry()
+	if err != nil {
+		return nil, false, err
+	}
+
+	mod, recognised, err := registry.InspectPath(ctx, strings.TrimSpace(path))
+	if err != nil {
+		return nil, false, err
+	}
+
+	if !recognised {
+		return nil, false, nil
+	}
+
+	return &DroppedMod{
+		SourceID: mod.SourceID,
+		ModID:    mod.ID,
+		Name:     mod.Name,
+		Version:  mod.Version,
+		Author:   mod.Author,
+		Path:     path,
+	}, true, nil
+}
+
+// Search runs a full query against every searchable source at once. A source that
+// fails does not fail the search: the remaining results are returned and an error is
+// reported only when every source failed, because an error alongside a partial result
+// invites the caller to discard the results that are good. Use ListSources and
+// SearchSource when a caller needs to know which provider answered.
 func (c *Client) Search(ctx context.Context, query SearchQuery) ([]Mod, error) {
 	registry, err := c.sourceRegistry()
 	if err != nil {
@@ -181,22 +209,18 @@ func (c *Client) GetSourceMod(ctx context.Context, sourceID, modID string) (*Mod
 	return source.GetMod(ctx, strings.TrimSpace(modID))
 }
 
-// AuthenticateSource supplies credentials to one source and, once the source has
-// confirmed them, stores them in the application configuration.
+// AuthenticateSource supplies credentials to one source and, once the source confirms
+// them, stores them in the application configuration. The accepted keys are the
+// source's own: Nexus wants a username and an api_key, Vortex and GitHub accept a
+// token under api_key or token. A source that needs none reports ErrCodeAuthRequired —
+// there is nothing to enter, and asking is how a user learns the source needs no
+// credentials.
 //
-// The accepted keys are the source's own: Nexus wants a username and an api_key,
-// Vortex and GitHub accept a token under api_key or token. A source that needs
-// none reports ErrCodeAuthRequired — there is nothing to enter, and asking is how
-// a user learns the source needs no credentials.
-//
-// Persistence is part of the call on purpose. The registry's record of a
-// successful sign-in lives in memory and dies with the process, so a caller that
-// authenticated and stopped there would have to repeat the sign-in on every
-// launch; the API key in the configuration file is what the sources rebuild
-// themselves from. A credential the source rejects is therefore never written.
-//
-// The registry records the outcome, so Authenticated on the returned source info
-// flips to true only after the source itself confirms the credential.
+// Persistence is part of the call on purpose: the registry's record of a sign-in
+// dies with the process, so stopping after authenticating would repeat the sign-in
+// every launch. A credential the source rejects is never written, and the
+// registry records the outcome, so Authenticated flips only once the source itself
+// confirms.
 func (c *Client) AuthenticateSource(
 	ctx context.Context,
 	sourceID string,
@@ -215,21 +239,29 @@ func (c *Client) AuthenticateSource(
 	return c.persistCredentials(id, creds)
 }
 
-// SetSourceAPIKey stores an API key for a source without asking the source about
-// it. It is SetSourceCredentials for the common case; a source that also needs a
-// username is covered by that function directly.
+// SetSourceAPIKey signs a source in with a single API key. The source is asked
+// before the key is stored, which is what makes the stored key usable straight
+// away: the registry caches built sources for the life of the process, so a key
+// that only reached the settings file left the running source signing nothing and
+// every download failed on AUTH_REQUIRED until the next launch. Validating first
+// also means a key the provider refuses is never written at all.
+//
+// SetSourceCredentials is the escape hatch for a key entered before the machine
+// can reach the provider, where there is nothing to validate against.
 func (c *Client) SetSourceAPIKey(ctx context.Context, sourceID, apiKey string) error {
-	return c.SetSourceCredentials(ctx, sourceID, map[string]string{"api_key": apiKey})
+	return c.AuthenticateSource(ctx, sourceID, map[string]string{"api_key": apiKey})
 }
 
-// SetSourceCredentials stores credentials for a source without asking the source
-// about them.
+// SetSourceCredentials stores credentials for a source without asking the source about
+// them. Verification is a network round trip, and it is the wrong thing to insist on in
+// two situations: a machine with no connection yet, and a key the provider would refuse
+// for a reason the provider cannot explain. Use AuthenticateSource — or SetSourceAPIKey,
+// which is it for a bare key — when the key is new, TestSourceConnection to find out
+// whether a stored one works, and this when the answer is "store it either way".
 //
-// Verification is a network round trip to the provider, and it is the wrong thing
-// to insist on in two situations: a machine with no connection yet, and a key the
-// provider would refuse for a reason the provider cannot explain. Use
-// AuthenticateSource when the key is new, TestSourceConnection to find out whether
-// a stored one works, and this when the answer is "store it either way".
+// Storing alone only reaches the settings file. The live source keeps whatever it
+// was built with until the next launch, so anything that has to work now must go
+// through AuthenticateSource.
 func (c *Client) SetSourceCredentials(
 	ctx context.Context,
 	sourceID string,
@@ -238,12 +270,10 @@ func (c *Client) SetSourceCredentials(
 	return c.persistCredentials(sourceID, creds)
 }
 
-// ClearSourceAPIKey forgets a stored key.
-//
-// It clears the configuration *and* the live source, because the registry caches
-// built sources for the life of the process: a key removed from the file alone
-// would keep working until the next launch, which is the opposite of what a user
-// who clicked "forget" is asking for.
+// ClearSourceAPIKey forgets a stored key. It clears the configuration *and* the live
+// source, because the registry caches built sources for the life of the process: a key
+// removed from the file alone would keep working until the next launch, the opposite of
+// what a user who clicked "forget" is asking for.
 func (c *Client) ClearSourceAPIKey(ctx context.Context, sourceID string) error {
 	if c == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "no client")
@@ -286,8 +316,8 @@ func (c *Client) ClearSourceAPIKey(ctx context.Context, sourceID string) error {
 		return err
 	}
 	// The registry knows best whether this source can drop the credential it is
-	// holding, so its refusal is the error the caller gets — after the file is
-	// already clean, which is the half we can guarantee.
+	// holding, so its refusal is the error the caller gets — after the file is already
+	// clean, the half we can guarantee.
 	if c.deps.Sources != nil {
 		return c.deps.Sources.ForgetCredentials(id)
 	}
@@ -295,16 +325,13 @@ func (c *Client) ClearSourceAPIKey(ctx context.Context, sourceID string) error {
 	return nil
 }
 
-// credentialField maps one credential name onto the configuration field that
-// holds it.
-//
-// api_key is the field every source reads back (see each plugin's constructor),
-// and the aliases are the names the sources themselves accept, so a caller that
-// used the provider's own spelling still ends up in the right place. A username is
-// an option because no source has a dedicated field for it, and anything else is
-// stored as an option too rather than dropped: a source may need a field this API
-// has never heard of, and silently keeping half of a sign-in is worse than
-// keeping all of it somewhere the source can read.
+// credentialField maps one credential name onto the configuration field that holds it.
+// api_key is the field every source reads back (see each plugin's constructor) and the
+// aliases are the names sources accept, so a caller using the provider's own spelling
+// still lands in the right place. A username is an option because no source has a
+// dedicated field, and anything else is stored as an option rather than dropped: a
+// source may need a field this API has never heard of, and keeping half a sign-in is
+// worse than keeping all of it somewhere the source can read.
 func credentialField(name string) (string, bool) {
 	switch normalizeKey(name) {
 	case "apikey", "key", "token":
@@ -317,12 +344,10 @@ func credentialField(name string) (string, bool) {
 }
 
 // persistCredentials writes credentials into the stored configuration in one
-// read-modify-write cycle.
-//
-// The whole set goes in at once because half a sign-in is not a state worth
-// storing: a token written while its username was dropped looks configured on the
-// next launch and fails on first use, which is a harder bug to diagnose than no
-// configuration at all.
+// read-modify-write cycle. The whole set goes in at once because half a sign-in is
+// not a state worth storing: a token written while its username was dropped looks
+// configured on the next launch and fails on first use, a harder bug to diagnose
+// than no configuration at all.
 func (c *Client) persistCredentials(sourceID string, creds map[string]string) error {
 	if c == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument, "no client")
@@ -349,9 +374,9 @@ func (c *Client) persistCredentials(sourceID string, creds map[string]string) er
 		trimmedName := strings.TrimSpace(name)
 
 		trimmedValue := strings.TrimSpace(value)
+		// Sources already reject a blank credential before it gets here; this only
+		// keeps an empty option out of the configuration file.
 		if trimmedName == "" || trimmedValue == "" {
-			// Sources already reject a blank credential before they get here; this
-			// only keeps an empty option out of the configuration file.
 			continue
 		}
 
@@ -411,10 +436,9 @@ func (c *Client) TestSourceConnection(ctx context.Context, sourceID string) erro
 }
 
 // SetSourceAuthenticated overrides the registry's record of whether a source is
-// authenticated. It exists for a source whose credential is managed elsewhere —
-// a token issued out of band, for instance — and for tests. Passing a value the
-// source disagrees with is a display error, not a functional one, which is why
-// this returns nothing.
+// authenticated. It exists for a source whose credential is managed elsewhere — a token
+// issued out of band — and for tests. A value the source disagrees with is a display
+// error, not a functional one, which is why this returns nothing.
 func (c *Client) SetSourceAuthenticated(sourceID string, authenticated bool) {
 	registry, err := c.sourceRegistry()
 	if err != nil {
