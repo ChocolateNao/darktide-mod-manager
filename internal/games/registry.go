@@ -21,11 +21,9 @@ var (
 	builtinsRan bool
 )
 
-// EnsureBuiltins registers every game the binary ships with. It is idempotent
-// and safe to call from any composition root: a second call is a no-op, and a
-// Reset in a test puts it back to unregistered so the next call registers
-// again. Failing here means the binary cannot name its own game, which is
-// fatal at wiring time.
+// EnsureBuiltins registers every game the binary ships with. It is idempotent,
+// and a Reset in a test puts it back so the next call registers again. Failing
+// here means the binary cannot name its own game, which is fatal at wiring time.
 func EnsureBuiltins() error {
 	builtinsMu.Lock()
 	defer builtinsMu.Unlock()
@@ -92,9 +90,9 @@ func Get(id string) (domain.GameDefinition, bool) {
 	return def, ok
 }
 
-// MustGet returns the definition for an id or panics. It is for built-ins
-// wired at composition time, where a missing game means the binary was built
-// without its own registry — not a condition to handle at run time.
+// MustGet returns the definition for an id or panics. It is for built-ins wired
+// at composition time, where a missing game means the binary was built without
+// its own registry.
 func MustGet(id string) domain.GameDefinition {
 	def, ok := Get(id)
 	if !ok {
@@ -120,9 +118,8 @@ func All() []domain.GameDefinition {
 	return out
 }
 
-// DefaultID is the id of the first registered game. A configuration with an
-// empty active_game resolves to this id; registering the games in binary
-// order therefore picks the default without another configuration knob.
+// DefaultID is the id of the first registered game, which is what a
+// configuration with an empty active_game resolves to.
 func DefaultID() string {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
@@ -149,20 +146,56 @@ func IDs() []string {
 	return out
 }
 
-// Lookup adapts the package-level registry to a consumer that wants to resolve
-// one game by id without importing this package's functions.
+// BySourceDomain returns the game that claims slug as its sub-domain on sourceID.
 //
-// The action runner needs exactly that, and nothing else here: it describes an
-// action belonging to any game, including one the user has not made active, so
-// it cannot ask the locator — which only knows the active game.
+// The lookup exists because the two sides of a launcher link use different strings
+// for the same game: the link carries the site's sub-domain, the rest of the
+// program names games by registry id, and neither can be derived from the other.
+// The first match wins, so a game that declares the same sub-domain twice is a
+// definition mistake: not a runtime choice.
+func BySourceDomain(sourceID, slug string) (domain.GameDefinition, bool) {
+	needle := strings.ToLower(strings.TrimSpace(slug))
+	if needle == "" {
+		return nil, false
+	}
+
+	for _, def := range All() {
+		got := strings.ToLower(domain.SourceDefault(def, sourceID, domain.SourceDomainKey))
+		if got != "" && got == needle {
+			return def, true
+		}
+	}
+
+	return nil, false
+}
+
+// SourceDomains lists the sub-domains the registered games claim on one source,
+// sorted by game id so a refusal names them in a stable order. It answers "which
+// links would work?" without the caller repeating the SourceDefaults layout.
+func SourceDomains(sourceID string) []string {
+	out := make([]string, 0, len(registry))
+
+	for _, def := range All() {
+		if slug := domain.SourceDefault(def, sourceID, domain.SourceDomainKey); slug != "" {
+			out = append(out, slug)
+		}
+	}
+
+	return out
+}
+
+// Lookup resolves one game by id for a consumer that cannot ask the locator.
+//
+// The action runner needs this: it describes actions belonging to any game,
+// including one the user has not made active.
 type Lookup struct{}
 
 // Get returns the definition registered for an id.
 func (Lookup) Get(id string) (domain.GameDefinition, bool) { return Get(id) }
 
 // Reset empties the registry. Production code never calls it; tests share one
-// process-wide registry, and without a way to clear it every test package
-// would inherit whatever the last one registered.
+// process-wide registry and without a way to clear it every test package would
+// inherit whatever the last one registered.
 func Reset() {
 	builtinsMu.Lock()
 	defer builtinsMu.Unlock()

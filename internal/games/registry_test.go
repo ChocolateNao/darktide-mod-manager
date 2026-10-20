@@ -10,7 +10,7 @@ import (
 )
 
 // stubGame is a second game used only by these tests: the registry must hold
-// more than one definition without either one leaking into the other's lookups.
+// more than one definition without either leaking into the other's lookups.
 type stubGame struct{}
 
 func (stubGame) ID() string                     { return "stub-game" }
@@ -43,9 +43,8 @@ func withCleanRegistry(t *testing.T) {
 	t.Cleanup(Reset)
 }
 
-// builtinIDs are the games EnsureBuiltins ships with. The list lives here
-// rather than in the registry so a new built-in game makes these tests say what
-// to add instead of silently passing.
+// builtinIDs lives here rather than in the registry so a new built-in game makes
+// these tests say what to add instead of silently passing.
 var builtinIDs = []string{darktide.ID}
 
 func TestEnsureBuiltinsRegistersEveryBuiltinIdempotently(t *testing.T) {
@@ -126,7 +125,7 @@ func TestResetEmptiesTheRegistryAndBuiltinsFlag(t *testing.T) {
 	assert.Empty(t, IDs(), "registry not emptied")
 	assert.Equal(t, "", DefaultID(), "default not cleared")
 
-	// Builtins can be registered again after a Reset — the flag was cleared too.
+	// Builtins can be registered again after a Reset, so the flag was cleared too.
 	require.NoError(t, EnsureBuiltins())
 	assert.ElementsMatch(t, builtinIDs, IDs())
 }
@@ -141,3 +140,59 @@ type badMethodGame struct{ stubGame }
 func (badMethodGame) ModInstallMethod() string { return "teleport" }
 
 func (badMethodGame) GameActions() []domain.GameAction { return nil }
+
+// hostedGame claims a sub-domain on Nexus, the way a real game does.
+type hostedGame struct{ stubGame }
+
+func (hostedGame) ID() string { return "hosted-game" }
+
+func (hostedGame) SourceDefaults() map[string]map[string]string {
+	return map[string]map[string]string{
+		"nexus": {domain.SourceDomainKey: "someotherslug"},
+	}
+}
+
+func TestBySourceDomainFindsTheGameThatClaimsASlug(t *testing.T) {
+	withCleanRegistry(t)
+	require.NoError(t, EnsureBuiltins(), "EnsureBuiltins")
+	require.NoError(t, Register(hostedGame{}), "Register")
+
+	def, ok := BySourceDomain("nexus", "someotherslug")
+	require.True(t, ok, "a registered game's own slug must resolve back to it")
+	assert.Equal(t, "hosted-game", def.ID())
+
+	// A launcher has no say over how somebody typed the slug.
+	_, ok = BySourceDomain("nexus", "SomeOtherSlug")
+	assert.True(t, ok, "the lookup must ignore case")
+
+	def, ok = BySourceDomain("nexus", "warhammer40kdarktide")
+	require.True(t, ok, "a built-in game's slug must resolve")
+	assert.Equal(t, darktide.ID, def.ID())
+}
+
+func TestBySourceDomainRefusesWhatNoGameClaims(t *testing.T) {
+	withCleanRegistry(t)
+	require.NoError(t, EnsureBuiltins(), "EnsureBuiltins")
+
+	for _, slug := range []string{"", "   ", "someotherslug", "warhammer40kdarkti"} {
+		_, ok := BySourceDomain("nexus", slug)
+		assert.False(t, ok, "BySourceDomain resolved the unregistered slug %q", slug)
+	}
+
+	// The slug is per source: a game can claim one site's slug and another's not.
+	_, ok := BySourceDomain("github", "warhammer40kdarktide")
+	assert.False(t, ok, "a slug from one source must not answer for another")
+}
+
+func TestSourceDomainsListsWhatWouldBeAccepted(t *testing.T) {
+	withCleanRegistry(t)
+	require.NoError(t, EnsureBuiltins(), "EnsureBuiltins")
+
+	assert.Equal(
+		t,
+		[]string{"warhammer40kdarktide"},
+		SourceDomains("nexus"),
+		"only games that claim a slug on this source are listed",
+	)
+	assert.Empty(t, SourceDomains("github"), "no built-in claims a slug on github")
+}
