@@ -22,8 +22,8 @@ func TestTableRendersNothingWithoutRows(t *testing.T) {
 
 	var out bytes.Buffer
 	require.NoError(t, table.Render(&out), "render")
-	// A header with nothing under it reads as a bug. Every caller has a better
-	// sentence for the empty case, which is why they ask first.
+	// A header with nothing under it reads as a bug; every caller has a better
+	// sentence for the empty case.
 	assert.Equal(t, 0, out.Len(), "an empty table rendered %q, want nothing", out.String())
 }
 
@@ -80,8 +80,7 @@ func TestTablePadsShortRowsAndDropsExtraCells(t *testing.T) {
 		"a cell past the header count was rendered: %q",
 		out.String(),
 	)
-	// The first column is as wide as "only-a"; "a" is padded up to it and the
-	// second column of both rows lands on the same offset.
+
 	second := strings.Index(lines[2], "b")
 	assert.Equal(
 		t,
@@ -101,8 +100,6 @@ func TestTablePadsShortRowsAndDropsExtraCells(t *testing.T) {
 		strings.Index(lines[0], "B"),
 		out.String(),
 	)
-	// The missing cells are empty rather than absent, so a row of the wrong
-	// length cannot shorten the last column.
 	assert.True(
 		t,
 		strings.HasPrefix(lines[1], "only-a  "),
@@ -210,8 +207,8 @@ func TestSanitizeCellKeepsColumnsAligned(t *testing.T) {
 }
 
 func TestTableSanitizesWhatItStores(t *testing.T) {
-	// The sanitising has to happen in Add rather than in Render: Render measures
-	// what it prints, so a value cleaned on the way out would be measured uncleaned.
+	// The sanitising has to happen in Add: Render measures what it prints, so a
+	// value cleaned on the way out would be measured uncleaned.
 	table := NewTable("NAME", "STATE")
 	table.Add("first\nsecond", "yes")
 
@@ -236,11 +233,9 @@ func TestTableSanitizesWhatItStores(t *testing.T) {
 	)
 }
 
-// TestRenderToAPipeIgnoresTheTerminalThisProcessHappensToHave runs the table
-// through a real terminal-shaped file and still expects the full document.
-// A pipe, a file and a test's buffer all get every row in full: output is a
-// contract, and a table that wrapped itself to whichever window it was run in
-// would be a different document to every reader of the same command.
+// TestRenderToAPipeIgnoresTheTerminalThisProcessHappensToHave expects the full
+// document through a terminal-shaped file. Output is a contract: a pipe, a file
+// and a buffer all get every row.
 func TestRenderToAPipeIgnoresTheTerminalThisProcessHappensToHave(t *testing.T) {
 	table := NewTable("ID", "DESCRIPTION")
 	for i := range 40 {
@@ -289,8 +284,8 @@ func TestGridOfIsFalseForAnythingButATerminal(t *testing.T) {
 }
 
 func TestFitWidthsSqueezesTheWidestColumnFirst(t *testing.T) {
-	// One long value makes its column wide; the width that is not information is
-	// where the room has to come from, not the four short columns.
+	// One long value makes its column wide; the room comes from there, leaving the
+	// short columns alone.
 	widths := fitWidths([]int{4, 60}, []int{4, 4}, 20)
 	assert.LessOrEqual(
 		t,
@@ -318,8 +313,8 @@ func TestFitWidthsSqueezesTheWidestColumnFirst(t *testing.T) {
 }
 
 func TestFitWidthsStopsAtTheFloors(t *testing.T) {
-	// A table too narrow for its own headers is rendered over the edge rather
-	// than squeezed into single letters: an overflowing table still says everything.
+	// A table too narrow for its headers is rendered over the edge: an overflowing
+	// table still says everything.
 	widths, floors := (&Table{
 		headers: []string{"MOD", "STATE", "SOURCE"},
 		rows:    [][]string{{strings.Repeat("x", 30), "ok", "nexus"}},
@@ -431,8 +426,7 @@ func TestRowsForHeightReservesTheHeaderAndTheNote(t *testing.T) {
 	for i := range rows {
 		rows[i] = []string{fmt.Sprintf("row-%d", i)}
 	}
-	// A table that fits is handed back whole, so a tall terminal is never the
-	// reason a row is missing.
+
 	got, elided := rowsForHeight(
 		rows,
 		52,
@@ -506,8 +500,6 @@ func TestElidedNoteSaysHowManyAndSuggestNothing(t *testing.T) {
 	)
 }
 
-// renderTable returns what the table says into a buffer, which is what every
-// caller and every recorded transcript reads.
 func renderTable(t *testing.T, table *Table) string {
 	t.Helper()
 
@@ -547,7 +539,7 @@ func TestClipShortensAndMarks(t *testing.T) {
 		"Clip shortened a value of exactly the limit to %d runes",
 		len([]rune(got)),
 	)
-	// A rune count just over the limit.
+
 	over := strings.Repeat("y", maxCellWidth+1)
 	got = Clip(over)
 	assert.Equal(t, atLimit[:maxCellWidth-1]+"…", got, "Clip of a limit-plus-one value = %q", got)
@@ -598,8 +590,7 @@ func TestFieldsAlignsAndShowsBlanks(t *testing.T) {
 		"a blank value did not become a dash: %q",
 		lines[2],
 	)
-	// A path is the one value that must not be clipped: a truncated path is not
-	// a path.
+	// A path must never be clipped: a truncated path is useless.
 	long := strings.Repeat("p", 200)
 	fields.Set("long", long)
 	out.Reset()
@@ -624,8 +615,7 @@ func TestFieldsRendersNothingWhenEmpty(t *testing.T) {
 func TestWriteJSONEndsWithANewline(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, writeJSON(&out, map[string]int{"files": 2}), "writeJSON")
-	// Two documents printed in a row have to be separable, and they are only
-	// separable if each one ends its line.
+	// Two documents in a row are separable only if each ends its line.
 	assert.True(
 		t,
 		strings.HasSuffix(out.String(), "}\n"),
@@ -821,8 +811,7 @@ func TestJoinNames(t *testing.T) {
 
 	got = joinNames([]string{"a", "b"})
 	assert.Equal(t, "a, b", got, "joinNames = %q, want %q", got, "a, b")
-	// A tag list has no natural length, so it has to be clipped like any other
-	// prose cell.
+
 	many := make([]string, 0, 40)
 	for i := 0; i < 40; i++ {
 		many = append(many, strings.Repeat("t", 4))
