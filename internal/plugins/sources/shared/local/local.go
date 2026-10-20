@@ -1,11 +1,10 @@
-// Package local implements the "local folder" mod source: a directory tree the
-// user points at, containing mod folders or mod archives.
+// Package local implements the "local folder" mod source: a directory tree the user
+// points at, containing mod folders or mod archives.
 //
-// It is the only source that needs no network and no credentials, which makes it
-// both the offline fallback and the easiest way to develop a mod against the
-// manager. It reads the manifests internal/manifest describes, so a mod laid out
-// by hand behaves exactly like one downloaded from Nexus — and so the format has
-// one owner rather than one per consumer.
+// It is the only source needing no network and no credentials, which makes it both
+// the offline fallback and the easiest way to develop a mod against the manager. It
+// reads the manifests internal/manifest describes, so a mod laid out by hand behaves
+// like one downloaded from Nexus and the format has one owner.
 package local
 
 import (
@@ -26,18 +25,11 @@ import (
 // SourceID is the stable identifier used in configuration and on the command line.
 const SourceID = "local"
 
-// init registers the constructor. Registering is not deferred to the caller
-// because this package is the only thing that can announce its own existence —
-// nothing imports local for its side effects otherwise, so a missing line here
-// leaves the manager running with no local source and nothing failing to
-// compile. Building it *is* deferred to the factory, for the reason explained in
-// internal/plugins/sources/registry.go: a start-up that fails because one
-// optional source is misconfigured is worse than useless.
-//
-// No paths is not an error. A user who has not configured a folder yet should
-// still see the source listed, with its own ValidateCredentials reporting that
-// it has nothing to scan; hiding it would make the missing configuration
-// invisible.
+// init registers the constructor. Nothing imports local for its side effects
+// otherwise, so a missing line here leaves the manager with no local source and
+// nothing failing to compile; building *is* deferred to the factory, for the
+// reason explained in RegisterAll. No paths is not an error — the source stays
+// listed, with its own ValidateCredentials reporting that it has nothing to scan.
 func init() {
 	_ = services.RegisterSourceFactory(
 		SourceID,
@@ -55,9 +47,9 @@ const pluginVersion = "1.0.0"
 // files; real mod layouts are one or two folders deep.
 const defaultMaxScanDepth = 4
 
-// maxScannedMods bounds how many mods one scan produces. The registry sorts the
-// result, so a truncated scan still returns the same mods on every run — which is
-// what makes the pagination below coherent.
+// maxScannedMods bounds how many mods one scan produces. The result is sorted, so a
+// truncated scan still returns the same mods on every run, which is what makes the
+// pagination below coherent.
 const maxScannedMods = 5000
 
 // Source is the local-folder mod provider.
@@ -153,16 +145,14 @@ type entry struct {
 // already validated the hook languages, so the error path is a safety net for
 // entries built in memory.
 func (e entry) mod() (*domain.Mod, error) {
-	// InstalledAt is left zero on purpose: the payload was already on disk, so
-	// there is no instant at which the manager installed it.
+	// InstalledAt is left zero on purpose: the payload was already on disk, so there
+	// is no instant at which the manager installed it.
 	m := &domain.Mod{
 		ID:        e.fallbackID,
 		SourceID:  SourceID,
 		LocalPath: e.dir,
-		// The cache key the mod service derives is a hash of the download
-		// location, and a local mod has no URL — without publishing the path of
-		// its own payload there would be nothing to hash, and the mod could be
-		// listed and searched but never installed.
+		// The cache key the mod service derives hashes the download location, and a
+		// local mod has no URL, so the payload path is the only thing there is to hash.
 		SourceData: map[string]any{"local_path": e.dir},
 	}
 	if e.manifest == nil {
@@ -193,13 +183,11 @@ func (e entry) mod() (*domain.Mod, error) {
 	return m, nil
 }
 
-// Search implements domain.ModSource.
-//
-// Discovery walks each configured path looking for mod folders — directories
-// holding a recognised manifest, or archives that could be unpacked — and then
-// filters in memory. Matching is done on the mod metadata rather than on folder
-// names so a manifest that names itself something other than its folder is still
-// findable.
+// Search implements domain.ModSource. Discovery walks each configured path looking
+// for mod folders — directories holding a recognised manifest, or archives that
+// could be unpacked — then filters in memory on the mod metadata rather than on
+// folder names, so a manifest that names itself something other than its folder
+// is still findable.
 func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain.Mod, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -228,9 +216,8 @@ func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain
 
 		m, err := e.mod()
 		if err != nil {
-			// A mod whose manifest failed validation was already skipped by
-			// Read; anything left here is per-entry and must not hide
-			// the rest of the results.
+			// Read already skipped manifests that failed validation, so anything left
+			// here is per-entry and must not hide the rest of the results.
 			continue
 		}
 
@@ -261,9 +248,9 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	if err != nil {
 		return nil, err
 	}
-	// A mod id has to be unique across all configured paths. Two folders claiming
-	// the same id would make install order decide which payload wins, so the
-	// collision is reported instead of silently picking the first.
+	// A mod id has to be unique across all configured paths: two folders claiming one
+	// would let install order decide which payload wins, so the collision is
+	// reported instead of silently picking the first.
 	var (
 		found     *domain.Mod
 		collision string
@@ -293,10 +280,8 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	}
 
 	if collision != "" {
-		// The fix depends on which kind of mod this is: a folder reads its id
-		// from a manifest, while a bare archive is named by its file. Advising
-		// one when the other is what the user has would send them to edit a
-		// file that is not read.
+		// The fix depends on the kind of mod: a folder reads its id from a manifest, a
+		// bare archive from its file name, and advising the wrong one is useless.
 		fix := "rename one of the files so their names differ"
 		if info, err := os.Stat(found.LocalPath); err == nil && info.IsDir() {
 			fix = "give one of them a distinct id in its mod.toml"
@@ -310,13 +295,110 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	return found, nil
 }
 
-// Download implements domain.ModSource. It copies the mod folder (or the
-// archive) to destPath and returns the copied path.
-//
-// Copying rather than returning the configured path is deliberate: the cache
-// manager treats this as a downloaded artifact and may later delete or verify
-// it, and handing back the user's own folder would let either happen to a mod
-// the user still cares about.
+// InspectPath implements domain.PathInspector. It deliberately does not consult the
+// configured paths: a dropped path is whatever the user let go of, and refusing one
+// outside the search roots would miss a mod downloaded elsewhere.
+func (s *Source) InspectPath(ctx context.Context, path string) (*domain.Mod, bool, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil, false, appErrors.New(appErrors.ErrCodeInvalidArgument, "empty path")
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, false, appErrors.Wrap(err, appErrors.ErrCodeOperationCanceled,
+			"inspect local path canceled")
+	}
+
+	info, err := os.Stat(trimmed)
+	if err != nil {
+		return nil, false, appErrors.Wrap(
+			err,
+			appErrors.ErrCodeNotFound,
+			"inspect local path %q",
+			trimmed,
+		)
+	}
+
+	if !info.IsDir() {
+		e, ok := archiveEntry(trimmed)
+		if !ok {
+			return nil, false, nil
+		}
+
+		return modFromEntry(e)
+	}
+
+	e, ok := folderEntry(trimmed)
+	if !ok {
+		return nil, false, nil
+	}
+
+	return modFromEntry(e)
+}
+
+// folderEntry turns a dropped directory into an entry: the directory itself is the
+// mod when it holds a manifest, otherwise a single mod folder inside it, since a user
+// who drops their "Mods" folder meant the one thing in it. Exactly one child must
+// qualify; two or more is a guess the manager should not make silently.
+func folderEntry(dir string) (entry, bool) {
+	if manifestpkg.Has(dir) {
+		m, err := manifestpkg.Read(dir)
+		if err != nil {
+			// A malformed manifest is still a mod folder: the error belongs to the
+			// install attempt, which can report it with better context.
+			m = nil
+		}
+
+		return entry{dir: dir, manifest: m, fallbackID: fallbackID(dir)}, true
+	}
+
+	var found []entry
+
+	children, err := os.ReadDir(dir)
+	if err != nil {
+		return entry{}, false
+	}
+
+	for _, child := range children {
+		if !child.IsDir() || !manifestpkg.Has(filepath.Join(dir, child.Name())) {
+			continue
+		}
+
+		found = append(found, entry{
+			dir:        filepath.Join(dir, child.Name()),
+			fallbackID: fallbackID(filepath.Join(dir, child.Name())),
+		})
+		if len(found) > 1 {
+			return entry{}, false
+		}
+	}
+
+	if len(found) != 1 {
+		return entry{}, false
+	}
+
+	return found[0], true
+}
+
+// modFromEntry is the one place an entry becomes a Mod, so a dropped folder and
+// a discovered one cannot drift apart in how they are described.
+func modFromEntry(e entry) (*domain.Mod, bool, error) {
+	m, err := e.mod()
+	if err != nil {
+		return nil, false, err
+	}
+
+	return m, true, nil
+}
+
+// Download implements domain.ModSource. It copies the mod folder or archive to
+// destPath and returns the copied path. Copying rather than returning the configured
+// path is deliberate: the cache manager may later delete or verify it, and that must
+// not happen to a folder the user still cares about.
 func (s *Source) Download(ctx context.Context, mod *domain.Mod, destPath string) (string, error) {
 	if mod == nil {
 		return "", appErrors.New(appErrors.ErrCodeInvalidMod, "cannot download a nil mod")
@@ -389,12 +471,10 @@ func (s *Source) Download(ctx context.Context, mod *domain.Mod, destPath string)
 // manager checking its own work.
 func (s *Source) Verify(context.Context, *domain.Mod, string) error { return nil }
 
-// discover walks every configured path and returns the mods found.
-//
-// A path that does not exist is not an error: it is a folder the user may not
-// have created yet, and one missing folder must not make every other path
-// unreachable. Every other failure is reported, because silently returning
-// nothing would look like "you have no mods installed".
+// discover walks every configured path and returns the mods found. A path that does
+// not exist is not an error — it is a folder the user may not have created yet, and
+// one missing folder must not make every other path unreachable. Every other failure
+// is reported, because returning nothing would look like "no mods installed".
 func (s *Source) discover(ctx context.Context) ([]entry, error) {
 	if len(s.paths) == 0 {
 		return nil, appErrors.New(appErrors.ErrCodeSourceUnavailable,
@@ -457,11 +537,10 @@ func (s *Source) discover(ctx context.Context) ([]entry, error) {
 	return out, nil
 }
 
-// scanDir walks root looking for mod folders and archives.
-//
-// depth bounds how many directory levels below root are visited, so a folder the
-// user pointed at their home directory cannot turn the scan into a full-disk
-// walk. A depth of 1 reaches root's immediate children only.
+// scanDir walks root looking for mod folders and archives. depth bounds how many
+// directory levels below root are visited, so a folder the user pointed at their home
+// directory cannot turn the scan into a full-disk walk; a depth of 1 reaches root's
+// immediate children only.
 func scanDir(ctx context.Context, root string, depth int) ([]entry, error) {
 	if depth <= 0 {
 		depth = defaultMaxScanDepth
@@ -617,15 +696,12 @@ func archiveEntry(path string) (entry, bool) {
 	}, true
 }
 
-// SanitizeID turns a folder or file name into something usable as a mod id: the
-// same character set domain.SanitizeSegment allows, plus lower-casing.
-//
-// Local ids are derived from file names, which routinely contain spaces, slashes
-// and mixed case. Restricting the character set keeps the id usable as a single
-// path segment; lower-casing on top of domain.SanitizeSegment (which preserves
-// case) is deliberate, because it makes two folders differing only in case collide
-// as *ids* on every platform, so ModService reports them as a duplicate-id
-// conflict instead of the user discovering the clash on a case-insensitive volume.
+// SanitizeID turns a folder or file name into a mod id: the character set
+// domain.SanitizeSegment allows, plus lower-casing. Local ids come from names that
+// routinely contain spaces, slashes and mixed case, so the restricted set keeps the id
+// usable as one path segment. Lower-casing on top of SanitizeSegment (which preserves
+// case) makes folders differing only in case collide as ids on every platform, so
+// ModService reports a duplicate-id conflict instead of the user finding the clash.
 func SanitizeID(name string) string {
 	out := strings.Map(func(r rune) rune {
 		switch {
@@ -678,12 +754,9 @@ func matchesQuery(m *domain.Mod, q domain.SearchQuery) bool {
 	return true
 }
 
-// satisfiesGameVersion reports whether the mod declares compatibility with the
-// wanted game version.
-//
-// A mod that declares no game version is treated as compatible: the field is
-// optional, and refusing to show it would make every minimally-specified local
-// mod invisible.
+// satisfiesGameVersion reports whether the mod declares compatibility with the wanted
+// game version. A mod that declares none is treated as compatible: the field is
+// optional, and refusing it would make every minimally-specified local mod invisible.
 func satisfiesGameVersion(declared, wanted string) bool {
 	declared = strings.TrimSpace(declared)
 	if declared == "" {
@@ -693,9 +766,8 @@ func satisfiesGameVersion(declared, wanted string) bool {
 	return domain.SatisfiesExpression(wanted, declared)
 }
 
-// paginate applies the query's 1-based page and page size. The input is returned
-// untouched when it is empty, so a caller that passes an empty slice gets it
-// back unchanged.
+// paginate applies the query's 1-based page and page size. Empty input comes back
+// untouched, so a caller passing an empty slice gets it back unchanged.
 func paginate(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 	if len(mods) == 0 {
 		return mods
