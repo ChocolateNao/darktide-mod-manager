@@ -124,6 +124,66 @@ func TestAKeyTheSourceRefusesIsNeverStored(t *testing.T) {
 	assert.Equal(t, 0, store.saves, "a refused key was written to the settings file")
 }
 
+func TestStoringAKeySignsInTheLiveSourceAndWritesTheFile(t *testing.T) {
+	// The registry caches built sources for the life of the process. A key that
+	// only reached the settings file left the running source signing nothing, so
+	// every download failed on AUTH_REQUIRED and the prompt came back — until the
+	// next launch, when the source was rebuilt from the file that already had it.
+	source := &stubSource{id: "nexus"}
+	cfg := domain.DefaultConfig()
+	client, store, _ := credentialClient(t, source, &cfg)
+
+	require.NoError(t, client.SetSourceAPIKey(
+		context.Background(),
+		"nexus",
+		"abc",
+	), "SetSourceAPIKey")
+
+	creds := source.lastCreds()
+	assert.Equal(
+		t,
+		"abc",
+		creds["api_key"],
+		"the live source never received the key it was just given",
+	)
+
+	block, ok := store.last().SourceConfigFor("nexus")
+	require.True(t, ok, "the accepted key was not stored")
+
+	assert.Equal(t, "abc", block.APIKey, "the stored key, want the one the source accepted")
+
+	info, err := client.SourceInfo(context.Background(), "nexus")
+	require.NoError(t, err, "SourceInfo")
+
+	assert.True(
+		t,
+		info.HasAPIKey,
+		"the source info reports no stored key right after one was stored",
+	)
+	assert.True(t, info.Authenticated, "the source is not signed in after storing its key")
+}
+
+func TestAKeyTheSourceRefusesNeverReachesItOrTheFile(t *testing.T) {
+	// Validating before storing is the point: a refused key in the settings file
+	// looks configured on the next launch and fails on first use, which is
+	// harder to diagnose than no configuration at all.
+	source := &failingSource{stubSource: stubSource{id: "nexus"}, code: ErrCodeAuthFailed}
+	cfg := domain.DefaultConfig()
+	client, store, _ := credentialClient(t, source, &cfg)
+
+	err := client.SetSourceAPIKey(context.Background(), "nexus", "wrong")
+	assert.True(
+		t,
+		IsAppError(err, ErrCodeAuthFailed),
+		"SetSourceAPIKey returned %v, want an auth failure",
+		err,
+	)
+
+	assert.Len(t, source.lastCreds(), 0, "a refused key was handed to the source")
+
+	assert.Equal(t, 0, store.saves, "a refused key was written to the settings file")
+}
+
 func TestCredentialsCanBeStoredWithoutAskingTheSource(t *testing.T) {
 	// Verification is a round trip to the provider, which is the wrong thing to
 	// insist on for a machine that cannot reach it yet.
@@ -134,8 +194,10 @@ func TestCredentialsCanBeStoredWithoutAskingTheSource(t *testing.T) {
 	// The id arrives capitalised, as a settings screen would send it.
 	require.NoError(
 		t,
-		client.SetSourceAPIKey(context.Background(), "Nexus", "unchecked"),
-		"SetSourceAPIKey",
+		client.SetSourceCredentials(context.Background(), "Nexus", map[string]string{
+			"api_key": "unchecked",
+		}),
+		"SetSourceCredentials",
 	)
 
 	creds := source.lastCreds()
