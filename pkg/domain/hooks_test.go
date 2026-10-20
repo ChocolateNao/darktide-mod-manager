@@ -369,3 +369,41 @@ func ids(mods []Mod) []string {
 
 	return out
 }
+
+// A paused hook must be skipped rather than reported as a failure: turning one
+// hook off to see whether the rest still work is a normal debugging move, and an
+// error here would make every later hook look broken too.
+func TestDisabledHookScriptsAreSkipped(t *testing.T) {
+	t.Parallel()
+
+	hooks := ModHooks{
+		PreInstall: []HookScript{
+			{Language: LangLua, Content: "print(1)"},
+			{Language: LangLua, Content: "error('boom')", Disabled: true},
+		},
+	}
+
+	ran := make([]string, 0, 2)
+
+	for _, script := range hooks.For(PhasePreInstall) {
+		if script.Disabled {
+			continue
+		}
+
+		ran = append(ran, script.Content)
+	}
+
+	assert.Equal(t, []string{"print(1)"}, ran)
+}
+
+func TestHookScriptLabelFallsBackToItsPhaseAndPosition(t *testing.T) {
+	t.Parallel()
+
+	named := HookScript{Language: LangLua, Name: "  Refetch ui  "}
+	assert.Equal(t, "Refetch ui", named.Label(PhasePreEnable, 0),
+		"a name is shown as the user typed it, trimmed")
+
+	unnamed := HookScript{Language: LangLua}
+	assert.Equal(t, "pre_install script 1", unnamed.Label(PhasePreInstall, 0))
+	assert.Equal(t, "pre_install script 3", unnamed.Label(PhasePreInstall, 2))
+}
