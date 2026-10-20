@@ -14,13 +14,13 @@ import (
 
 // pionLogger reports pion's lines through the process-wide logger.
 //
-// The scope is dropped, which is pion's design rather than ours: pion asks for
+// The scope is dropped, which is pion's design: pion asks for
 // one logger per subsystem and a factory is the only shape that returns them all.
 type pionLogger struct{}
 
 // PionLogger returns a pion logger that writes into this process's logger.
 //
-// It reads the package-level logger rather than taking one as an argument: an
+// It reads the package-level logger: an adapter that could be pointed at a second logger
 // adapter that could be pointed at a second logger is how a second appears. A
 // caller that never initialised the service still gets working output.
 func PionLogger() logging.LeveledLogger {

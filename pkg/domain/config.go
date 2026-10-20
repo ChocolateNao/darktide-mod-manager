@@ -379,7 +379,7 @@ func (c *Config) SourceConfigFor(sourceID string) (SourceConfig, bool) {
 // is one.
 //
 // A writer folds ids for the same reason SourceConfigFor does: a settings screen
-// sending "Nexus" must land in the block called "nexus" rather than create a second
+// sending "Nexus" must land in the block called "nexus"; do not create a second
 // one, and two blocks that disagree about Enabled do not resolve harmlessly.
 func (c *Config) SourceKey(sourceID string) (string, bool) {
 	if c == nil || c.Sources == nil {

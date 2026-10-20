@@ -1,16 +1,9 @@
 // Package services: peer-to-peer mod sharing.
 //
-// The orchestrator here sits between two very different things: the sealed,
-// human-readable links that travel through a chat window, and the live WebRTC
-// connection that carries the bytes. It owns the parts neither of them can: which
-// game a share belongs to, what the recipient is shown before deciding, where
-// archives are staged on both sides, and what the session looks like to a
-// frontend polling for progress.
-//
-// Nothing in this file is the protocol. Framing, the handshake and hash
-// verification live in internal/sharing/p2p, because they are the parts that have
-// to agree byte for byte across two machines and have no business depending on a
-// storage path or a game registry.
+// The orchestrator here owns the parts neither the sealed links nor the live WebRTC
+// connection can: which game a share belongs to, what the recipient is shown before
+// deciding, and where archives are staged on both sides. The protocol itself —
+// framing, handshake and hash verification — lives in internal/sharing/p2p.
 package services
 
 import (
@@ -38,50 +31,67 @@ const (
 	p2pRoleRecipient = "recipient"
 )
 
-// staging patterns for the two sides of a transfer.
-//
-// They are distinct so that an operator reading a filled temp directory can tell
-// at a glance whether a folder holds bytes waiting to be sent or bytes waiting to
-// be verified and installed.
+// staging patterns for the two sides of a transfer, distinct so an operator
+// reading a filled temp directory can tell which end a folder belongs to.
 const (
 	senderStagingPattern    = "dmm-p2p-send-*"
 	recipientStagingPattern = "dmm-p2p-recv-*"
 )
 
+// shareSourceID is the SourceID every share event carries. Shares are not sourced
+// from a registry, so the field would otherwise be empty on every event and a
+// subscriber filtering by source would see share activity as belonging to none.
+const shareSourceID = "p2p"
+
+// shareEventFor maps a session state onto the event that announces it. The mapping
+// is total, so adding a state to domain.P2PShareState fails to compile here rather
+// than producing an event nothing listens for. Non-terminal states with no
+// dedicated type map onto share.progress: they are the phases a UI renders as
+// "working, no bytes yet".
+func shareEventFor(state domain.P2PShareState) EventType {
+	switch state {
+	case domain.P2PShareStateCreated:
+		return EventShareCreated
+	case domain.P2PShareStateOffered:
+		return EventShareOffered
+	case domain.P2PShareStateConnecting:
+		return EventShareAccepted
+	case domain.P2PShareStateTransferring, domain.P2PShareStateVerifying:
+		return EventShareProgress
+	case domain.P2PShareStateCompleted:
+		return EventShareCompleted
+	case domain.P2PShareStateRejected:
+		return EventShareRejected
+	case domain.P2PShareStateExpired:
+		return EventShareExpired
+	default:
+		return EventShareFailed
+	}
+}
+
 // P2PShareConfig is the transport configuration handed to every peer this service
-// creates.
-//
-// It is a thin wrapper around p2p.Config rather than a copy of its fields: the
-// settings are meaningful only to the WebRTC layer, and duplicating them here
-// would be a second place to forget a knob. Per-share overrides are applied on a
-// copy so creating one unusual share does not reconfigure the next one.
+// creates. It wraps p2p.Config rather than copying its fields: the settings mean
+// something only to the WebRTC layer, and duplicating them here would be a second
+// place to forget a knob. Per-share overrides are applied to a copy.
 type P2PShareConfig struct {
 	// Peer is the template every peer starts from.
 	Peer p2p.Config
-	// DefaultExpiry applies to a share whose creator did not choose an expiry.
-	// Zero means "permanent", which is the default on purpose: a link that
-	// silently stops working is worse than one the user has to revoke.
+	// DefaultExpiry applies to a share whose creator chose none. Zero means
+	// "permanent": a link that silently stops working is worse than one to revoke.
 	DefaultExpiry time.Duration
 }
 
 // DefaultP2PShareConfig returns the configuration used unless the caller supplies
-// its own.
-//
-// The default ICE servers are Google's public STUN, which is enough for the
-// symmetric-NAT case that motivated peer-to-peer sharing in the first place. No
-// TURN is configured: a relay would be the third party this feature exists to
-// avoid, and it would see the mod bytes, so adding one is a deliberate decision
-// rather than a default.
+// its own. The default ICE servers are Google's public STUN, enough for the
+// symmetric-NAT case that motivated peer-to-peer sharing. No TURN: a relay would
+// be the third party this feature exists to avoid, and it would see the bytes.
 func DefaultP2PShareConfig() P2PShareConfig {
 	return P2PShareConfig{Peer: p2p.Config{STUNServers: p2p.DefaultSTUNServers()}}
 }
 
-// P2PShareService orchestrates peer-to-peer shares.
-//
-// One instance lives for the lifetime of the process. That matters more than it
-// sounds: a WebRTC peer connection cannot be reconstructed from a link, so every
-// share in flight — including the peer's socket buffers and the archives staged
-// for it — has to live in memory until it finishes or is abandoned.
+// P2PShareService orchestrates peer-to-peer shares. One instance lives for the
+// lifetime of the process: a WebRTC peer connection cannot be reconstructed from a
+// link, so every share in flight has to live in memory until it ends.
 type P2PShareService struct {
 	logger       zerolog.Logger
 	gameLocator  ShareGameLocator
@@ -96,13 +106,16 @@ type P2PShareServiceDeps struct {
 	// GameLocator answers which game is active, for shares whose mods carry no
 	// game id of their own.
 	GameLocator ShareGameLocator
-	// ModInstaller installs a verified archive. It is the same installer the
-	// cloud share uses, so a mod that arrives over a data channel is unpacked,
-	// registered and enabled by exactly the code path a mod from a provider goes
-	// through.
+	// ModInstaller installs a verified archive. It is the same installer the cloud
+	// share uses, so a mod that arrives over a data channel is unpacked, registered
+	// and enabled by exactly the code path a mod from a provider goes through.
 	ModInstaller ModInstaller
 	// Logger receives share lifecycle events.
 	Logger zerolog.Logger
+	// Events publishes share state transitions. Nil disables publishing, which is
+	// what the CLI and most tests want: only the share view needs to hear about a
+	// transfer, and a caller with no UI has nothing to tell.
+	Events EventSink
 	// Config is the transport configuration. Nil means the default.
 	Config *P2PShareConfig
 	// Clock is the time source. Nil means time.Now. It is injectable so expiry
@@ -123,7 +136,7 @@ func NewP2PShareService(deps P2PShareServiceDeps) *P2PShareService {
 	}
 
 	return &P2PShareService{
-		store:        newP2PSessionStore(),
+		store:        newP2PSessionStore(deps.Events),
 		gameLocator:  deps.GameLocator,
 		modInstaller: deps.ModInstaller,
 		logger:       deps.Logger,
@@ -132,12 +145,9 @@ func NewP2PShareService(deps P2PShareServiceDeps) *P2PShareService {
 	}
 }
 
-// Close abandons every share in flight and removes its staging.
-//
-// It is registered as a bundle cleanup rather than left to the process exiting:
-// a desktop app that restarts without exiting (the Wails reload path) would
-// otherwise leave every socket from the previous run open, and a peer that never
-// gets a close keeps gathering ICE in the background.
+// Close abandons every share in flight and removes its staging. It is registered
+// as a bundle cleanup rather than left to the process exiting: a desktop app that
+// restarts without exiting would leave every socket from the previous run open.
 func (s *P2PShareService) Close() {
 	if s == nil {
 		return
@@ -150,16 +160,12 @@ func (s *P2PShareService) Close() {
 }
 
 // CreateShare packs the mods, opens a peer connection and returns the offer link.
+// The link is the whole share as far as the recipient is concerned: the SDP, the
+// inventory, the hashes and the authorising secret, sealed so nothing in it renders
+// as readable text in a chat preview.
 //
-// The returned link is the whole share as far as the recipient is concerned: it
-// carries the SDP, the inventory, the hashes and the secret that authorises the
-// transfer, sealed so nothing in it renders as readable text in a chat preview.
-//
-// Everything expensive happens before the link exists — packing, hashing,
-// ICE gathering — so that a link handed to somebody else is known to be backed
-// by bytes that are on disk right now and reachable right now. A link that
-// materialised later, once the sender's disk filled or the network moved, would
-// be a promise the manager cannot keep.
+// Everything expensive happens before the link exists, so a link handed to somebody
+// is known to be backed by bytes that are on disk and reachable right now.
 func (s *P2PShareService) CreateShare(
 	ctx context.Context,
 	mods []domain.Mod,
@@ -178,10 +184,8 @@ func (s *P2PShareService) CreateShare(
 		return nil, err
 	}
 
-	// The game is checked here rather than only when the recipient opens the
-	// link. A share of mods for a game this build does not know cannot succeed
-	// on the far side either, so catching it at the prompt that created it saves
-	// the user from pasting a link that was never going to work.
+	// Checked here rather than only when the recipient opens the link: a share of
+	// mods for a game this build does not know cannot succeed there either.
 	if _, known := games.Get(gameID); !known {
 		return nil, appErrors.New(appErrors.ErrCodeGameNotRegistered,
 			"game %q is not registered in this build, so its mods cannot be shared", gameID)
@@ -193,10 +197,8 @@ func (s *P2PShareService) CreateShare(
 			"create a staging folder to pack the mods in")
 	}
 
-	// Everything below this point either succeeds and hands the staging folder to
-	// a session, or fails and has to take the folder with it. A single deferred
-	// cleanup flag keeps that honest without a dozen error paths each remembering
-	// to remove a directory.
+	// Everything below either succeeds and hands the staging folder to a session or
+	// fails and has to take the folder with it; one flag keeps that honest.
 	keepStaging := false
 
 	defer func() {
@@ -241,9 +243,8 @@ func (s *P2PShareService) CreateShare(
 
 	offer := buildP2POffer(gameID, packed, opts, cfg.STUNServers)
 
-	// A configured default expiry applies only when the creator chose none, so
-	// setting a policy in config never overrides an explicit choice on the
-	// command line or in the UI.
+	// A configured default expiry applies only when the creator chose none, so a
+	// policy in config never overrides an explicit choice.
 	if offer.ExpiresAt == nil && s.config.DefaultExpiry > 0 {
 		deadline := time.Now().Add(s.config.DefaultExpiry)
 		offer.ExpiresAt = &deadline
@@ -307,13 +308,10 @@ func (s *P2PShareService) CreateShare(
 	return link, nil
 }
 
-// PreviewOffer opens a link and reports what it offers, without connecting.
-//
-// This is the recipient's only chance to judge the sender before any byte moves,
-// so it answers the questions the UI actually has to render: which game, which
-// mods, how large, whether the link has expired, and — crucially — which upstream
-// each mod can be fetched from instead, for the recipient who would rather not
-// take the bytes at all.
+// PreviewOffer opens a link and reports what it offers, without connecting. It is
+// the recipient's only chance to judge the sender before any byte moves, so it
+// answers the questions the UI actually renders: which game, which mods, how large,
+// whether the link expired, and which upstream each mod can be fetched from instead.
 func (s *P2PShareService) PreviewOffer(
 	ctx context.Context,
 	linkText string,
@@ -339,16 +337,11 @@ func (s *P2PShareService) PreviewOffer(
 	return preview, nil
 }
 
-// AcceptOffer answers an offer and returns the answer link.
-//
-// The connection is established here — the answer SDP is gathered and returned —
-// but nothing is read until AwaitShare is called. Splitting the two is what lets
-// a frontend show the answer link, hand it back to the sender out of band, and
-// only then start blocking on progress.
-//
-// The session is recorded before the answer is returned so that a transfer which
-// starts before the caller gets its answer back still has somewhere to publish
-// progress to.
+// AcceptOffer answers an offer and returns the answer link. The connection is
+// established here but nothing is read until AwaitShare is called, which is what
+// lets a frontend show the answer link, hand it back out of band, and only then
+// block on progress. The session is recorded first, so a transfer that starts
+// before the caller gets its answer back still has somewhere to publish to.
 func (s *P2PShareService) AcceptOffer(
 	ctx context.Context,
 	linkText string,
@@ -421,17 +414,13 @@ func (s *P2PShareService) AcceptOffer(
 // RejectOffer declines a share, hands back the answer link so the sender can open
 // the connection, and delivers the refusal over it in the background.
 //
-// The answer link is returned rather than discarded, and this is the whole reason
-// a refusal can work at all: the sender holds the connection offer, so without an
-// answer it never opens a data channel, and a refusal sent into a channel that
-// has not opened is indistinguishable from a peer that went away. The sender
-// would learn nothing, which is exactly the outcome a recipient who declined
-// wants to avoid — they want the sender to take the mod from its own page.
+// The answer link is returned rather than discarded, and that is why a refusal
+// works at all: the sender holds the connection offer, so without an answer it
+// never opens a data channel, and a refusal into a channel that has not opened is
+// indistinguishable from a peer that went away.
 //
-// It returns as soon as the answer is sealed rather than blocking on delivery,
-// because blocking would deadlock the one flow that matters: the caller has to be
-// able to show the answer link, and the sender cannot open the connection until
-// they have it. AwaitRejection is what waits for the outcome.
+// It returns once the answer is sealed rather than blocking on delivery, because
+// the caller has to be able to show the link. AwaitRejection waits for the outcome.
 func (s *P2PShareService) RejectOffer(
 	ctx context.Context,
 	linkText, reason string,
@@ -485,10 +474,8 @@ func (s *P2PShareService) RejectOffer(
 
 	s.store.add(session)
 
-	// The delivery context is detached from ctx on purpose. ctx belongs to the
-	// call that produced the answer link, and that call returns as soon as the
-	// link is ready; cancelling with it would abort the refusal the moment the
-	// user closed the dialog. Close still tears the peer down.
+	// Detached from ctx on purpose: that call returns as soon as the link is ready,
+	// and cancelling with it would abort the refusal the moment the dialog closed.
 	deliverCtx := context.WithoutCancel(ctx)
 
 	go s.deliverRejection(deliverCtx, session, reason)
@@ -510,14 +497,10 @@ func (s *P2PShareService) deliverRejection(
 
 	defer s.store.remove(session.offerID, true)
 	defer session.signal()
-	// The session is dropped whether or not the abort reached the sender: there
-	// are no archives to install either way, and keeping a rejected share
-	// occupying memory would let a recipient accumulate one per link they were
-	// ever sent.
-	//
-	// The outcome is recorded on the session, not in the store: a waiter woken
-	// by signal() could lose the race against remove() and then read a missing
-	// record as success.
+	// The session is dropped either way: there are no archives to install, and a
+	// rejected share left in memory is one per link the user ever declined. The
+	// outcome goes on the session rather than the store, because signal() could
+	// lose the race against remove() and read a missing record as success.
 	if err != nil {
 		session.rejectErr = appErrors.New(appErrors.ErrCodeShareRevoked,
 			"the refusal did not reach the sender: %s", err)
@@ -536,12 +519,8 @@ func (s *P2PShareService) deliverRejection(
 }
 
 // AwaitRejection blocks until a refusal this process sent has been delivered, or
-// the context ends.
-//
-// It exists because the sender is the half that has to be running: the refusal
-// travels on a channel the sender opens, so the recipient's own refusal is not
-// finished until the sender has picked it up. A caller that never waits is not
-// wrong, it is simply not told.
+// the context ends. It exists because the sender is the half that has to be
+// running: the refusal travels on a channel the sender opens.
 func (s *P2PShareService) AwaitRejection(ctx context.Context, offerID string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -563,11 +542,9 @@ func (s *P2PShareService) AwaitRejection(ctx context.Context, offerID string) er
 }
 
 // SendShare completes a share the sender created: it applies the recipient's
-// answer and streams every archive.
-//
-// It blocks for the length of the transfer. Progress is published to the session
-// record as it goes, so a frontend shows a moving bar by polling GetShareSession
-// rather than by receiving per-byte events, and a CLI simply waits.
+// answer and streams every archive. It blocks for the length of the transfer;
+// progress is published to the session record, so a frontend shows a moving bar
+// by polling GetShareSession rather than by receiving per-byte events.
 func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -592,9 +569,8 @@ func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink str
 		return appErrors.Wrap(err, appErrors.ErrCodeShareInvalid, "open the answer link")
 	}
 
-	// The answer names the offer it belongs to. Checking it here means a
-	// recipient who pastes the wrong answer into the wrong share is told so
-	// instead of watching a connection that never opens.
+	// The answer names the offer it belongs to, so a recipient who pastes the wrong
+	// answer into the wrong share is told instead of watching nothing open.
 	if answer.OfferID != rec.offerID {
 		return appErrors.New(appErrors.ErrCodeShareInvalid,
 			"answer link is for offer %s, this share is %s", answer.OfferID, rec.offerID)
@@ -624,12 +600,9 @@ func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink str
 	return nil
 }
 
-// AwaitShare receives a share the recipient accepted and blocks until the
-// transfer ends.
-//
-// Every archive is verified by the protocol against the hashes in the offer
-// before this returns, so a nil error means the bytes in the staging folder are
-// the bytes the sender promised — which is what makes InstallShare safe to trust.
+// AwaitShare receives a share the recipient accepted and blocks until the transfer
+// ends. Every archive is verified against the offer's hashes before this returns,
+// so a nil error means the staged bytes are the bytes the sender promised.
 func (s *P2PShareService) AwaitShare(ctx context.Context, offerID string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -666,14 +639,11 @@ func (s *P2PShareService) AwaitShare(ctx context.Context, offerID string) error 
 // InstallShare installs a received share's archives.
 //
 // The hashes are recomputed here rather than trusted from the transfer: the
-// archives have been sitting in a world-readable-by-the-user temporary directory
-// since the transfer finished, and this is the last point at which a file that is
-// not what the sender promised can still be refused. It costs one extra pass over
-// the bytes and removes the only window in which a local process could swap them.
+// archives have been sitting in a temporary directory since the transfer ended, and
+// this is the last point at which a substituted file can still be refused.
 //
 // The upstream links travel with the offer, so a mod installed this way keeps the
-// source it came from. That is what lets it be updated later by following the link
-// instead of waiting for another share from the same person.
+// source it came from and can be updated later by following the link.
 func (s *P2PShareService) InstallShare(
 	ctx context.Context,
 	offerID string,
@@ -738,9 +708,8 @@ func (s *P2PShareService) InstallShare(
 		installed = append(installed, *result)
 	}
 
-	// The archives are removed once they have been extracted. They are a full
-	// copy of every shared mod, and leaving them in the temp directory would let
-	// every share ever received accumulate.
+	// The archives are a full copy of every shared mod; leaving them would let every
+	// share ever received accumulate.
 	s.store.remove(offerID, true)
 
 	s.logger.Info().
@@ -752,11 +721,9 @@ func (s *P2PShareService) InstallShare(
 	return installed, nil
 }
 
-// DiscardShare drops a received share without installing it.
-//
-// This is the path a recipient takes after choosing the upstream source links over
-// the peer's bytes, and it is also how a failed transfer is cleaned up: either
-// way the staging folder holds nothing worth keeping.
+// DiscardShare drops a received share without installing it. It is also how a
+// failed transfer is cleaned up: either way the staging folder holds nothing
+// worth keeping.
 func (s *P2PShareService) DiscardShare(_ context.Context, offerID string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -777,11 +744,9 @@ func (s *P2PShareService) DiscardShare(_ context.Context, offerID string) error 
 	return nil
 }
 
-// CancelShare abandons a share this manager created as the sender.
-//
-// The peer is closed and the staged archives removed. The recipient, if they ever
-// connect, sees the connection drop rather than a clean refusal — which is the
-// honest outcome, because there is nobody left to tell.
+// CancelShare abandons a share this manager created as the sender. The recipient,
+// if they connect, sees the connection drop, which is honest because there is
+// nobody left to tell them.
 func (s *P2PShareService) CancelShare(_ context.Context, offerID string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -829,9 +794,7 @@ func (s *P2PShareService) GetShareSession(
 }
 
 // ListShareSessions returns every share this manager is part of, newest first.
-//
-// The frontend uses it to rebuild its list after a reload: sessions are in
-// memory, so a page refresh has to ask again rather than trust anything it had.
+// Sessions live in memory, so a frontend has to ask again after a reload.
 func (s *P2PShareService) ListShareSessions(_ context.Context) []domain.P2PShareSession {
 	if s == nil {
 		return nil
@@ -848,11 +811,8 @@ func (s *P2PShareService) ListShareSessions(_ context.Context) []domain.P2PShare
 }
 
 // DefaultSTUNServers reports the ICE servers used when a share does not name its
-// own, so the CLI can tell the user what their traffic touches.
-//
-// Worth surfacing because the question is the one everybody asks about
-// peer-to-peer: a STUN server learns the client's public address and nothing
-// else, and the mod bytes go directly between the two machines over DTLS.
+// own. Worth surfacing because a STUN server learns the client's public address
+// and nothing else; the mod bytes go directly between the two machines over DTLS.
 func (s *P2PShareService) DefaultSTUNServers() []string {
 	if s == nil {
 		return nil
@@ -887,10 +847,8 @@ func (s *P2PShareService) resolveOffer(
 			"this share link expired at %s", link.Offer.ExpiresAt.Format(time.RFC3339))
 	}
 
-	// A share for a game this manager does not have is refused before a
-	// connection is made, not after the archives have been received: installing a
-	// Darktide mod into a Helldivers directory produces a broken install that is
-	// very hard to spot afterwards.
+	// Refused before a connection is made, not after the archives arrive: installing
+	// a mod into another game's directory is hard to spot afterwards.
 	if _, ok := games.Get(link.Offer.GameID); !ok {
 		return nil, appErrors.Wrap(
 			domain.ErrGameNotRegistered,
@@ -984,12 +942,9 @@ func (s *P2PShareService) progressReporter(offerID string) p2p.ProgressFunc {
 	}
 }
 
-// resolveGameID picks the game a share belongs to and refuses a mixed selection.
-//
-// A share is for exactly one game. A mixed selection would stamp one game on the
-// offer and leave the other mod's files resolving against a manifest the
-// recipient does not have, so it is refused here rather than silently resolved by
-// taking the first mod's id.
+// resolveGameID picks the game a share belongs to and refuses a mixed selection:
+// the offer would name one game while the other mod's files resolve against a
+// manifest the recipient does not have.
 func (s *P2PShareService) resolveGameID(mods []domain.Mod) (string, error) {
 	gameID := ""
 
@@ -1037,11 +992,9 @@ type p2pPacked struct {
 	mod    domain.Mod
 }
 
-// packP2PShare packs every mod and describes it for the offer, in one pass.
-//
-// The two are produced together for the same reason the cloud share does it that
-// way: a mod that cannot be packed cannot be shared, and an offer that named it
-// anyway would install nothing for the recipient.
+// packP2PShare packs every mod and describes it for the offer in one pass, for the
+// same reason the cloud share does it that way: an offer naming a mod that could
+// not be packed would install nothing for the recipient.
 func packP2PShare(ctx context.Context, staging string, mods []domain.Mod) ([]p2pPacked, error) {
 	packed := make([]p2pPacked, 0, len(mods))
 
@@ -1075,11 +1028,9 @@ func packP2PShare(ctx context.Context, staging string, mods []domain.Mod) ([]p2p
 	return packed, nil
 }
 
-// packP2PMod writes one mod's files into a single archive and describes it.
-//
-// One archive per mod is the unit that makes a share verifiable: the recipient
-// checks one hash per mod rather than one per file, and a single large write over
-// a data channel is a better use of the connection than hundreds of small ones.
+// packP2PMod writes one mod's files into a single archive and describes it. One
+// archive per mod is the unit that makes a share verifiable: the recipient checks
+// one hash per mod, and one large write beats hundreds of small ones.
 func packP2PMod(
 	ctx context.Context,
 	staging string,
@@ -1108,9 +1059,8 @@ func packP2PMod(
 		})
 	}
 
-	// Named after the mod id, which is unique within a game, so two mods that
-	// both ship a shared.zip cannot overwrite each other in the staging folder or
-	// on the far side.
+	// Named after the mod id, unique within a game, so two mods that both ship a
+	// shared.zip cannot overwrite each other in staging or on the far side.
 	archiveName := domain.SanitizeSegment(mod.ID) + ".zip"
 	archivePath := filepath.Join(staging, archiveName)
 
@@ -1131,9 +1081,8 @@ func packP2PMod(
 		)
 	}
 
-	// The hash covers the archive as it will travel, not the files inside it. A
-	// sum of the parts would accept a truncated archive as long as everything it
-	// did contain was whole.
+	// The hash covers the archive as it will travel, not the files inside it: a sum
+	// of the parts would accept a truncated archive whose contents were all whole.
 	hash, err := fileHash(archivePath)
 	if err != nil {
 		return domain.P2PSharedFile{}, appErrors.Wrap(
@@ -1206,11 +1155,9 @@ func buildP2PPreview(link *domain.P2PShareLink) *domain.P2PSharePreview {
 	return preview
 }
 
-// sharedModsByArchive indexes the offer's inventory by archive name.
-//
-// The archive name is the join key because it is the one value that appears on
-// both sides and is unique within the offer by construction. Matching on mod name
-// would break the moment a share carried two versions of the same mod.
+// sharedModsByArchive indexes the offer's inventory by archive name, the join key
+// because it is the one value on both sides and unique within the offer by
+// construction. Matching on mod name would break on two versions of one mod.
 func sharedModsByArchive(offer domain.P2PShareOffer) map[string]domain.SharedMod {
 	byArchive := make(map[string]domain.SharedMod, len(offer.Mods))
 
@@ -1224,12 +1171,10 @@ func sharedModsByArchive(offer domain.P2PShareOffer) map[string]domain.SharedMod
 }
 
 // buildInstalledMod turns an inventory entry into the mod the installer writes.
-//
 // The upstream link is carried across rather than dropped: a mod that came from
-// somebody's share is still a mod from Nexus or GitHub, and keeping the source
-// and its update URL is what lets it be brought up to date later without another
-// share. A mod with no upstream at all is recorded as coming from "p2p-share",
-// which no source plugin claims, so nothing will try to update it automatically.
+// somebody's share is still a mod from Nexus or GitHub, and keeping the source and
+// its update URL is what lets it be updated later without another share. A mod
+// with no upstream is recorded as "p2p-share", which no source plugin claims.
 func buildInstalledMod(
 	offer domain.P2PShareOffer,
 	shared domain.SharedMod,
@@ -1242,15 +1187,8 @@ func buildInstalledMod(
 		sourceID = "p2p-share"
 	}
 
-	// The mod keeps the id the sender had.
-	//
-	// It is the same mod from the same upstream, and an id invented from the
-	// display name would be both worse — display names carry the spacing and
-	// capitalisation their author chose, while an id is used as a path segment
-	// and as an argument on a command line — and useless: the user would not be
-	// able to name the mod to `mod show`, `mod source show`, or a later share.
-	// The fallback exists only for an offer that carried no id, which this build
-	// never produces.
+	// The mod keeps the sender's id: an id invented from the display name would be
+	// unusable as a path segment and unnameable on the command line.
 	modID := file.ModID
 	if modID == "" {
 		modID = domain.SanitizeSegment(shared.Name + "-" + shared.Version)
@@ -1304,11 +1242,9 @@ func verifyStagedArchive(path string, file domain.P2PSharedFile) error {
 	return nil
 }
 
-// p2pShareRecord is the manager's live half of one share.
-//
-// It holds the peer connection and the staging directory, neither of which can
-// be reconstructed from the link, which is why it exists at all: the link is the
-// portable artefact, this is the volatile state behind it.
+// p2pShareRecord is the manager's live half of one share. It holds the peer
+// connection and the staging directory, neither of which can be reconstructed from
+// the link: the link is the portable artefact, this the volatile state behind it.
 type p2pShareRecord struct {
 	createdAt        time.Time
 	updatedAt        time.Time
@@ -1358,9 +1294,8 @@ func (r *p2pShareRecord) snapshot(now time.Time) domain.P2PShareSession {
 		UpdatedAt:        r.updatedAt,
 	}
 
-	// The preview is copied rather than shared so a caller cannot mutate the
-	// stored one, and so the list of sessions is not holding pointers into records
-	// that a running transfer is writing to.
+	// The preview is copied rather than shared so a caller cannot mutate the stored
+	// one while a running transfer writes to it.
 	if r.preview != nil {
 		preview := *r.preview
 		session.Preview = &preview
@@ -1381,28 +1316,58 @@ func (r *p2pShareRecord) snapshot(now time.Time) domain.P2PShareSession {
 // p2pSessionStore is the set of shares this process is part of.
 //
 // A map behind one mutex rather than a database: a peer connection cannot survive
-// a restart, so a persisted record would be a lie the moment the process came
-// back. What is worth keeping is only what is true right now.
+// a restart, so a persisted record would be a lie the moment the process came back.
+//
+// It owns event publishing because it owns every state transition; routing that
+// through the callers that mutate a record would mean eight call sites each
+// remembering to announce themselves.
 type p2pSessionStore struct {
 	records map[string]*p2pShareRecord
+	sink    EventSink
 	mu      sync.Mutex
 }
 
-func newP2PSessionStore() *p2pSessionStore {
-	return &p2pSessionStore{records: make(map[string]*p2pShareRecord)}
+func newP2PSessionStore(sink EventSink) *p2pSessionStore {
+	return &p2pSessionStore{records: make(map[string]*p2pShareRecord), sink: sink}
+}
+
+// publish announces a state transition. It runs without the store lock held: the
+// bus delivers synchronously and a subscriber may call back in, so publishing
+// under the lock would deadlock on the first UI that lists sessions.
+func (s *p2pSessionStore) publish(rec *p2pShareRecord) {
+	if s.sink == nil {
+		return
+	}
+
+	s.sink.Publish(Event{
+		Type:     shareEventFor(rec.state),
+		Data:     rec.snapshot(time.Now()),
+		ModID:    firstOrEmpty(rec.modIDs),
+		SourceID: shareSourceID,
+	})
+}
+
+// firstOrEmpty reports the first mod id, which is what the mod-scoped fields of
+// Event carry. A share of several mods is not any one of them.
+func firstOrEmpty(ids []string) string {
+	if len(ids) == 0 {
+		return ""
+	}
+
+	return ids[0]
 }
 
 // add stores a record, replacing any earlier one with the same offer id.
 func (s *p2pSessionStore) add(rec *p2pShareRecord) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.records[rec.offerID] = rec
+	s.mu.Unlock()
+
+	s.publish(rec)
 }
 
 // load returns a record for reading. The record itself is shared, so callers must
-// not mutate it; every field that changes during a transfer goes through the
-// mutating helpers below.
+// not mutate it; every field that changes goes through the mutating helpers below.
 func (s *p2pSessionStore) load(offerID string) (*p2pShareRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1432,25 +1397,30 @@ func (s *p2pSessionStore) peek(offerID string) (*p2pShareRecord, bool) {
 // mark sets a terminal-or-not state and its explanation.
 func (s *p2pSessionStore) mark(offerID string, state domain.P2PShareState, reason string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	rec, ok := s.records[offerID]
 	if !ok {
+		s.mu.Unlock()
+
 		return
 	}
 
 	rec.state = state
 	rec.failReason = reason
 	rec.updatedAt = time.Now()
+	s.mu.Unlock()
+
+	s.publish(rec)
 }
 
 // advance publishes transfer progress.
 func (s *p2pSessionStore) advance(offerID string, transferred int64, state domain.P2PShareState) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	rec, ok := s.records[offerID]
 	if !ok {
+		s.mu.Unlock()
+
 		return
 	}
 
@@ -1465,6 +1435,9 @@ func (s *p2pSessionStore) advance(offerID string, transferred int64, state domai
 	}
 
 	rec.updatedAt = time.Now()
+	s.mu.Unlock()
+
+	s.publish(rec)
 }
 
 // remove drops a record, optionally deleting its staging directory.
@@ -1499,10 +1472,8 @@ func (s *p2pSessionStore) list() []*p2pShareRecord {
 }
 
 // drain empties the store, handing each record to a caller that tears it down.
-//
 // The teardown runs outside the lock: closing a peer connection and removing a
-// directory can both block, and holding the store lock through them would stall
-// every progress callback in the process.
+// directory can both block, and holding the lock would stall every progress callback.
 func (s *p2pSessionStore) drain(teardown func(rec *p2pShareRecord)) {
 	s.mu.Lock()
 
@@ -1522,11 +1493,9 @@ func (s *p2pSessionStore) drain(teardown func(rec *p2pShareRecord)) {
 	}
 }
 
-// translateTransferError maps the protocol's errors onto the manager's codes.
-//
-// The sentinels survive the wrap so that a caller — and a test — can still ask
-// whether a transfer failed an integrity check or was refused, which are two
-// completely different things to tell a user.
+// translateTransferError maps the protocol's errors onto the manager's codes. The
+// sentinels survive the wrap so a caller can still ask whether a transfer failed an
+// integrity check or was refused, which are very different things to tell a user.
 func translateTransferError(err error) error {
 	if err == nil {
 		return nil

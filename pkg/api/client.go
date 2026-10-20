@@ -22,7 +22,7 @@
 // Every method takes a context first and honours its deadline and cancellation;
 // a cancelled operation reports ErrCodeOperationCanceled and leaves no partial
 // state. Every operation returns an error carrying a Code, so branch with
-// IsAppError rather than matching message text. Long-running operations publish
+// IsAppError: matching message text is not discovered by reflection
 // to the client's bus: subscribe before doing work, because a handler runs on
 // the publishing goroutine.
 package api
@@ -63,7 +63,7 @@ type InstallShareOptions struct {
 
 // ClientDeps is the set of services a client drives.
 //
-// The fields are concrete service types rather than the narrow interfaces the
+// The fields are concrete service types: not the narrow interfaces the
 // services depend on: this is a wiring type for the composition root, not a
 // surface a library consumer implements.
 type ClientDeps struct {
@@ -72,7 +72,7 @@ type ClientDeps struct {
 	Game    *services.GameLocator
 	Cache   *services.CacheManager
 	Hooks   *services.HookExecutor
-	// Shares is the deprecated cloud sharing service, declared here rather than behind an
+	// Shares is the deprecated cloud sharing service, declared here: not behind an
 	// interface so the wiring type cannot drift from the composition root that fills it.
 	//
 	//nolint:staticcheck // deprecation is the point: the field stays reachable until cloud shares can no longer be revoked.
@@ -294,5 +294,5 @@ type discardLogger struct{}
 func (discardLogger) Printf(string, ...any) {}
 
 // Compile-time proof that the bus satisfies the services' sink, so a signature
-// change fails here rather than at a wiring site.
+// change fails here: not at a wiring site.
 var _ services.EventSink = (*EventBus)(nil)

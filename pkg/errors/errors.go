@@ -17,15 +17,12 @@ type Code string
 const (
 	CodeUnknown Code = "UNKNOWN"
 
-	// Configuration & startup.
 	ErrCodeConfigInvalid Code = "CONFIG_INVALID"
 	ErrCodeConfigIO      Code = "CONFIG_IO"
 	ErrCodeNotFound      Code = "NOT_FOUND"
 
-	// Arguments a caller got wrong, as opposed to state that is wrong.
 	ErrCodeInvalidArgument Code = "INVALID_ARGUMENT"
 
-	// Mods.
 	ErrCodeModNotFound       Code = "MOD_NOT_FOUND"
 	ErrCodeModAlreadyExists  Code = "MOD_ALREADY_EXISTS"
 	ErrCodeModNotInstalled   Code = "MOD_NOT_INSTALLED"
@@ -40,21 +37,18 @@ const (
 	ErrCodeOperationCanceled Code = "OPERATION_CANCELED"
 	ErrCodeNoStoragePath     Code = "NO_STORAGE_PATH"
 
-	// Game.
 	ErrCodeGameNotFound   Code = "GAME_NOT_FOUND"
 	ErrCodeGameInvalid    Code = "GAME_INVALID"
 	ErrCodeModsPathNotDir Code = "MODS_PATH_NOT_DIR"
 
-	// Sources.
 	ErrCodeSourceUnavailable Code = "SOURCE_UNAVAILABLE"
 	ErrCodeSourceNotFound    Code = "SOURCE_NOT_FOUND"
 	ErrCodeSourceExists      Code = "SOURCE_EXISTS"
 	ErrCodeSourceDisabled    Code = "SOURCE_DISABLED"
 
-	// ErrCodeSourceRejected is a request the source understood and refused: a 4xx that is
-	// neither credential, rate limit nor missing object. It is distinct from
-	// ErrCodeSourceUnavailable (the far end could not be reached or could not answer),
-	// which is what keeps a retry loop off a service that is healthy and refusing.
+	// ErrCodeSourceRejected is a 4xx the source understood and refused: neither
+	// credential, rate limit nor missing object. It is distinct from
+	// ErrCodeSourceUnavailable, since a refusal means a healthy service is saying no.
 	ErrCodeSourceRejected Code = "SOURCE_REJECTED"
 
 	ErrCodeAuthFailed     Code = "AUTH_FAILED"
@@ -63,27 +57,23 @@ const (
 	ErrCodeSearchFailed   Code = "SEARCH_FAILED"
 	ErrCodeIntegrity      Code = "INTEGRITY_CHECK_FAILED"
 
-	// Cache.
 	ErrCodeCacheMiss    Code = "CACHE_MISS"
 	ErrCodeCacheCorrupt Code = "CACHE_CORRUPT"
 
-	// Plugins.
 	ErrCodeRunnerNotFound Code = "RUNNER_NOT_FOUND"
-	// ErrCodeHookDenied is a hook script reaching for a capability its permissions do not
-	// grant, as distinct from ErrCodeHookInvalid (the declaration is fine) and ErrCodeHookFailed
-	// (the script ran but refused): a denial is a policy outcome, and the author needs to see it.
+	// ErrCodeHookDenied is a hook reaching for a capability its permissions do not
+	// grant, as distinct from ErrCodeHookInvalid and ErrCodeHookFailed: a denial is
+	// a policy outcome the author needs to see.
 	ErrCodeHookDenied Code = "HOOK_DENIED"
 	ErrCodeDuplicate  Code = "DUPLICATE"
 
-	// Game actions. An action failing to *resolve* is an argument mistake and is reported as
-	// ErrCodeInvalidArgument; these three cover a real action that could not be looked up, is
-	// not offered on this platform, or was found and then failed. Splitting them is what lets a
-	// frontend disable the button instead of showing an error after the user pressed it.
+	// Game actions. An action that cannot be resolved is an argument mistake
+	// (ErrCodeInvalidArgument); these three cover a real action that was not found,
+	// is not offered on this platform, or was found and failed.
 	ErrCodeActionNotFound    Code = "ACTION_NOT_FOUND"
 	ErrCodeActionUnavailable Code = "ACTION_UNAVAILABLE"
 	ErrCodeActionFailed      Code = "ACTION_FAILED"
 
-	// Cloud sharing.
 	ErrCodeCloudProviderNotFound Code = "CLOUD_PROVIDER_NOT_FOUND"
 	ErrCodeCloudAuthRequired     Code = "CLOUD_AUTH_REQUIRED"
 	ErrCodeShareExpired          Code = "SHARE_EXPIRED"
@@ -98,8 +88,8 @@ const (
 	ErrCodeCloudDownloadFailed   Code = "CLOUD_DOWNLOAD_FAILED"
 )
 
-// AppError is the concrete error type returned by every service. The zero value
-// is not useful; construct one with New, Wrap or one of the sentinel helpers.
+// AppError is the concrete error type returned by every service. Construct one
+// with New, Wrap or one of the sentinel helpers.
 type AppError struct {
 	Cause   error  `json:"-"`
 	Code    Code   `json:"code"`
@@ -108,13 +98,12 @@ type AppError struct {
 
 var _ error = (*AppError)(nil)
 
-// New builds an AppError with a formatted message.
 func New(code Code, format string, args ...any) *AppError {
 	return &AppError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
-// Wrap annotates err with a code and message. It returns nil when err is nil so
-// it can be used inline on a call's return value.
+// Wrap annotates err with a code and message, returning nil when err is nil so it
+// can be used inline on a call's return value.
 func Wrap(err error, code Code, format string, args ...any) error {
 	if err == nil {
 		return nil
@@ -123,10 +112,9 @@ func Wrap(err error, code Code, format string, args ...any) error {
 	return &AppError{Code: code, Message: fmt.Sprintf(format, args...), Cause: err}
 }
 
-// Annotate adds context to err the way Wrap does, except that it does not restate a code err
-// already carries. Wrapping an error with the code it already has prints that code twice, which
-// reads as two failures where there is one; only the inner *message* is borrowed. The cause is
-// still attached, so errors.Is keeps finding the original error.
+// Annotate adds context to err the way Wrap does, without restating a code err
+// already carries: wrapping with the same code prints it twice. Only the inner
+// message is borrowed, and the cause stays attached, so errors.Is still finds it.
 func Annotate(err error, code Code, format string, args ...any) error {
 	if err == nil {
 		return nil
@@ -143,9 +131,9 @@ func Annotate(err error, code Code, format string, args ...any) error {
 	return Wrap(err, code, format, args...)
 }
 
-// causeMessage renders an error as its message alone, dropping the code the
-// reader has already been given. It still unwraps to the original error, so
-// errors.Is, errors.As and Code keep seeing the whole chain.
+// causeMessage renders an error as its message alone, without the code the reader
+// already has. It unwraps to the original, so errors.Is, errors.As and Code see
+// the whole chain.
 type causeMessage struct {
 	err error
 }
@@ -154,8 +142,8 @@ func (c causeMessage) Error() string { return Message(c.err) }
 
 func (c causeMessage) Unwrap() error { return c.err }
 
-// Error implements error. The rendered text always starts with the code so that
-// log output remains greppable: "MOD_NOT_FOUND: mod \"x\" is not installed".
+// Error implements error. The rendered text starts with the code so log output
+// stays greppable: "MOD_NOT_FOUND: mod \"x\" is not installed".
 func (e *AppError) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -169,8 +157,8 @@ func (e *AppError) Error() string {
 	if e.Cause == nil {
 		return fmt.Sprintf("%s: %s", e.Code, msg)
 	}
-	// A message that already ends with the cause's rendering must not have it appended
-	// again — the cause is already carried, so appending twice prints it twice.
+	// A message that already ends with the cause's rendering must not have it
+	// appended again.
 	if cause := e.Cause.Error(); cause != "" && strings.HasSuffix(msg, cause) {
 		return fmt.Sprintf("%s: %s", e.Code, msg)
 	}
@@ -178,7 +166,6 @@ func (e *AppError) Error() string {
 	return fmt.Sprintf("%s: %s: %s", e.Code, msg, e.Cause.Error())
 }
 
-// Unwrap exposes the wrapped cause to errors.Is and errors.As.
 func (e *AppError) Unwrap() error {
 	if e == nil {
 		return nil
@@ -187,8 +174,8 @@ func (e *AppError) Unwrap() error {
 	return e.Cause
 }
 
-// Is lets errors.Is compare two AppErrors by code alone. Message differences are
-// not part of the identity: callers branch on the code, not on the prose.
+// Is lets errors.Is compare two AppErrors by code alone, because callers branch on
+// the code.
 func (e *AppError) Is(target error) bool {
 	if e == nil || target == nil {
 		return false
@@ -202,8 +189,8 @@ func (e *AppError) Is(target error) bool {
 	return e.Code == t.Code
 }
 
-// CodeOf returns the code carried by err, walking the wrap chain. Errors that
-// are not part of the AppError model collapse to CodeUnknown.
+// CodeOf returns the code carried by err, walking the wrap chain. Errors outside
+// the AppError model collapse to CodeUnknown.
 func CodeOf(err error) Code {
 	var appErr *AppError
 	if errors.As(err, &appErr) {
@@ -213,9 +200,8 @@ func CodeOf(err error) Code {
 	return CodeUnknown
 }
 
-// IsAppError reports whether err, or any error it wraps, carries the given code.
-// Because the whole chain is inspected, wrapping an error never hides a code a
-// caller cares about.
+// IsAppError reports whether err, or any error it wraps, carries the given code,
+// so wrapping never hides a code a caller cares about.
 func IsAppError(err error, code Code) bool {
 	if err == nil {
 		return false
@@ -224,7 +210,6 @@ func IsAppError(err error, code Code) bool {
 	return errors.Is(err, &AppError{Code: code})
 }
 
-// IsAnyCode reports whether err carries at least one of the given codes.
 func IsAnyCode(err error, codes ...Code) bool {
 	if err == nil {
 		return false
@@ -239,8 +224,8 @@ func IsAnyCode(err error, codes ...Code) bool {
 	return false
 }
 
-// Message returns the message of the outermost AppError in the chain, or the
-// error text when the chain has none. Useful for surfacing user facing text.
+// Message returns the message of the outermost AppError in the chain, or the error
+// text when the chain has none.
 func Message(err error) string {
 	if err == nil {
 		return ""
@@ -254,8 +239,8 @@ func Message(err error) string {
 	return err.Error()
 }
 
-// Cause returns the deepest non-AppError error in the chain, which is usually
-// the operating system error (os.ErrNotExist, syscall.EACCES, ...).
+// Cause returns the deepest non-AppError error in the chain, usually the operating
+// system error (os.ErrNotExist, syscall.EACCES, ...).
 func Cause(err error) error {
 	for err != nil {
 		appErr, ok := err.(*AppError)
@@ -275,8 +260,7 @@ func Cause(err error) error {
 }
 
 // WithMessage returns a copy of err with an outer AppError message attached,
-// preserving the original code and cause. It is handy for adding context
-// without losing classification.
+// preserving the original code and cause.
 func WithMessage(err error, format string, args ...any) error {
 	if err == nil {
 		return nil
@@ -290,8 +274,7 @@ func WithMessage(err error, format string, args ...any) error {
 }
 
 // Sentinels for the most frequently branched-on failures. They are pointers so
-// that errors.Is matches by code even when callers construct their own AppError
-// with the same code.
+// errors.Is matches by code even against a caller-built AppError.
 var (
 	ErrConfigInvalid = &AppError{Code: ErrCodeConfigInvalid, Message: "configuration is invalid"}
 	ErrConfigIO      = &AppError{

@@ -53,8 +53,8 @@ func TestClearCacheEmptiesItAndSaysSo(t *testing.T) {
 	)
 }
 
-// cacheWorkspace builds a workspace whose configured age limit expires its one
-// stored archive, which is what lets a test tell the limits from "no limits".
+// cacheWorkspace builds a workspace whose one stored archive is already older
+// than the configured age limit.
 func cacheWorkspace(t *testing.T, maxAgeDays int) (*workspace, *App, *di.Container) {
 	t.Helper()
 	w := newWorkspace(t)
@@ -70,8 +70,8 @@ func cacheWorkspace(t *testing.T, maxAgeDays int) (*workspace, *App, *di.Contain
 	return w, app, c
 }
 
-// storeArchive puts one blob in the cache and ages its last-access stamp. The
-// stamp goes straight into the index, which has no backdating surface of its own.
+// storeArchive puts one blob in the cache and backdates its last-access stamp
+// through the index, which has no backdating surface of its own.
 func storeArchive(
 	t *testing.T,
 	w *workspace,
@@ -112,8 +112,6 @@ func cacheFileCount(t *testing.T, app *App) int {
 	return info.FileCount
 }
 
-// TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits is the assertion that both
-// zeros do not mean "no limits": a year-stale archive must still be expired.
 func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 	w, app, c := cacheWorkspace(t, 1)
 	{
@@ -131,8 +129,6 @@ func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 		assert.Equal(t, 0, got, "%d archives survived a prune that should have expired them", got)
 	}
 
-	// The two-argument form with both zeros is the same command, and a frontend
-	// with no fields next to the button sends exactly that.
 	storeArchive(t, w, c, "second", "more bytes", 365*24)
 
 	{
@@ -146,9 +142,6 @@ func TestPruneCacheWithNoArgumentsUsesTheConfiguredLimits(t *testing.T) {
 	}
 }
 
-// TestPruneCacheWithNoLimitsKeepsEverything is the other half: a negative on both
-// axes means "no limit on either", so without it the two halves cannot be told
-// apart.
 func TestPruneCacheWithNoLimitsKeepsEverything(t *testing.T) {
 	_, app, _ := cacheWorkspace(t, 1)
 	{
@@ -168,8 +161,6 @@ func TestPruneCacheWithNoLimitsKeepsEverything(t *testing.T) {
 	}
 }
 
-// TestPruneCacheAppliesEachAxisIndependently: a zero on one axis is no limit on
-// that axis, so the stale archive survives a size-only prune and not an age one.
 func TestPruneCacheAppliesEachAxisIndependently(t *testing.T) {
 	_, app, _ := cacheWorkspace(t, 1)
 	{
@@ -199,9 +190,6 @@ func TestPruneCacheAppliesEachAxisIndependently(t *testing.T) {
 	}
 }
 
-// TestASuccessfulPruneIsNotLogged: the log is for failures, and filling it with
-// routine successes would bury the one line a bug report needs. That a failure
-// *is* logged is covered by TestFailedOperationsAreLogged.
 func TestASuccessfulPruneIsNotLogged(t *testing.T) {
 	logger := &recordingLogger{}
 	w := newWorkspace(t)
@@ -224,8 +212,6 @@ func TestASuccessfulPruneIsNotLogged(t *testing.T) {
 	}
 }
 
-// TestRefusedCallsAreNotLogged: a set that was never wired is the caller's own
-// bug, and filling the log with it would bury the one line that mattered.
 func TestRefusedCallsAreNotLogged(t *testing.T) {
 	logger := &recordingLogger{}
 
@@ -241,7 +227,6 @@ func TestRefusedCallsAreNotLogged(t *testing.T) {
 	}
 }
 
-// appWithHandler builds the surface with an event handler wired, the GUI route.
 func appWithHandler(t *testing.T) (*workspace, *App, *recordingHandler) {
 	t.Helper()
 	w := newWorkspace(t)

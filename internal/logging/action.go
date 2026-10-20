@@ -19,11 +19,11 @@ type ActionLogger struct{}
 // ActionOutput returns a logger that satisfies domain.ActionLogger.
 func ActionOutput() domain.ActionLogger { return ActionLogger{} }
 
-// Printf implements domain.ActionLogger.
+// Logf implements domain.ActionLogger.
 //
-// The line is prefixed rather than structured: a script's own output is a
+// The line is prefixed: a script's own output is a sentence, and it reads whole
 // sentence, and it reads better whole.
-func (ActionLogger) Printf(format string, args ...any) {
+func (ActionLogger) Logf(format string, args ...any) {
 	if len(args) > 0 {
 		format = fmt.Sprintf(format, args...)
 	}

@@ -15,9 +15,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newModCommand assembles the `dmm mod` group: everything that acts on a single
-// mod or on the installed set, split across files by subject so a reader looking
-// for "how does install work" does not have to read the link-format code.
+// newModCommand assembles the `dmm mod` group, split across files by subject so
+// a reader looking for install never has to read the link-format code.
 func newModCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "mod",
@@ -47,9 +46,9 @@ func newModCommand(s *session) *cobra.Command {
 	return group
 }
 
-// modView is the JSON shape of one mod, not domain.Mod: a domain struct is the
-// manager's internal representation, with hooks and install bookkeeping a script
-// has no use for. The JSON is a promise, and the promise needs fewer fields.
+// modView is the JSON shape of one mod. The domain struct carries hooks and
+// install bookkeeping a script has no use for; the JSON is a promise and needs
+// fewer fields.
 type modView struct {
 	ID            string   `json:"id"`
 	Name          string   `json:"name,omitempty"`
@@ -321,7 +320,6 @@ func newModDisableCommand(s *session) *cobra.Command {
 	}
 }
 
-// updateView is the JSON shape of one row of `dmm mod update --check`.
 type updateView struct {
 	ModID         string `json:"mod_id"`
 	Source        string `json:"source,omitempty"`
@@ -349,8 +347,8 @@ func newModUpdateCommand(s *session) *cobra.Command {
 			ctx := cmd.Context()
 
 			if len(args) == 1 {
-				// --check is honoured here too, not only where no mod is named:
-				// a script polling for updates would otherwise install them.
+				// --check is honoured here too: a script polling for updates
+				// would otherwise install them.
 				if checkOnly {
 					updates, err := client.CheckModUpdates(ctx)
 					if err != nil {
@@ -393,9 +391,8 @@ func newModUpdateCommand(s *session) *cobra.Command {
 	return command
 }
 
-// reportUpdates prints what a check found, optionally narrowed to one mod: the
-// narrow and bare forms are the same question and must answer alike. An id that
-// matched nothing is reported, since "no updates" would be a lie.
+// reportUpdates prints what a check found, optionally narrowed to one mod. An id
+// that matched nothing is reported, since "no updates" would be a lie.
 func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, checking bool) error {
 	table := NewTable("MOD", "INSTALLED", "REMOTE", "STATE", "SOURCE")
 	views := make([]updateView, 0, len(updates))
@@ -420,8 +417,7 @@ func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, chec
 	}
 
 	if onlyID != "" && !matched {
-		// MOD_NOT_FOUND, not INVALID_ARGUMENT, because `dmm mod update <id>`
-		// reports an uninstalled mod with that code and a script branches on it.
+		// MOD_NOT_FOUND matches `dmm mod update <id>`, whose code scripts branch on.
 		return appErrors.New(appErrors.ErrCodeModNotFound,
 			"mod %q is not installed", modLabelOf(onlyID))
 	}
@@ -434,9 +430,8 @@ func (s *session) reportUpdates(updates []api.ModUpdateInfo, onlyID string, chec
 	return s.writeJSONOrTable(s.env.Out, views, table, nothing)
 }
 
-// updateState words the answer to "is there an update" rather than leaving the
-// reader to infer it from two version columns. A dash in REMOTE means the source
-// could not be asked, and an unlabelled asterisk would make that look the same.
+// updateState words the answer to "is there an update". A dash in REMOTE means
+// the source could not be asked, and an unlabelled asterisk would look the same.
 func updateState(update api.ModUpdateInfo) string {
 	switch {
 	case strings.TrimSpace(update.RemoteVersion) == "":
@@ -449,8 +444,8 @@ func updateState(update api.ModUpdateInfo) string {
 }
 
 // applyPendingUpdates updates every mod with an available update. One failure
-// does not abandon the rest: the user wants the ones that worked plus a list of
-// what did not, and the exit code still says the command did not fully succeed.
+// does not abandon the rest: the user wants what worked plus a list of what did
+// not, and the exit code still reports a partial success.
 func (s *session) applyPendingUpdates(ctx context.Context, updates []api.ModUpdateInfo) error {
 	var failures []error
 
@@ -538,8 +533,6 @@ func newModReorderCommand(s *session) *cobra.Command {
 			fmt.Fprintf(s.env.Out, "load order set to %s\n", plural(len(args), "mod", "mods"))
 
 			if leftOut > 0 {
-				// A mod left out silently loses its place, so saying how many is
-				// the difference between the user knowing and not knowing.
 				fmt.Fprintf(s.env.Out,
 					"%s not in the order, falling back to their priority\n",
 					plural(leftOut, "installed mod is", "installed mods are"))
@@ -704,7 +697,6 @@ func newModSymlinkStatusCommand(s *session) *cobra.Command {
 	}
 }
 
-// conflictView is the JSON shape of one reported conflict.
 type conflictView struct {
 	ID             string `json:"id"`
 	Type           string `json:"type"`
@@ -828,7 +820,6 @@ func resolutionNames() string {
 	return strings.Join(names, ", ")
 }
 
-// modState renders a mod's enabled flag as the word a person uses.
 func modState(mod api.Mod) string {
 	if mod.Enabled {
 		return "enabled"
@@ -837,9 +828,8 @@ func modState(mod api.Mod) string {
 	return "disabled"
 }
 
-// formatStamp renders a timestamp the way the rest of the manager writes them:
-// RFC 3339 in UTC, or a dash for the zero time. The zero time is not "the
-// beginning of time" in this program; it means the value was never set.
+// formatStamp renders a timestamp as RFC 3339 in UTC. The zero time means the
+// value was never set, so a dash stands in for it.
 func formatStamp(value time.Time) string {
 	if value.IsZero() {
 		return ""
@@ -849,9 +839,8 @@ func formatStamp(value time.Time) string {
 }
 
 // sourceDataText reads a string out of a mod's source metadata. The assertion is
-// checked because SourceData comes from JSON written by somebody else's source
-// plugin, and a bare assertion would take the command down over a field nobody
-// asked for.
+// checked because SourceData comes from somebody else's plugin, and a bare
+// assertion would take the command down over a field nobody asked for.
 func sourceDataText(data map[string]any, key string) string {
 	if data == nil {
 		return ""
@@ -863,9 +852,8 @@ func sourceDataText(data map[string]any, key string) string {
 }
 
 // sourceDataInt reads a number out of a mod's source metadata, accepting int and
-// float64 because JSON decodes every number into a float64. A fractional value is
-// refused rather than truncated: truncating corruption produces an id naming a
-// different real mod, which is worse than admitting the value is wrong.
+// float64 because JSON decodes every number as float64. A fractional value is
+// refused: truncating corruption produces an id naming a different real mod.
 func sourceDataInt(data map[string]any, key string) (int64, bool) {
 	if data == nil {
 		return 0, false

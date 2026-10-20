@@ -41,8 +41,6 @@ func TestDetectGameFindsTheConfiguredInstallation(t *testing.T) {
 	)
 }
 
-// TestDetectGameWithNothingToFind: "I could not find the game" is the answer a
-// first-run wizard draws, so it is an empty slice rather than an error.
 func TestDetectGameWithNothingToFind(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -58,7 +56,6 @@ func TestDetectGameWithNothingToFind(t *testing.T) {
 	assert.Len(t, found, 0, "DetectGame = %+v, want nothing", found)
 }
 
-// TestCurrentGamePrefersTheConfiguredPath.
 func TestCurrentGamePrefersTheConfiguredPath(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -80,7 +77,6 @@ func TestCurrentGamePrefersTheConfiguredPath(t *testing.T) {
 	)
 }
 
-// TestCurrentGameReportsNoGameAtAll.
 func TestCurrentGameReportsNoGameAtAll(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	{
@@ -94,14 +90,11 @@ func TestCurrentGameReportsNoGameAtAll(t *testing.T) {
 	}
 }
 
-// TestValidateGamePathAcceptsAndRefuses.
 func TestValidateGamePathAcceptsAndRefuses(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
 	app := w.mustApp(t)
 
-	// The path is trimmed, because it is usually pasted out of a file manager
-	// with a trailing separator or a stray space.
 	install, err := app.Game.ValidateGamePath("  " + w.gameDir + "  ")
 	require.NoError(t, err, "ValidateGamePath")
 
@@ -131,9 +124,6 @@ func TestValidateGamePathAcceptsAndRefuses(t *testing.T) {
 	}
 }
 
-// TestSetGamePathPersistsAndRefuses. A refused path has to leave the stored one
-// alone, or the next launch discovers the mistake the settings screen refused to
-// make.
 func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -155,7 +145,6 @@ func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 		current.Path,
 		w.gameDir,
 	)
-	// And it reached the file, not just the in-memory configuration.
 	store := newConfigStore(t, w.configPath)
 
 	stored, err := store.Load()
@@ -192,7 +181,6 @@ func TestSetGamePathPersistsAndRefuses(t *testing.T) {
 	)
 }
 
-// TestGetModsPathResolvesForTheConfiguredGame.
 func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -206,7 +194,6 @@ func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 
 	assert.Equal(t, w.modsDir, path, "GetModsPath(nil) = %q, want %q", path, w.modsDir)
 
-	// An explicit installation wins over the configuration.
 	other, err := app.Game.ValidateGamePath(w.gameDir)
 	require.NoError(t, err, "ValidateGamePath")
 
@@ -223,11 +210,6 @@ func TestGetModsPathResolvesForTheConfiguredGame(t *testing.T) {
 	)
 }
 
-// TestSupportedGamesAnswersWithoutAnInstallation.
-//
-// The registry is a separate question from the filesystem: a settings screen
-// offers the games it can manage whether or not any of them are installed, so
-// listing must not fail just because nothing is installed yet.
 func TestSupportedGamesAnswersWithoutAnInstallation(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -257,7 +239,6 @@ func TestSupportedGamesAnswersWithoutAnInstallation(t *testing.T) {
 	assert.True(t, defaultMarked, "SupportedGames marked no game as the default")
 }
 
-// TestUseGameSwitchesAndRefusesUnknownIDs.
 func TestUseGameSwitchesAndRefusesUnknownIDs(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -268,8 +249,6 @@ func TestUseGameSwitchesAndRefusesUnknownIDs(t *testing.T) {
 		require.NoError(t, err, "UseGame: %v", err)
 	}
 
-	// The switch reached the file: a restart must come up on the same game,
-	// not on whatever the configuration happened to say before.
 	stored, err := store.Load()
 	require.NoError(t, err, "reload the configuration")
 
@@ -315,7 +294,6 @@ func TestUseGameSwitchesAndRefusesUnknownIDs(t *testing.T) {
 	)
 }
 
-// TestGetModsPathWithNoGameReportsNoGame.
 func TestGetModsPathWithNoGameReportsNoGame(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	{

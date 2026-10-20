@@ -65,7 +65,6 @@ func TestVersionCompare(t *testing.T) {
 		{"1.1.0", "1.0.9", 1},
 		{"2.0.0", "10.0.0", -1},
 		{"1.0.10", "1.0.9", 1},
-		// A pre-release sorts below its own release.
 		{"1.0.0-beta", "1.0.0", -1},
 		{"1.0.0", "1.0.0-beta", 1},
 		{"1.0.0-alpha", "1.0.0-beta", -1},
@@ -164,12 +163,9 @@ func TestSatisfiesExpression(t *testing.T) {
 		{"1.0.0", "!=2.0.0", true},
 		{"2.0.0", "!=2.0.0", false},
 		{"1.0.0-beta", ">=1.0.0", false},
-		// Unparseable version: an open constraint accepts it, a specific one
-		// cannot be satisfied.
 		{"garbage", "", true},
 		{"garbage", "*", true},
 		{"garbage", ">=1.0.0", false},
-		// Malformed expression never matches.
 		{"1.0.0", ">=", false},
 		{"1.0.0", "||", false},
 	}

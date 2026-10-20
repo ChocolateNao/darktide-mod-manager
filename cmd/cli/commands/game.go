@@ -8,14 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newGameCommand assembles `dmm game`: which games the manager knows, which
-// one is active, and where that game is on disk.
 func newGameCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "game",
 		Short: "List, switch, and inspect games",
-		// There is deliberately no `game set`: the path is configuration,
-		// set with `dmm config set game.path`. Switching games is the decision here.
+		// There is deliberately no `game set`: the path is configuration, set with
+		// `dmm config set game.path`.
 		Long: "List, switch, and inspect games.\n\n" +
 			"`game list` shows the registered games and which one is active;\n" +
 			"`game use <id>` switches the active game and remembers it; and\n" +
@@ -41,7 +39,6 @@ func newGameCommand(s *session) *cobra.Command {
 	return group
 }
 
-// gameView is the JSON shape of one registered game.
 type gameView struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -60,9 +57,8 @@ func newGameView(info api.GameInfo) gameView {
 	}
 }
 
-// activeGameView finds the active entry in a SupportedGames result. SupportedGames
-// always marks exactly one game active, so a miss means the API and this view
-// disagreed, and saying so beats printing nothing.
+// activeGameView finds the active entry in a SupportedGames result. That always
+// marks exactly one game active, so a miss means the API and this view disagreed.
 func activeGameView(infos []api.GameInfo) (gameView, bool) {
 	for _, info := range infos {
 		if info.IsActive {
@@ -73,7 +69,6 @@ func activeGameView(infos []api.GameInfo) (gameView, bool) {
 	return gameView{}, false
 }
 
-// installView is the JSON shape of one installation.
 type installView struct {
 	GameID     string `json:"game_id,omitempty"`
 	Path       string `json:"path"`
@@ -362,8 +357,8 @@ func newGameInfoCommand(s *session) *cobra.Command {
 			if path, err := client.GetModsPath(ctx, install); err == nil {
 				modsPath = path
 			} else if !s.opts.quiet {
-				// The mods folder can be unresolvable on its own and no mod
-				// can be enabled without it — but the installation was found, so warn.
+				// The mods folder can be unresolvable on its own, but the
+				// installation was found, so warn.
 				fmt.Fprintf(s.env.Err, "warning: %s\n", oneLine(err))
 			}
 

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -36,11 +37,9 @@ func (l ScriptLanguage) Valid() bool {
 }
 
 // ParseScriptLanguage converts a manifest or user supplied string to a
-// ScriptLanguage. It is deliberately strict: a blank or unknown language is an
-// error rather than a fallback, because a hook that silently runs in the wrong
-// runtime is worse than a mod that refuses to load. Matching is
-// case-insensitive, and "js" is accepted as the common short spelling of
-// "javascript".
+// ScriptLanguage. A blank or unknown language is an error: not a fallback:
+// a hook that silently runs in the wrong runtime is worse than a mod that
+// refuses to load. "js" is accepted as the common short spelling.
 func ParseScriptLanguage(s string) (ScriptLanguage, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "lua":
@@ -54,10 +53,8 @@ func ParseScriptLanguage(s string) (ScriptLanguage, error) {
 	}
 }
 
-// HookPhase is one point in a mod's lifecycle at which scripts may run. Phases
-// are ordered: PreInstall precedes the install itself, PostInstall follows it,
-// and so on. The ordinal is used for iteration and for reporting order in the
-// CLI, so the ordering below is significant.
+// HookPhase is one point in a mod's lifecycle at which scripts may run. The
+// ordinal drives iteration and CLI reporting order, so the order below matters.
 type HookPhase string
 
 const (
@@ -131,16 +128,30 @@ func equalUnderscored(a, b string) bool {
 // HookScript is a single script bound to a lifecycle phase.
 type HookScript struct {
 	// Language names the sandboxed runtime that executes Content. Local
-	// manifests spell this as `type = "lua"`; the JSON form says `language`
-	// because that is what the field is.
+	// manifests spell this `type = "lua"`; JSON says `language`.
 	Language   ScriptLanguage `json:"language"`
 	Content    string         `json:"content"`
 	WorkingDir string         `json:"working_dir,omitempty"`
-	Env        []string       `json:"env,omitempty"`
+	// Name is the display-only label. Blank means the UI generates one, so a
+	// manifest that never set one still reads as something.
+	Name string   `json:"name,omitempty"`
+	Env  []string `json:"env,omitempty"`
 	// Timeout is the script's own request, in seconds. Zero defers to the
-	// configured default; whatever is asked for is still clamped by the
-	// effective-timeout rule in the executor.
+	// configured default; the executor clamps the result either way.
 	Timeout int `json:"timeout,omitempty"`
+	// Disabled pauses the script without deleting it. A plain bool because
+	// "unset" and "false" both mean "runs", and JSON cannot tell them apart.
+	Disabled bool `json:"disabled,omitempty"`
+}
+
+// Label is the name to show a user, falling back to a generated one so a
+// nameless script is still distinguishable from its siblings in the phase.
+func (s HookScript) Label(phase HookPhase, index int) string {
+	if name := strings.TrimSpace(s.Name); name != "" {
+		return name
+	}
+
+	return fmt.Sprintf("%s script %d", phase, index+1)
 }
 
 // ModHooks groups every hook phase for one mod. Slices are ordered: scripts

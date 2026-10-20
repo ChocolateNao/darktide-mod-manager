@@ -95,7 +95,7 @@ func TestOpenRejectsTamperedBlob(t *testing.T) {
 	}
 }
 
-// TestOpenShortBlob covers a truncated link, reported as ErrMalformed rather than a bad secret.
+// TestOpenShortBlob covers a truncated link, reported as ErrMalformed: not a bad secret.
 func TestOpenShortBlob(t *testing.T) {
 	t.Parallel()
 

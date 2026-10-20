@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// execute runs one command line against the workspace and returns the streams.
 func (w *workspace) execute(t *testing.T, args ...string) (string, string, int) {
 	t.Helper()
 
@@ -30,8 +29,8 @@ func (w *workspace) execute(t *testing.T, args ...string) (string, string, int) 
 	return out.String(), errOut.String(), code
 }
 
-// The share commands are driven against the real command tree and a real
-// container. The upload path is deliberately not covered: it needs a provider.
+// The share commands run against the real command tree and container. The upload
+// path is not covered: it needs a provider.
 
 func TestShareListWithNoShares(t *testing.T) {
 	w := newWorkspace(t)
@@ -54,8 +53,6 @@ func TestShareListWithGameFilter(t *testing.T) {
 
 	assert.Equal(t, 0, code, "exit code")
 	assert.Contains(t, out, "No shares found.", "output")
-	// The only thing on stderr is the deprecation notice: the command works, but
-	// the user is told where to go instead.
 	assert.Contains(t, errOut, "cloud sharing is deprecated", "stderr")
 	assert.NotContains(t, out, "deprecated", "the notice must not pollute stdout")
 }
@@ -69,8 +66,6 @@ func TestShareCreateWithoutModsFails(t *testing.T) {
 
 	assert.Equal(t, 1, code, "exit code")
 	assert.Empty(t, out, "output")
-	// The message names the flag to use, so a user who guessed at the syntax is
-	// told the right one rather than just being told they were wrong.
 	assert.Contains(t, errOut, "no mods specified")
 	assert.Contains(t, errOut, "--mods")
 }
@@ -128,8 +123,6 @@ func TestShareCommandsRequireAnArgument(t *testing.T) {
 	w.makeGame(t)
 	w.writeConfig(t)
 
-	// Each of these names exactly one id, so a missing one is a usage error
-	// rather than a lookup for the empty string.
 	for _, args := range [][]string{
 		{"share", "show"},
 		{"share", "revoke"},

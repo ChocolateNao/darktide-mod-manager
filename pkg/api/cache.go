@@ -7,7 +7,6 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// cacheManager returns the cache manager, or the error to report.
 func (c *Client) cacheManager() (*services.CacheManager, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -21,9 +20,8 @@ func (c *Client) cacheManager() (*services.CacheManager, error) {
 	return c.deps.Cache, nil
 }
 
-// GetCacheInfo reports what the download cache holds. An error, not an empty
-// CacheInfo, on failure — an empty answer would read as "0 files, 0 bytes" on a
-// broken cache.
+// GetCacheInfo reports what the download cache holds. It returns an error on
+// failure: an empty CacheInfo would read as "0 files, 0 bytes" on a broken cache.
 func (c *Client) GetCacheInfo(ctx context.Context) (CacheInfo, error) {
 	mgr, err := c.cacheManager()
 	if err != nil {

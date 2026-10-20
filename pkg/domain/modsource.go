@@ -16,7 +16,7 @@ const (
 	ModLinkSource ModLinkTarget = "source"
 	// ModLinkDownload is a direct download, when the source offers one.
 	ModLinkDownload ModLinkTarget = "download"
-	// ModLinkUpdate points at the newest version rather than the installed one.
+	// ModLinkUpdate points at the newest version: not the installed one.
 	ModLinkUpdate ModLinkTarget = "update"
 )
 
@@ -73,7 +73,7 @@ const (
 )
 
 // Describe returns the sentence a CLI prints and a UI shows next to the link.
-// It describes the next step rather than repeating the URLs.
+// It describes the next step: not repeating the URLs.
 func (f ModLinkFallback) Describe() string {
 	switch f {
 	case ModFallbackDownload:
@@ -108,7 +108,7 @@ func (l ModSourceLink) FallbackKind() ModLinkFallback {
 // URLFor returns the link for a target, or an empty string when the source has
 // none of that kind.
 //
-// An empty return is meaningful rather than an error: a caller that gets the mod's
+// An empty return is meaningful: not an error a caller that gets the mod's
 // page instead would think it had been handed a download URL.
 func (l ModSourceLink) URLFor(target ModLinkTarget) string {
 	switch target {

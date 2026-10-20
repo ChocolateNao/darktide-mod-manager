@@ -10,9 +10,8 @@ import (
 )
 
 // newSourceLinkCommand builds the commands that answer "where did this come from,
-// and how do I get it again". Not every source can be downloaded on demand — Nexus
-// serves files only to a signed-in client — so the link has to be one command away
-// from the mod list rather than something the user reconstructs by hand.
+// and how do I get it again". Nexus serves files only to a signed-in client, so
+// the link is one command away from the mod list.
 func newSourceLinkCommand(s *session) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "source",
@@ -34,8 +33,8 @@ func newSourceLinkCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// sourceLinkView is the JSON and text shape of one mod's links. It flattens the
-// fallback into a sentence rather than a code, because the only question is "what do I do now".
+// sourceLinkView is the JSON and text shape of one mod's links; the fallback is a
+// sentence because the only question is "what do I do now".
 type sourceLinkView struct {
 	ModID       string `json:"mod_id"`
 	SourceID    string `json:"source_id,omitempty"`
@@ -104,8 +103,6 @@ func newModSourceCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// describeOpenedLink says what was opened, and what to do if the chosen link was
-// not the one that would have worked.
 func describeOpenedLink(s *session, modID string, fallback *domain.ModLinkFallback) error {
 	if s.opts.asJSON {
 		return writeJSON(s.env.Out, map[string]any{"mod_id": modID, "opened": true})
@@ -157,8 +154,8 @@ func newModSourceListCommand(s *session) *cobra.Command {
 	}
 }
 
-// viewOfLink flattens a link into what the CLI prints. Direct is the interesting
-// bit: a mod the manager could fetch has a download link, and one it could not a page.
+// viewOfLink flattens a link into what the CLI prints: a mod the manager can fetch
+// has a download link, and one it cannot has a page.
 func viewOfLink(modID string, link *domain.ModSourceLink) sourceLinkView {
 	view := sourceLinkView{ModID: modID}
 	if link == nil {
@@ -242,9 +239,8 @@ func bestLink(view sourceLinkView) string {
 }
 
 // newManifestWriteCommand refreshes an installed mod's manifest from the database,
-// the other half of the manual-update path: a mod whose author re-releases the
-// same archive gains metadata the manager's database now knows, so writing it again
-// makes the folder self-describing for somebody installing it from disk.
+// the other half of the manual-update path: writing it again makes the folder
+// self-describing for somebody installing it from disk.
 func newManifestWriteCommand(s *session) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "write <mod-id>",

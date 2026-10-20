@@ -6,19 +6,15 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 )
 
-// ConfigCommands is the settings screen as a frontend sees it.
-//
-// A GUI with no way to read or write the configuration has to reach around
-// itself for the sake of one settings page. Source settings are reachable from
-// here through the same dotted keys the rest of the manager uses, so no
+// ConfigCommands is the settings screen as a frontend sees it. Source settings
+// are reachable through the same dotted keys the rest of the manager uses, so no
 // source-specific method is needed.
 type ConfigCommands struct {
-	// Embedded so the lifecycle methods reach a set directly: a caller holding
-	// one set must be able to shut it down without knowing the aggregate.
+	// Embedded so a caller holding one set can shut it down without the
+	// aggregate.
 	*base
 }
 
-// NewConfigCommands builds the configuration command set.
 func NewConfigCommands(deps Deps) *ConfigCommands {
 	return &ConfigCommands{base: newBase(deps)}
 }
@@ -27,9 +23,8 @@ func newConfigCommands(b *base) *ConfigCommands {
 	return &ConfigCommands{base: b}
 }
 
-// GetConfig returns the whole configuration, as a copy, so a frontend editing
-// the returned object cannot change what the manager is using until it calls
-// UpdateConfig.
+// GetConfig returns the whole configuration, as a copy, so a frontend editing the
+// result cannot change what the manager uses until UpdateConfig.
 func (c *ConfigCommands) GetConfig() (*api.Config, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -62,9 +57,8 @@ func (c *ConfigCommands) UpdateConfig(cfg *api.Config) error {
 }
 
 // GetConfigValue reads one setting by its dotted key, for example
-// "cache.max_size_gb" or "sources.local.enabled". Reading a credential through
-// it is refused rather than answered: a secret a settings screen can read back
-// is a secret a bug report can carry away, and the setting is still writable.
+// "cache.max_size_gb". A credential is refused: a secret a settings screen can
+// read back is a secret a bug report can carry away. The setting stays writable.
 func (c *ConfigCommands) GetConfigValue(key string) (string, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -81,8 +75,8 @@ func (c *ConfigCommands) GetConfigValue(key string) (string, error) {
 }
 
 // SetConfigValue writes one setting by its dotted key. The value is interpreted
-// according to the setting, so a boolean rejects anything that is not a boolean
-// rather than silently storing a string the manager will later fail to read.
+// according to the setting, so a boolean key rejects non-boolean text the manager
+// would later fail to read.
 func (c *ConfigCommands) SetConfigValue(key, value string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {

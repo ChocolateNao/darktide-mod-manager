@@ -9,9 +9,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// newTestRunner wires a runner over fakes so a test only states the part it
-// cares about. Every dependency is explicit because "works on my machine" is the
-// usual reason a platform-gated action misbehaves.
+// newTestRunner wires a runner over fakes so a test only states the part it cares
+// about.
 func newTestRunner(t *testing.T, action domain.GameAction, opts ...func(*RunnerDeps)) *Runner {
 	t.Helper()
 
@@ -71,8 +70,8 @@ func TestRunRejectsUnknownAction(t *testing.T) {
 	}
 }
 
-// The platform gate keeps a Linux box from being offered a Windows batch file,
-// and its failure must be "unavailable" so the UI greys the entry out.
+// The platform gate keeps a Linux box from running a Windows batch file, and its
+// failure must be "unavailable" so the UI greys the entry out.
 func TestRunRejectsActionOffPlatform(t *testing.T) {
 	action := withPlatform(okAction("test", "test:do"), domain.ActionPlatformWindows)
 	runner := newTestRunner(t, action)
@@ -150,12 +149,12 @@ func TestRunRejectsUnknownArgumentType(t *testing.T) {
 	}
 }
 
-// A handler that forgets to return a result is a bug in the handler, not a
-// crash in the caller: the run still succeeds and carries whatever it logged.
+// A handler that forgets to return a result is a bug in the handler; the run
+// still succeeds and carries whatever it logged.
 func TestRunSynthesisesResultWhenHandlerReturnsNil(t *testing.T) {
 	action := okAction("test", "test:do")
 	action.Handler = func(_ context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
-		actx.Logger.Printf("working")
+		actx.Logger.Logf("working")
 
 		return nil, nil
 	}
@@ -181,7 +180,7 @@ func TestRunCapturesOutputAndEchoesIt(t *testing.T) {
 
 	action := okAction("test", "test:do")
 	action.Handler = func(_ context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
-		actx.Logger.Printf("step one")
+		actx.Logger.Logf("step one")
 
 		return nil, nil
 	}
@@ -206,7 +205,7 @@ func TestRunBoundsTheCapturedOutput(t *testing.T) {
 	action := okAction("test", "test:do")
 	action.Handler = func(_ context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
 		for range captureLogLimit {
-			actx.Logger.Printf("0123456789")
+			actx.Logger.Logf("0123456789")
 		}
 
 		return nil, nil
@@ -224,9 +223,8 @@ func TestRunBoundsTheCapturedOutput(t *testing.T) {
 	}
 }
 
-// An action needing the game cannot run when the locator is absent; saying
-// "unavailable" keeps the failure honest — the action exists, the machine is not
-// ready.
+// An action needing the game cannot run when the locator is absent; "unavailable"
+// keeps the failure honest — the action exists, the machine is not ready.
 func TestRunRequiresTheGameToBeInstalled(t *testing.T) {
 	action := okAction("test", "test:do")
 	action.RequiresGame = true
@@ -394,8 +392,8 @@ func TestRunSubstitutesOptionsIntoScriptArguments(t *testing.T) {
 	}
 }
 
-// An unterminated placeholder is a typo in the action definition. Passing it
-// through would hand the literal braces to a subprocess, so it fails instead.
+// An unterminated placeholder is a typo in the action definition; the literal
+// braces must not reach a subprocess.
 func TestRunRejectsUnterminatedPlaceholder(t *testing.T) {
 	action := scriptAction(domain.ActionCommand{Path: "echo", Args: []string{"{{query"}})
 
@@ -467,7 +465,7 @@ func TestRunWithoutAMatchingCommand(t *testing.T) {
 }
 
 // Some actions are informational on platforms they cannot act on; the script
-// says so explicitly instead of every caller special-casing it.
+// says so explicitly.
 func TestRunSucceedsWhenNoCommandIsExpected(t *testing.T) {
 	action := scriptAction(
 		domain.ActionCommand{Path: "run.exe", Platform: domain.ActionPlatformWindows},
@@ -507,8 +505,7 @@ func TestRunFailsOnNonZeroExit(t *testing.T) {
 func TestRunReportsAMissingInterpreter(t *testing.T) {
 	runner := newTestRunner(t, scriptAction(domain.ActionCommand{Path: "run.sh"}))
 
-	// No command runner was injected, so the default refuses rather than
-	// silently doing nothing and reporting success.
+	// No command runner was injected, so the default refuses.
 	_, err := runner.Run(context.Background(), "test:do", nil)
 	if !errors.Is(err, ErrNoCommandRunner) {
 		t.Fatalf("error = %v, want ErrNoCommandRunner", err)

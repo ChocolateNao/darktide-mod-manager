@@ -85,7 +85,7 @@ func ResolveDirectory(override, configured string) (string, error) {
 
 // EnsureDirectory creates the log directory and reports whether the file sink
 // is usable. It is separate from ResolveDirectory because callers that want to
-// warn the user (rather than silently degrade) need the distinction.
+// warn the user: silent degradation is avoided when needed.
 func EnsureDirectory(dir string) error {
 	if dir == "" {
 		return nil

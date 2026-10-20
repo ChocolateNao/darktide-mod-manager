@@ -9,25 +9,24 @@ import (
 )
 
 // apiOptions maps this package's Options onto the public API's options.
-//
-// It returns an error rather than skipping a bad field: a source id spelled
-// wrongly would otherwise start a manager that quietly ignored half its
-// configuration.
+
+// It returns an error for a bad field: a misspelled source id would otherwise
+// start a manager that quietly ignores half its configuration.
 func (o Options) apiOptions() ([]api.Option, error) {
 	opts := make([]api.Option, 0, len(o.SourceConfigs)+5)
 
 	if path, ok := normalizePath(o.ConfigPath); ok {
 		opts = append(opts, api.WithConfigPath(path))
 	}
-	// The game path is not trimmed-and-ignored: it is validated against the
-	// filesystem, so a path of nothing but spaces must be reported.
+	// The game path is validated against the filesystem, so a path of nothing but
+	// spaces must be reported.
 	if path, ok := normalizePath(o.GamePath); ok {
 		opts = append(opts, api.WithGamePath(path))
 	}
 
-	// The game id is trimmed like a path, but a blank means "whatever the
-	// configuration says" rather than an error: there is no filesystem validation
-	// to tell a user their spaces were wrong.
+	// The game id is trimmed like a path, and a blank means "whatever the
+	// configuration says": no filesystem validation can tell a user their spaces
+	// were wrong.
 	if id := strings.TrimSpace(o.GameID); id != "" {
 		opts = append(opts, api.WithGame(id))
 	}
@@ -48,13 +47,12 @@ func (o Options) apiOptions() ([]api.Option, error) {
 	}
 
 	// The logging overrides go in unconditionally: the service merges them over
-	// the persisted block itself, and an always-present option keeps this
-	// function from growing a "does anything here have an opinion?" branch.
+	// the persisted block, and an always-present option avoids an opinion check
+	// here.
 	opts = append(opts, api.WithLoggingOptions(o.loggingOptions()))
 
-	// Sorted, so two runs over the same map build their sources in the same order.
-	// Nothing depends on it, but a start-up log listing the configured sources
-	// should not reshuffle between two launches of the same configuration.
+	// Sorted so two runs over the same map build their sources in the same order,
+	// and a start-up log does not reshuffle between launches.
 	ids := make([]string, 0, len(o.SourceConfigs))
 	for id := range o.SourceConfigs {
 		ids = append(ids, id)
@@ -79,10 +77,9 @@ func (o Options) apiOptions() ([]api.Option, error) {
 
 // clientOptions supplies the options the client itself needs.
 //
-// They are separate from the bundle's because api.NewClientFromServices refuses
-// anything that re-points the graph. A logger re-points nothing, so it belongs to
-// the client as well as to the wiring — a caller whose logger never sees
-// Client.Logf would find the public logging API throwing its output away.
+// Separate from the bundle's because api.NewClientFromServices refuses anything
+// that re-points the graph. A logger re-points nothing, so it belongs here too: a
+// caller whose logger never sees Client.Logf would find its output thrown away.
 func (o Options) clientOptions() []api.Option {
 	opts := make([]api.Option, 0, 2)
 	if o.EventHandler != nil {
@@ -98,9 +95,9 @@ func (o Options) clientOptions() []api.Option {
 
 // Deps returns the service graph as the public API describes it.
 //
-// This is the supported way to build a second client over the same services. It
-// is nil-receiver safe and reports a closed container rather than handing out
-// pointers whose database has already been closed.
+// The supported way to build a second client over the same services. It is
+// nil-receiver safe, and a closed container is reported so no caller receives
+// pointers to a closed database.
 func (c *Container) Deps() (api.ClientDeps, error) {
 	if c == nil || c.Closed() {
 		return api.ClientDeps{}, errClosed()

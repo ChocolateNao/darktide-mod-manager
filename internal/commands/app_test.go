@@ -13,8 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEventTypesListsWhatTheManagerPublishes. A frontend binds by name, so the
-// list must be the real one rather than a copy the caller could drift from.
 func TestEventTypesListsWhatTheManagerPublishes(t *testing.T) {
 	got := New(Deps{}).EventTypes()
 
@@ -47,8 +45,6 @@ func TestEventTypesListsWhatTheManagerPublishes(t *testing.T) {
 	)
 }
 
-// TestHookTypesAndPhasesMatchTheDomain: the hook editor offers what the executor
-// can run, and offering a phase that does not exist means a script never fires.
 func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 	app := New(Deps{})
 	{
@@ -80,8 +76,6 @@ func TestHookTypesAndPhasesMatchTheDomain(t *testing.T) {
 	}
 }
 
-// TestSupportsHookTypeForEveryTypeThisBuildCanRun. Every valid type must have a
-// runner, or offering it in the editor produces a mod that fails every time.
 func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	for _, hookType := range domain.ScriptLanguages() {
@@ -100,8 +94,6 @@ func TestSupportsHookTypeForEveryTypeThisBuildCanRun(t *testing.T) {
 	)
 }
 
-// TestHookTimeoutIsReportedInMilliseconds: the number is what a frontend hands to
-// setTimeout, and a duration would not survive the bridge.
 func TestHookTimeoutIsReportedInMilliseconds(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -113,7 +105,6 @@ func TestHookTimeoutIsReportedInMilliseconds(t *testing.T) {
 		assert.Equal(t, want, ms, "default timeout = %v ms, want %v", ms, want)
 	}
 
-	// The default is a floor, so a smaller declared value is raised to it.
 	ms, err = app.HookTimeout(api.HookScript{Language: api.LangJS, Timeout: 5}, nil)
 	require.NoError(t, err, "HookTimeout with an override below the floor")
 
@@ -147,9 +138,6 @@ func TestValidateHookScriptCatchesProblemsWhileTheFormIsOpen(t *testing.T) {
 	}
 }
 
-// TestEventsReachAHandlerSuppliedThroughTheContainer. This is the only route that
-// makes the command layer's work visible to the frontend, and a window that never
-// hears an install finished shows a spinner forever.
 func TestEventsReachAHandlerSuppliedThroughTheContainer(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -191,8 +179,6 @@ func TestEventsReachAHandlerSuppliedThroughTheContainer(t *testing.T) {
 	)
 }
 
-// TestTimeoutIsReportedThroughTheAggregate covers the accessor the hook editor
-// shows next to a slow operation.
 func TestTimeoutIsReportedThroughTheAggregate(t *testing.T) {
 	{
 		got := New(Deps{}).Timeout()
@@ -217,7 +203,6 @@ func TestTimeoutIsReportedThroughTheAggregate(t *testing.T) {
 	}
 }
 
-// contains reports whether a string slice holds a value.
 func contains(values []string, want string) bool {
 	for _, v := range values {
 		if v == want {
@@ -228,7 +213,6 @@ func contains(values []string, want string) bool {
 	return false
 }
 
-// equalStrings reports whether two string slices hold the same values in order.
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

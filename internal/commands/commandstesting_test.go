@@ -21,10 +21,9 @@ import (
 )
 
 // workspace is a private manager tree for one test: its own config file, cache,
-// database, storage, game folder and folder of local mods. Every variable
-// platform.ResolveDirs consults is pointed at one temp directory, because the
-// wiring resolves those before it reads any option — a test that set only a
-// config path would still write the real user's configuration for everything else.
+// database, storage, game folder and local mods. Every variable
+// platform.ResolveDirs consults points at one temp directory, because the wiring
+// resolves those before it reads any option.
 type workspace struct {
 	home         string
 	configPath   string
@@ -68,9 +67,9 @@ func newWorkspace(t *testing.T) *workspace {
 	return w
 }
 
-// options builds the DI options for this workspace. The network-backed sources
-// are switched off by default, since letting a search reach api.github.com would
-// make the suite depend on somebody's network; the local source works offline.
+// options builds the DI options for this workspace. Network-backed sources are
+// switched off so the suite does not depend on somebody's network; the local
+// source works offline.
 func (w *workspace) options() di.Options {
 	opts := di.Options{
 		ConfigPath:  w.configPath,
@@ -87,7 +86,6 @@ func (w *workspace) options() di.Options {
 	return opts
 }
 
-// container builds a real container over this workspace.
 func (w *workspace) container(t *testing.T, mutate ...func(*di.Options)) *di.Container {
 	t.Helper()
 
@@ -104,7 +102,6 @@ func (w *workspace) container(t *testing.T, mutate ...func(*di.Options)) *di.Con
 	return c
 }
 
-// app builds a real container and the command surface over its client.
 func (w *workspace) app(t *testing.T, mutate ...func(*di.Options)) (*App, *di.Container) {
 	t.Helper()
 	c := w.container(t, mutate...)
@@ -112,7 +109,6 @@ func (w *workspace) app(t *testing.T, mutate ...func(*di.Options)) (*App, *di.Co
 	return New(Deps{Client: c.Client}), c
 }
 
-// mustApp is app for the tests that only need the surface.
 func (w *workspace) mustApp(t *testing.T, mutate ...func(*di.Options)) *App {
 	t.Helper()
 	a, _ := w.app(t, mutate...)
@@ -144,8 +140,8 @@ func (w *workspace) makeGame(t *testing.T) {
 	}
 }
 
-// writeConfig stores a configuration file, which is the only moment a value
-// like game.path reaches the manager.
+// writeConfig stores a configuration file, the only moment a value like
+// game.path reaches the manager.
 func (w *workspace) writeConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	t.Helper()
 
@@ -163,9 +159,9 @@ func (w *workspace) writeConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	}
 }
 
-// writeModArchive writes a real zip into the local mods folder. The name carries
-// a space before the version because the local source strips a trailing " 1.2.0"
-// from a file name to build an id, and an underscore would leave it in.
+// writeModArchive writes a real zip into the local mods folder. The space before
+// the version matters: the local source strips a trailing " 1.2.0" from a file
+// name to build an id, and an underscore would leave it in.
 func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	t.Helper()
 
@@ -180,7 +176,7 @@ func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 }
 
 // writeZip writes a real zip, because ModService's behaviour depends on what is
-// actually in the container.
+// in the container.
 func writeZip(t *testing.T, path string, entries map[string]string) {
 	t.Helper()
 
@@ -284,9 +280,8 @@ func (h *recordingHandler) count() int {
 	return len(h.events)
 }
 
-// blockingSource never returns until its context is done, which is the only way
-// to test that cancelling the scope reaches the work rather than a field nobody
-// reads.
+// blockingSource never returns until its context is done, the only way to test
+// that cancelling the scope reaches the work.
 type blockingSource struct {
 	entered chan struct{}
 	id      string
@@ -329,7 +324,7 @@ func (s *blockingSource) Authenticate(context.Context, domain.AuthCredentials) e
 func (s *blockingSource) ValidateCredentials(context.Context) error { return nil }
 
 // canceledAsOperation reports a cancelled context as the manager's own code, so a
-// test can pin that it is not laundered into a generic failure on the way back.
+// test can pin that it survives the trip back.
 func canceledAsOperation() error {
 	return appErrors.New(appErrors.ErrCodeOperationCanceled, "cancelled by the test")
 }

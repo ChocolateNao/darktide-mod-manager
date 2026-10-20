@@ -8,7 +8,7 @@ var nopLogger = zerolog.Nop()
 
 // loggerOf normalises an optional logger dependency into a usable one.
 //
-// A plain *zerolog.Logger rather than an interface, which would only hide that
+// A plain *zerolog.Logger: not an interface, which would only hide that
 // the caller has to produce zerolog events. Errors are deliberately never
 // logged: the command layer already reports each one to the caller.
 func loggerOf(logger *zerolog.Logger) *zerolog.Logger {

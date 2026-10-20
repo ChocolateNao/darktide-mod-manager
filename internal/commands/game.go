@@ -9,12 +9,11 @@ import (
 // GameCommands is game discovery as a frontend sees it: where the game is, and
 // whether a path the user typed is usable.
 type GameCommands struct {
-	// Embedded so the lifecycle methods reach a set directly: a caller holding
-	// one set must be able to shut it down without knowing the aggregate.
+	// Embedded so a caller holding one set can shut it down without the
+	// aggregate.
 	*base
 }
 
-// NewGameCommands builds the game command set.
 func NewGameCommands(deps Deps) *GameCommands {
 	return &GameCommands{base: newBase(deps)}
 }
@@ -24,8 +23,8 @@ func newGameCommands(b *base) *GameCommands {
 }
 
 // DetectGame looks for Darktide installations. It returns an empty slice when
-// nothing was found rather than an error, because "I could not find the game" is
-// the answer a first-run wizard needs to show, not a failure.
+// nothing was found, because "I could not find the game" is an answer a first-run
+// wizard draws.
 func (c *GameCommands) DetectGame() ([]api.GameInstallation, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -78,10 +77,8 @@ func (c *GameCommands) ValidateGamePath(path string) (*api.GameInstallation, err
 	return install, nil
 }
 
-// SetGamePath stores the path to use.
-//
-// The path is validated before it is written, so a bad one leaves the
-// configuration as it was rather than surfacing at the next launch.
+// SetGamePath stores the path to use. It validates first, so a bad path leaves
+// the configuration as it was.
 func (c *GameCommands) SetGamePath(path string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -97,11 +94,11 @@ func (c *GameCommands) SetGamePath(path string) error {
 }
 
 // SupportedGames lists the games the manager can manage, with the default and
-// the active one marked. It is a registry read, not an installation search:
-// a game is listed whether or not it is installed.
+// the active one marked. It reads the registry, so a game is listed whether or
+// not it is installed.
 func (c *GameCommands) SupportedGames() ([]api.GameInfo, error) {
-	// SupportedGames reads the registry rather than the context, but ready()
-	// still gates it: it waits for the services and keeps cancel paired.
+	// This reads the registry; ready() still gates it so the services are up and
+	// cancel stays paired.
 	client, _, cancel, err := c.ready()
 	if err != nil {
 		return nil, err
@@ -117,9 +114,8 @@ func (c *GameCommands) SupportedGames() ([]api.GameInfo, error) {
 }
 
 // UseGame switches the active game and remembers the choice. The id is what
-// SupportedGames reports; an unknown one is refused rather than falling back to
-// the configured game, because a typo silently running the wrong game is worse
-// than a failed switch.
+// SupportedGames reports; an unknown one is refused, because a typo silently
+// running the wrong game is worse than a failed switch.
 func (c *GameCommands) UseGame(id string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {

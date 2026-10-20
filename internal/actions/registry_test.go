@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// okAction is the smallest action that passes validation. Tests mutate it so
-// that a change to the rules shows up as one failing test instead of fifty.
+// okAction is the smallest action that passes validation. Tests mutate it so a
+// rule change shows up as one failing test.
 func okAction(gameID, id string) domain.GameAction {
 	action := domain.GameAction{
 		ID:     domain.ActionID(id),
@@ -49,8 +49,8 @@ func TestRegistryRegisterAndGet(t *testing.T) {
 	}
 }
 
-// Registration replaces rather than refusing, so a suite that registers a
-// fixture repeatedly need not care about leftovers from an earlier test.
+// Registration replaces, so a suite that registers a fixture repeatedly need
+// not care about leftovers from an earlier test.
 func TestRegistryRegisterReplaces(t *testing.T) {
 	reg := NewRegistry()
 
@@ -75,8 +75,7 @@ func TestRegistryRegisterReplaces(t *testing.T) {
 	}
 }
 
-// A game publishes its own actions, so supporting a new game never means editing
-// the registry; one that publishes none must cost nothing.
+// A game publishes its own actions, so a game that publishes none costs nothing.
 func TestRegistryRegisterGame(t *testing.T) {
 	reg := NewRegistry()
 
@@ -272,9 +271,8 @@ func withOptions(action domain.GameAction, options ...domain.ActionOption) domai
 	return action
 }
 
-// Platform universality and game scoping are two different questions and the
-// registry answers both: `darktide:open_workshop` declares every platform and
-// needs no installation, `x:windows_only` is scoped to one, and neither answer
+// Platform universality and game scoping are separate questions. `open_workshop`
+// declares every platform, `windows_only` is scoped to one, and neither answer
 // may depend on which game is selected.
 func TestListAvailableGatesOnPlatformNotOnInstallation(t *testing.T) {
 	t.Parallel()

@@ -822,7 +822,7 @@ func gameValue(cfg *Config, gameID, field string) (string, error) {
 	case "auto_detect":
 		return strconv.FormatBool(settings.AutoDetect), nil
 	case "install_method":
-		// An unset override reads as the game's own preference, not an empty string:
+		// An unset override reads as the game's own preference: not an empty string:
 		// blank would answer "what happens if I never touch this?" with nothing.
 		if method := settings.InstallMethodOrDefault(registeredGame(gameID)); method != "" {
 			return method, nil
@@ -872,7 +872,7 @@ func setGameValue(cfg *Config, gameID, field, value string) error {
 		settings.InstallMethod = value
 	case "icon":
 		// Not a checked-in enum: the values are lucide icon names the frontend may
-		// change, and an unknown one falls back to the generic pad, not an error.
+		// change, and an unknown one falls back to the generic pad (not an error).
 		settings.Icon = strings.TrimSpace(value)
 	default:
 		return appErrors.New(appErrors.ErrCodeNotFound,

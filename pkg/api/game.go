@@ -24,12 +24,9 @@ func (c *Client) locator() (*services.GameLocator, error) {
 	return c.deps.Game, nil
 }
 
-// DetectGame probes the machine for selected game installations and returns them
-// sorted by path.
-//
-// A partially successful sweep keeps what it found: one candidate directory that
-// cannot be read is not a reason to report that the user has no game. The error
-// is only returned when the sweep itself was cancelled.
+// DetectGame probes the machine for selected game installations, sorted by path. A
+// partially successful sweep keeps what it found: one unreadable candidate is no
+// reason to report that the user has no game.
 func (c *Client) DetectGame(ctx context.Context) ([]GameInstallation, error) {
 	loc, err := c.locator()
 	if err != nil {
@@ -40,12 +37,9 @@ func (c *Client) DetectGame(ctx context.Context) ([]GameInstallation, error) {
 }
 
 // CurrentGame returns the installation the manager is configured to use: the
-// configured path when one is set, otherwise the first detected one.
-//
-// A configured path that no longer resolves is reported as ErrCodeGameInvalid
-// rather than silently replaced with another install. Silently repointing a
-// mod manager at a different copy of the game would move every deployed link,
-// which is not something to do without asking.
+// configured path when set, otherwise the first detected one. A configured path
+// that no longer resolves is ErrCodeGameInvalid, not silently replaced — repointing
+// would move every deployed link.
 func (c *Client) CurrentGame(ctx context.Context) (*GameInstallation, error) {
 	loc, err := c.locator()
 	if err != nil {
@@ -67,13 +61,9 @@ func (c *Client) ValidateGamePath(ctx context.Context, path string) (*GameInstal
 	return loc.ValidateInstallation(strings.TrimSpace(path))
 }
 
-// SetGamePath validates a path and, if it is a usable installation, stores it so
-// later calls and later starts use it. An invalid path is reported and nothing is
-// written.
-//
-// Only the path is stored. The recorded source and the auto-detect switch are
-// left alone: the source is a filter for auto-detection, not a record of where
-// the user pointed, and turning auto-detection off because the user named a path
+// SetGamePath validates a path and, if usable, stores it for later calls and
+// starts; an invalid path is reported and nothing is written. Only the path is
+// stored: the source is a filter for auto-detection, and switching auto-detect off
 // would stop the manager noticing the game moved.
 func (c *Client) SetGamePath(ctx context.Context, path string) error {
 	loc, err := c.locator()
@@ -84,12 +74,10 @@ func (c *Client) SetGamePath(ctx context.Context, path string) error {
 	return loc.SetGamePath(ctx, strings.TrimSpace(path))
 }
 
-// GetModsPath returns the folder the manager deploys mods into for an
-// installation, honouring a configured override.
-//
-// A nil install asks about the configured one. The distinction is worth keeping:
-// "where do my mods go?" and "where would mods go for this install?" are
-// different questions and the answers differ once an override is set.
+// GetModsPath returns the folder the manager deploys mods into, honouring a
+// configured override. A nil install asks about the configured one: "where do my
+// mods go?" and "where would they go for this install?" differ once an override is
+// set.
 func (c *Client) GetModsPath(ctx context.Context, install *GameInstallation) (string, error) {
 	loc, err := c.locator()
 	if err != nil {
@@ -109,19 +97,26 @@ func (c *Client) GetModsPath(ctx context.Context, install *GameInstallation) (st
 }
 
 // GameInfo describes one registered game as the switcher needs it: identity,
-// presentation and which entry is the default and which is live.
+// presentation, which entry is the default and which is live, and what it can do
+// with a mod once the mod is fetched.
 type GameInfo struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
 	Description string `json:"description,omitempty"`
-	IsDefault   bool   `json:"is_default"`
-	IsActive    bool   `json:"is_active"`
+	// DefaultInstallMethod is the method used when nothing else is chosen, so the
+	// form can preselect it rather than leave the user to guess which entry is default.
+	DefaultInstallMethod string `json:"default_install_method"`
+	// InstallModes are the deployment modes this game accepts. Without them a UI either
+	// offers a mode the game cannot deploy or hides one it needs, and cannot tell which
+	// from the id alone.
+	InstallModes []string `json:"install_modes"`
+	IsDefault    bool     `json:"is_default"`
+	IsActive     bool     `json:"is_active"`
 }
 
-// SupportedGames lists every game the registry knows, sorted by id, with the
-// default and the active game marked. The list comes from the registry rather
-// than the configuration: a game the config mentions but the registry does not
-// offer is not something the user can switch to.
+// SupportedGames lists every game the registry knows, sorted by id, with the default
+// and active game marked. The list comes from the registry, not the configuration:
+// a game the config mentions but the registry does not offer is not switchable.
 func (c *Client) SupportedGames() ([]GameInfo, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -147,25 +142,32 @@ func (c *Client) SupportedGames() ([]GameInfo, error) {
 	}
 
 	for _, def := range defs {
+		modes := def.InstallModes()
+
+		installModes := make([]string, 0, len(modes))
+		for _, mode := range modes {
+			installModes = append(installModes, string(mode))
+		}
+
 		infos = append(infos, GameInfo{
-			ID:          def.ID(),
-			DisplayName: def.DisplayName(),
-			Description: def.Description(),
-			IsDefault:   def.ID() == defaultID,
-			IsActive:    def.ID() == active,
+			ID:                   def.ID(),
+			DisplayName:          def.DisplayName(),
+			Description:          def.Description(),
+			IsDefault:            def.ID() == defaultID,
+			IsActive:             def.ID() == active,
+			InstallModes:         installModes,
+			DefaultInstallMethod: def.ModInstallMethod(),
 		})
 	}
 
 	return infos, nil
 }
 
-// UseGame makes id the active game for this process and for the next start:
-// the id is persisted through the locator, and the source registry is rebuilt
-// in place so the sources this game defines replace the previous game's.
-//
-// Everything else keeps its identity — the mod service, the cache downloader
-// and the hook executor all hold the same pointers and re-resolve the active
-// game per call — so a switch is a configuration change, not a restart.
+// UseGame makes id the active game for this process and the next start: the id is
+// persisted through the locator and the source registry is rebuilt in place.
+// Everything else keeps its identity — the mod service, cache and hook executor
+// re-resolve the active game per call — so a switch is a configuration change, not
+// a restart.
 func (c *Client) UseGame(ctx context.Context, id string) error {
 	loc, err := c.locator()
 	if err != nil {
@@ -190,8 +192,8 @@ func (c *Client) UseGame(ctx context.Context, id string) error {
 	}
 
 	// The wiring closures (hook GameID, registry WithConfig) read the live
-	// configuration object rather than reloading the file; updating it here is
-	// what makes a switch visible to them without a graph rebuild.
+	// configuration object; updating it here makes a switch visible without a
+	// graph rebuild.
 	if c.deps.ActiveConfig != nil {
 		c.deps.ActiveConfig.ActiveGame = def.ID()
 	}
@@ -201,8 +203,8 @@ func (c *Client) UseGame(ctx context.Context, id string) error {
 	}
 
 	// The live configuration object rather than a fresh load: it carries the
-	// per-source overrides a command line supplied, which are deliberately
-	// never written back to the file — reloading would drop them mid-session.
+	// per-source overrides a command line supplied, which are never written back —
+	// reloading would drop them.
 	cfg := c.deps.ActiveConfig
 	if cfg == nil {
 		if c.deps.Config == nil {
@@ -220,9 +222,8 @@ func (c *Client) UseGame(ctx context.Context, id string) error {
 	c.deps.Sources.RebuildForGame(def)
 
 	if err := sources.RegisterAll(c.deps.Sources, cfg.Sources, def); err != nil {
-		// Same stance as the initial wiring: a source that cannot be
-		// configured is a problem the user can see and fix, not a reason to
-		// refuse the switch — every other source still works.
+		// As in the initial wiring: a source that cannot be configured is a
+		// problem the user can see and fix, not a reason to refuse the switch.
 		c.logger.Printf("some sources could not be configured for %q: %v", def.ID(), err)
 	}
 

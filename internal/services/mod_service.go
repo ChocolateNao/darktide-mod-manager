@@ -34,6 +34,14 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func checkInitialized(s *ModService) error {
+	if s == nil || s.deps.Index == nil {
+		return appErrors.New(appErrors.ErrCodeInvalidArgument,
+			"mod service is not initialised")
+	}
+	return nil
+}
+
 // defaultLoadOrderFile is the load order file name used when the active game
 // is not registered (an empty registry during tests, for example).
 const defaultLoadOrderFile = "mod_load_order.txt"
@@ -292,11 +300,8 @@ func NewModService(deps ModServiceDeps) (*ModService, error) {
 // ListMods returns the installed mods of the active game in the index's
 // canonical order.
 func (s *ModService) ListMods(ctx context.Context) ([]domain.Mod, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -313,11 +318,8 @@ func (s *ModService) ListMods(ctx context.Context) ([]domain.Mod, error) {
 
 // GetMod returns one installed mod, or ErrModNotFound.
 func (s *ModService) GetMod(ctx context.Context, id string) (*domain.Mod, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -344,11 +346,8 @@ func (s *ModService) Install(
 	sourceID, modID string,
 	opts InstallOptions,
 ) (*domain.Mod, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -604,11 +603,8 @@ func (s *ModService) InstallArchiveFromShare(
 	archivePath string,
 	opts InstallOptions,
 ) (*domain.Mod, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if mod == nil {
@@ -850,8 +846,8 @@ func (s *ModService) unpack(
 // A mod that is already enabled is still redeployed: that is what heals a
 // deleted or half-created set of links.
 func (s *ModService) EnableMod(ctx context.Context, modID string) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -941,8 +937,8 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod) error {
 // The payload stays in manager storage: disabling is cheap and reversible, and a
 // toggle should not delete a user's files behind their back.
 func (s *ModService) DisableMod(ctx context.Context, modID string) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1035,8 +1031,8 @@ func (s *ModService) UninstallMod(ctx context.Context, modID string) error {
 
 // Uninstall is UninstallMod with explicit options.
 func (s *ModService) Uninstall(ctx context.Context, modID string, opts UninstallOptions) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1245,8 +1241,8 @@ func (s *ModService) UpdateModHooks(
 	modID string,
 	hooks domain.ModHooks,
 ) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1290,8 +1286,8 @@ func (s *ModService) UpdateModHooks(
 // ReorderMods stores an explicit load order. It validates the set against the
 // index first so a typo cannot silently drop a mod from the order.
 func (s *ModService) ReorderMods(ctx context.Context, modIDs []string) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1338,11 +1334,8 @@ func (s *ModService) ReorderMods(ctx context.Context, modIDs []string) error {
 // LoadOrder returns the active game's explicit load order, or nil when none
 // was ever set.
 func (s *ModService) LoadOrder(ctx context.Context) ([]string, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1511,8 +1504,8 @@ func (s *ModService) ownedEntries(
 // deliberate: a payload the user moved should not cost them the mod's identity,
 // hooks or load order, and re-installing is one command away.
 func (s *ModService) RefreshMods(ctx context.Context) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1584,11 +1577,8 @@ func (s *ModService) RefreshMods(ctx context.Context) error {
 // that mod is then simply reported as having no known update, which is what the
 // UI would have shown had the request never been made.
 func (s *ModService) CheckModUpdates(ctx context.Context) ([]domain.ModUpdateInfo, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -1669,11 +1659,8 @@ func (s *ModService) remoteMod(ctx context.Context, mod domain.Mod) (*domain.Mod
 // priority, because to a user this is the same mod updated, not a fresh install;
 // a failure leaves the old payload and record untouched.
 func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {

@@ -11,8 +11,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// execNames maps a platform-neutral test intention onto a real command, because
-// the package under test deliberately has no opinion about what a shell offers.
+// execNames maps a platform-neutral intent onto a real command; the package
+// under test has no opinion about what a shell offers.
 func execNames(t *testing.T, linux, windows string) string {
 	t.Helper()
 
@@ -88,8 +88,8 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 		t.Fatalf("error = %v, want ACTION_FAILED", err)
 	}
 
-	// The exit code has to survive: a script that fails on a missing file and
-	// one that fails on a bad flag are different problems.
+	// The exit code has to survive: a missing file and a bad flag are different
+	// problems.
 	if out.ExitCode != 3 {
 		t.Fatalf("exit code = %d, want 3", out.ExitCode)
 	}
@@ -99,8 +99,6 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 	}
 }
 
-// A script naming a program the machine does not have is a configuration
-// problem, and "not found" points the user at the fix.
 func TestExecRunnerReportsAMissingProgram(t *testing.T) {
 	runner := NewExecRunner()
 
@@ -119,8 +117,7 @@ func TestExecRunnerRefusesAnEmptyPath(t *testing.T) {
 	}
 }
 
-// A UI handler has no request context; a nil one must behave like a background
-// one rather than panic inside exec.
+// A UI handler has no request context; nil must behave like a background one.
 func TestExecRunnerAcceptsANilContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no portable command on windows")
@@ -190,7 +187,7 @@ func TestCaptureLoggerBoundsTheBuffer(t *testing.T) {
 	logger := newCaptureLogger(echo)
 
 	for range 100 {
-		logger.Printf("%s", strings.Repeat("x", 1024))
+		logger.Logf("%s", strings.Repeat("x", 1024))
 	}
 
 	text := logger.Text()
@@ -207,13 +204,12 @@ func TestCaptureLoggerBoundsTheBuffer(t *testing.T) {
 	}
 }
 
-// The truncation notice is announced once: a log that repeats it per line is
-// worse than the log it replaced.
+// Repeating the truncation notice per line would be worse than the log it replaced.
 func TestCaptureLoggerAnnouncesTruncationOnce(t *testing.T) {
 	logger := newCaptureLogger(nil)
 
 	for range 100 {
-		logger.Printf("%s", strings.Repeat("y", 1024))
+		logger.Logf("%s", strings.Repeat("y", 1024))
 	}
 
 	if got := strings.Count(logger.Text(), "output truncated"); got != 1 {
@@ -224,8 +220,8 @@ func TestCaptureLoggerAnnouncesTruncationOnce(t *testing.T) {
 func TestCaptureLoggerTrimsTrailingNewlines(t *testing.T) {
 	logger := newCaptureLogger(nil)
 
-	logger.Printf("line\n")
-	logger.Printf("no newline")
+	logger.Logf("line\n")
+	logger.Logf("no newline")
 
 	if got := logger.Text(); got != "line\nno newline\n" {
 		t.Fatalf("text = %q", got)

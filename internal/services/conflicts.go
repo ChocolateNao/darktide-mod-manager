@@ -23,11 +23,8 @@ const requiredVersionsKey = "required_versions"
 // listing and a UI list agree, and one unreadable inventory narrows the report
 // instead of aborting the sweep.
 func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictReport, error) {
-	if s == nil || s.deps.Index == nil {
-		return nil, appErrors.New(
-			appErrors.ErrCodeInvalidArgument,
-			"mod service is not initialised",
-		)
+	if err := checkInitialized(s); err != nil {
+		return nil, err
 	}
 
 	if err := s.precheck(ctx); err != nil {
@@ -65,7 +62,7 @@ func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictRepo
 }
 
 // stampReportIDs fills the identity field on every report the detectors produced.
-// One stamp site rather than one per detector, because the identity is derived:
+// One stamp site: not one per detector, because the identity is derived
 // a detector that set it by hand and one that forgot would differ only in whether
 // the frontend's "resolve" button works.
 func stampReportIDs(reports []domain.ConflictReport) {
@@ -646,8 +643,8 @@ func (s *ModService) ResolveConflict(
 	reportID string,
 	how ConflictResolution,
 ) error {
-	if s == nil || s.deps.Index == nil {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod service is not initialised")
+	if err := checkInitialized(s); err != nil {
+		return err
 	}
 
 	if err := s.precheck(ctx); err != nil {

@@ -22,7 +22,6 @@ func newCacheCommand(s *session) *cobra.Command {
 	return group
 }
 
-// cacheView is the JSON shape of the cache report.
 type cacheView struct {
 	Path      string `json:"path,omitempty"`
 	HumanSize string `json:"total_size"`
@@ -120,8 +119,8 @@ func newCachePruneCommand(s *session) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Measured on both sides so the message can report what was removed;
-			// the size afterwards would claim a prune that freed nothing had freed all.
+			// Measured on both sides so the message can report what was removed:
+			// the size afterwards cannot.
 			before, err := client.GetCacheInfo(cmd.Context())
 			if err != nil {
 				return err

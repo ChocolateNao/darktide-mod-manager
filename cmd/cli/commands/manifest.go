@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newManifestCommand builds the authoring commands for a mod's manifest. It is
-// separate from `mod` because nothing here talks to the manager: a mod folder is
-// written by hand, and scaffolding one needs no database or game installation.
+// newManifestCommand builds the authoring commands for a mod's manifest. Nothing
+// here talks to the manager, so scaffolding a folder needs no database or game
+// installation.
 func newManifestCommand(s *session) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "manifest",
@@ -32,10 +32,8 @@ func newManifestCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// newManifestInitCommand writes a blank manifest into a mod folder, creating the
-// folder when missing — making the user mkdir first is a step with no information
-// in it. An existing manifest is never overwritten: it holds work, and creating a
-// starter file is the whole job.
+// newManifestInitCommand writes a blank manifest, creating the folder when
+// missing. An existing manifest is never overwritten: it holds work.
 func newManifestInitCommand(s *session) *cobra.Command {
 	return &cobra.Command{
 		Use:   "init <path>",

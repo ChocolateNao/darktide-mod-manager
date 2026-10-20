@@ -244,7 +244,7 @@ func ReadFileLimit(path string, limit int64) ([]byte, error) {
 
 // CopyFile copies a regular file, creating parent directories as needed and
 // replacing any existing destination. An existing destination that is a
-// directory is an error rather than a silent no-op.
+// directory is an error: not a silent no-op.
 func CopyFile(src, dst string) error {
 	if src == "" || dst == "" {
 		return errors.New(errors.ErrCodeConfigIO, "copy needs a non-empty source and destination")
@@ -313,7 +313,7 @@ func CopyFile(src, dst string) error {
 }
 
 // CopyTree recursively copies a directory. Symlinks are recreated as symlinks
-// rather than followed, so a link inside a mod folder cannot drag content from
+// not followed: a link inside a mod folder cannot drag content from
 // outside the manager's storage into the game folder.
 func CopyTree(src, dst string) error {
 	if src == "" || dst == "" {

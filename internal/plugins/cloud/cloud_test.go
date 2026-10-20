@@ -62,7 +62,7 @@ func TestBuildRejectsAnUnknownProvider(t *testing.T) {
 
 func TestBuildRefusesAProviderMissingItsRequiredFields(t *testing.T) {
 	// A provider built from an incomplete block would fail on its first call
-	// rather than at wiring time, which is the wrong end of a share to find out.
+	// not at wiring time, which is the wrong end of a share to find out.
 	for _, id := range []string{s3.ProviderID, gdrive.ProviderID, dropbox.ProviderID, onedrive.ProviderID} {
 		t.Run(id, func(t *testing.T) {
 			_, err := Build(id, map[string]string{})

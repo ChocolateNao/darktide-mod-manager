@@ -6,15 +6,6 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 )
 
-// App is everything a Wails frontend binds to.
-//
-// The bindings come from the methods of the structs registered with wails.Run, so
-// registering five sets would mean five places to remember. App holds them and
-// adds the three window-level calls: Startup, Shutdown, CancelAll.
-//
-// Every set shares one scope, so cancelling an install also stops a running
-// search: they share one driver, and a window that has stopped responding has not
-// stopped caring.
 type App struct {
 	base *base
 
@@ -25,21 +16,21 @@ type App struct {
 	Config  *ConfigCommands
 	Logs    *LogCommands
 	Shares  *ShareCommands
-	// P2PShares is separate because it is a different protocol with different states:
-	// a peer-to-peer share is in flight, not a record in a table.
+	// P2PShares is separate: it is a different protocol, where a share is an
+	// in-flight transfer with its own states.
 	P2PShares *P2PShareCommands
 	Actions   *ActionCommands
-	// SourceLinks is its own set because it answers a question about a mod rather
-	// than changing one.
+	// SourceLinks is its own set: it answers a question about a mod without
+	// changing one.
 	SourceLinks *SourceLinkCommands
 	// Paths is the folder and file choosers, the only commands that talk to the
-	// window runtime rather than the manager's data.
+	// window runtime.
 	Paths *PathCommands
 }
 
 // New builds the command surface over a client. It always returns a usable App:
-// a nil client is reported by every method rather than panicking, because the
-// frontend binds to these methods during startup.
+// every method reports a nil client, because the frontend binds to these methods
+// during startup.
 func New(deps Deps) *App {
 	shared := newBase(deps)
 
@@ -59,9 +50,8 @@ func New(deps Deps) *App {
 	}
 }
 
-// Startup rebinds every set to the Wails lifecycle context. It is what a Wails
-// OnStartup hook calls, and the context it is given is what the operations run
-// under until Shutdown.
+// Startup rebinds every set to the Wails lifecycle context handed in by an
+// OnStartup hook; operations run under it until Shutdown.
 func (a *App) Startup(ctx context.Context) {
 	if a == nil {
 		return
@@ -71,8 +61,8 @@ func (a *App) Startup(ctx context.Context) {
 }
 
 // Shutdown cancels everything in flight and refuses further calls. It is
-// idempotent, and does not close the client: the container owns that, so closing
-// here too would leave the order of release to whichever ran first.
+// idempotent and leaves the client to the container, so shutdown order does not
+// depend on which closer ran.
 func (a *App) Shutdown() {
 	if a == nil {
 		return
@@ -81,8 +71,8 @@ func (a *App) Shutdown() {
 	a.base.Shutdown()
 }
 
-// CancelAll stops whatever is running without shutting the window. This is the
-// "Stop" button; the command surface stays usable afterwards.
+// CancelAll stops whatever is running without shutting the window; this is the
+// "Stop" button, and the command surface stays usable.
 func (a *App) CancelAll() {
 	if a == nil {
 		return
@@ -109,9 +99,8 @@ func (a *App) Context() context.Context {
 	return a.base.Context()
 }
 
-// Timeout reports the per-operation bound in force, in milliseconds, or zero when
-// there is none. A frontend that wants to warn about a long operation has no
-// other way to learn what this build considers long.
+// Timeout reports the per-operation bound in force, in milliseconds, or zero
+// when there is none.
 func (a *App) Timeout() int64 {
 	if a == nil {
 		return 0
@@ -121,7 +110,7 @@ func (a *App) Timeout() int64 {
 }
 
 // EventTypes lists every event the manager publishes, so a frontend can bind to
-// them by name rather than repeating the list.
+// them by name without repeating the list.
 func (a *App) EventTypes() []string {
 	types := api.EventTypes()
 
@@ -133,9 +122,8 @@ func (a *App) EventTypes() []string {
 	return out
 }
 
-// HookTypes lists the script languages this build can run. A frontend offering
-// a hook editor must ask first: a language with no registered runner would
-// accept the script and fail every time it runs.
+// HookTypes lists the script languages this build can run; a hook editor must
+// ask, because a language with no registered runner fails every time it runs.
 func (a *App) HookTypes() []string {
 	return api.HookTypes()
 }
@@ -169,17 +157,17 @@ func (a *App) HookTimeout(script api.HookScript, mod *api.Mod) (float64, error) 
 	if err != nil {
 		return 0, err
 	}
+
 	defer cancel()
 
 	timeout := client.HookTimeout(ctx, script, mod)
-	// Milliseconds, because that is what a JavaScript caller can hand to setTimeout;
+	// Milliseconds: that is what a JavaScript caller can hand to setTimeout, and
 	// a duration does not survive the bridge.
 	return float64(timeout.Milliseconds()), nil
 }
 
-// ValidateHookScript checks one script before a frontend saves it, so the user is
-// told about a bad working directory while they are looking at the script rather
-// than at the next failed install.
+// ValidateHookScript checks one script before a frontend saves it, so a bad
+// working directory is reported while the user is looking at the script.
 func (a *App) ValidateHookScript(script api.HookScript, mod *api.Mod) error {
 	if a == nil {
 		return errUninitialised()
@@ -189,6 +177,7 @@ func (a *App) ValidateHookScript(script api.HookScript, mod *api.Mod) error {
 	if err != nil {
 		return err
 	}
+
 	defer cancel()
 
 	if err := client.ValidateHookScript(ctx, script, mod); err != nil {
@@ -198,14 +187,11 @@ func (a *App) ValidateHookScript(script api.HookScript, mod *api.Mod) error {
 	return nil
 }
 
-// RunHookScript executes one script by hand, under the same containment rules a
-// real hook run uses — same working-directory resolution, same environment
-// allowlist, same timeout kill.
-//
-// It exists because "does this script actually work?" is the first question a
-// mod author asks about a hook, and installing the mod to find out is a poor
-// answer. Its output is not returned: a hook's writes go to the manager's log,
-// which the console panel reads from the events the run already publishes.
+// RunHookScript executes one script by hand under the same containment rules a
+// real hook run uses: same working-directory resolution, same environment
+// allowlist, same timeout kill. It exists because a mod author asking whether a
+// script works should not have to install the mod to find out. Output is not
+// returned; a hook's writes reach the manager's log through the run's events.
 func (a *App) RunHookScript(script api.HookScript, mod *api.Mod) error {
 	if a == nil {
 		return errUninitialised()
@@ -215,6 +201,7 @@ func (a *App) RunHookScript(script api.HookScript, mod *api.Mod) error {
 	if err != nil {
 		return err
 	}
+
 	defer cancel()
 
 	if err := client.RunHookScripts(ctx, []api.HookScript{script}, mod); err != nil {

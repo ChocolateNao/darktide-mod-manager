@@ -7,7 +7,7 @@ import (
 )
 
 // P2PProtocolVersion is the version stamped into every offer and every frame
-// header. It is a number rather than a semver range because both ends run the
+// header. It is a number: not a semver range, both ends run the
 // same manager: there is nothing to negotiate with, only a decision to attempt.
 const P2PProtocolVersion = 1
 
@@ -68,7 +68,7 @@ type ModSourceLink struct {
 	// sources leave it empty: an unfetchable URL is worse than none.
 	DownloadURL string `json:"d,omitempty"`
 	// UpdateURL points at the newest version, which lets a recipient replace
-	// an installed mod rather than reinstall the exact version being shared.
+	// an installed mod: do not reinstall the exact version being shared
 	UpdateURL string `json:"u,omitempty"`
 	// Fallback is one of the P2PSourceFallback constants, and is what the UI
 	// and CLI turn into a button.
@@ -158,7 +158,7 @@ func (l *P2PShareLink) ExpiresAt() *time.Time {
 // IsExpired reports whether the offer may no longer be accepted.
 //
 // The check lives on the link so a recipient reading an expired link is told so
-// rather than left to guess. The deadline itself is excluded: treating T as still
+// The deadline itself is excluded: T is still treated as still
 // valid would make a share's last moment depend on clock skew between two machines.
 func (l *P2PShareLink) IsExpired(now time.Time) bool {
 	if l == nil {

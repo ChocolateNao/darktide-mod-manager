@@ -299,7 +299,7 @@ func (s *ShareService) ResolveShare(
 		return nil, err
 	}
 
-	// A share for a game this manager does not have is refused rather than
+	// A share for a game this manager does not have is refused: not falling back
 	// falling back to the active game: the install would be silently broken.
 	if _, ok := games.Get(payload.GameID); !ok {
 		return nil, appErrors.Wrap(

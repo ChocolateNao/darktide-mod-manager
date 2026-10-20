@@ -11,25 +11,21 @@ import (
 
 // Registry is the set of actions this manager can run.
 //
-// It is a map guarded by a mutex so that registering a game at startup and
-// listing actions while the UI is open can happen concurrently. Registration
-// validates, so a definition that could never run correctly is refused where it
-// is introduced rather than discovered when a user presses the button.
+// A map guarded by a mutex lets startup registration and UI listing happen
+// concurrently. Registration validates, so a definition that could never run is
+// refused where it is introduced.
 type Registry struct {
 	actions map[domain.ActionID]domain.GameAction
 	mu      sync.RWMutex
 }
 
-// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{actions: make(map[domain.ActionID]domain.GameAction)}
 }
 
 // Register adds one action, replacing any action already registered under the
-// same id.
-//
-// Replacement rather than refusal is deliberate: a test suite that re-registers a
-// fixture game should not have to care whether a previous run left the id behind.
+// same id. Replacement lets a test suite re-register a fixture without caring
+// what a previous run left behind.
 func (r *Registry) Register(action domain.GameAction) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -48,10 +44,8 @@ func (r *Registry) Register(action domain.GameAction) error {
 	return nil
 }
 
-// RegisterGame registers every action a game definition publishes.
-//
-// Games declare their own actions so that adding support for a game never
-// requires editing the registry.
+// RegisterGame registers every action a game definition publishes, so adding a
+// game never requires editing the registry.
 func (r *Registry) RegisterGame(game domain.GameDefinition) error {
 	if r == nil {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -72,11 +66,8 @@ func (r *Registry) RegisterGame(game domain.GameDefinition) error {
 	return nil
 }
 
-// validate refuses an action that could not run.
-//
-// The checks are made once, at registration: a malformed action is a bug in this
-// program, so it should surface during development rather than on a user's
-// machine.
+// validate refuses an action that could not run. The checks run once, at
+// registration, so a malformed action surfaces during development.
 func validate(action domain.GameAction) error {
 	gameID := strings.TrimSpace(action.GameID)
 
@@ -126,7 +117,6 @@ func validate(action domain.GameAction) error {
 	return nil
 }
 
-// Get returns one action by id.
 func (r *Registry) Get(id domain.ActionID) (domain.GameAction, bool) {
 	if r == nil {
 		return domain.GameAction{}, false
@@ -140,35 +130,27 @@ func (r *Registry) Get(id domain.ActionID) (domain.GameAction, bool) {
 	return action, ok
 }
 
-// Has reports whether an id is registered.
 func (r *Registry) Has(id domain.ActionID) bool {
 	_, ok := r.Get(id)
 
 	return ok
 }
 
-// ListByGame returns the actions one game published, in a stable order.
-//
-// The order is by id rather than by map iteration so that the CLI and the
-// frontend render the same list in the same sequence on every run.
+// ListByGame returns the actions one game published, ordered by id so the CLI and
+// the frontend render the same sequence on every run.
 func (r *Registry) ListByGame(gameID string) []domain.GameAction {
 	return r.list(func(action domain.GameAction) bool {
 		return action.GameID == strings.TrimSpace(gameID)
 	})
 }
 
-// ListAll returns every registered action in a stable order.
 func (r *Registry) ListAll() []domain.GameAction {
 	return r.list(func(domain.GameAction) bool { return true })
 }
 
-// ListAvailable returns the actions offered for one game on target.
-//
-// This is the list a surface should offer rather than ListByGame: an action not
-// offered on the current platform should be invisible rather than present and then
-// refused. An action registered with no game is included whatever game was asked
-// for, because `RequiresGame: false` means exactly that — matching on the game
-// id alone would drop "darktide:open_workshop" the moment a game was selected.
+// ListAvailable returns the actions offered for one game on target. Actions not
+// offered on the platform stay invisible. `RequiresGame: false` actions are
+// included for every game, so "darktide:open_workshop" survives a game selection.
 func (r *Registry) ListAvailable(gameID string, target domain.Platform) []domain.GameAction {
 	wanted := strings.TrimSpace(gameID)
 
@@ -207,7 +189,6 @@ func (r *Registry) list(keep func(domain.GameAction) bool) []domain.GameAction {
 	return matching
 }
 
-// Len reports how many actions are registered.
 func (r *Registry) Len() int {
 	if r == nil {
 		return 0

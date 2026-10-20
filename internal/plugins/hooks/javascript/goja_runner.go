@@ -1,10 +1,8 @@
 // Package javascript runs `javascript` hook scripts in a Goja virtual machine.
 //
-// The sandbox is what makes a hook safe to run: the VM is created fresh per
-// execution, is given no network primitives, no filesystem primitives and no
-// `require`, and is interrupted as soon as the executor's context expires so a
-// `while (true) {}` cannot outlive its timeout. Everything a script may touch
-// goes through the shared host package, as in the Lua binding.
+// The VM is created fresh per execution, has no network, filesystem or require,
+// and is interrupted when the executor's context expires, so a `while (true) {}`
+// cannot outlive its timeout.
 package javascript
 
 import (
@@ -19,40 +17,36 @@ import (
 	"github.com/dop251/goja"
 )
 
-// LogSink receives the console output of a hook script, once per execution and
-// after the script ends. Output is reported whether the hook succeeded or failed:
-// a failing hook is exactly when a mod author needs the log to work out why.
+// LogSink receives a hook's console output once per execution, after the script
+// ends. It is reported whether the hook succeeded or failed: a failing hook is
+// exactly when the author needs the log.
 type LogSink func(lines []string, dropped int)
 
-// Runner executes JavaScript hook scripts.
 type Runner struct {
 	sink      LogSink
 	providers host.Providers
 }
 
 // NewRunner returns the JavaScript runner with its console output discarded.
-// Logging still costs nothing beyond host.MaxLogLines, but nothing is retained.
 func NewRunner(providers host.Providers) *Runner { return &Runner{providers: providers} }
 
-// NewRunnerWithSink returns a runner that forwards console output to sink.
 func NewRunnerWithSink(sink LogSink, providers host.Providers) *Runner {
 	return &Runner{providers: providers, sink: sink}
 }
 
-// Language identifies the scripts this runner handles.
 func (r *Runner) Language() domain.ScriptLanguage { return domain.LangJS }
 
-// Run evaluates the script in a fresh VM. The context is honoured through an
-// interrupt watcher, not by checking between statements: Goja only observes an
-// interrupt at a bytecode boundary, so a tight loop needs one to be interrupted.
+// Run evaluates the script in a fresh VM. The context is enforced with an
+// interrupt watcher: Goja only observes an interrupt at a bytecode boundary, so
+// a tight loop needs one.
 func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domain.Mod) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	if err := ctx.Err(); err != nil {
-		// Wrapped rather than returned raw so a caller driving the runner directly
-		// gets the same typed error the executor produces for a timed-out hook.
+		// Wrapped so a caller driving the runner directly gets the same typed
+		// error the executor produces for a timed-out hook.
 		return appErrors.Wrap(err, appErrors.ErrCodeHookTimeout,
 			"javascript hook was interrupted: %v", err)
 	}
@@ -82,8 +76,9 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 		return err
 	}
 
-	// Interrupt exactly once per execution and always clear it afterwards: a
-	// leftover interrupt poisons the VM, and clearing it from here makes Goja panic.
+	// Interrupt exactly once per execution and clear it afterwards: a leftover
+	// interrupt poisons the VM, and clearing it from another goroutine makes Goja
+	// panic.
 	done := make(chan struct{})
 
 	go func() {
@@ -127,14 +122,13 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 }
 
 // wrap builds the error install reports when a binding cannot be exposed: a
-// broken binding is an infrastructure fault, not something the script did.
+// broken binding is an infrastructure fault.
 func wrap(err error, format string, args ...any) error {
 	return appErrors.Wrap(err, appErrors.ErrCodeHookFailed, format, args...)
 }
 
 // exceptionMessage unwraps a thrown JavaScript value into a readable message: a
-// hook that throws a string is common, and "[object Object]" would be useless to
-// the mod author.
+// hook that throws a string is common, and "[object Object]" would be useless.
 func exceptionMessage(exc *goja.Exception) string {
 	if v := exc.Value(); v != nil {
 		if s := v.String(); s != "" && s != "null" && s != "undefined" {

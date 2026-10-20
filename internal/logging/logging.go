@@ -162,7 +162,7 @@ func (a *atomicLevel) Set(lvl zerolog.Level) {
 // bound for a sink that should stay readable — the console never mirrors the
 // file's debug chatter.
 //
-// floored is set explicitly rather than inferred from floor's zero value,
+// floored is set explicitly; it defaults to the floor's zero value,
 // because zerolog.NoLevel is 6 and DebugLevel is 0: a gate that declared "no
 // floor" by leaving the field unset would quietly install a debug floor and the
 // file sink would lose every trace record it was configured to keep.
@@ -197,7 +197,7 @@ func (g *gate) WriteLevel(lvl zerolog.Level, p []byte) (int, error) {
 }
 
 // EventSink is the slice of the event bus that logging needs. It is declared
-// here (rather than importing the bus type) so the logging package can be built
+// here so the logging package can be built without the bus type
 // and exercised without the rest of the application.
 type EventSink interface {
 	Publish(services.Event)
@@ -277,7 +277,7 @@ func (c *consoleSink) Sync() error {
 func (c *consoleSink) Close() error { return nil }
 
 // unflushable reports whether an fsync failure means the destination simply
-// cannot be flushed rather than that a write went missing.
+// cannot be flushed: a write failure is reported instead of missing.
 func unflushable(err error) bool {
 	return errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTTY)
 }
@@ -372,7 +372,7 @@ func (s *Service) Apply(cfg Config) {
 
 // SetRedactFields replaces the extra field names whose values are masked.
 //
-// It rebuilds the stack rather than sitting inside Apply: a field redacted only
+// It rebuilds the stack; it does not sit inside Apply
 // from the next launch would keep leaking while the app ran.
 func (s *Service) SetRedactFields(fields []string) {
 	if s == nil {
@@ -466,7 +466,7 @@ func (s *Service) applyConfig(cfg Config) {
 
 	dir, err := ResolveDirectory(cfg.Override, cfg.Directory)
 	if err != nil || dir == "" {
-		// Fall back to console-only rather than failing the caller; a broken
+		// Fall back to console-only: a broken log destination does not stop the app
 		// log destination must not stop the app from starting.
 		dir = ""
 	}

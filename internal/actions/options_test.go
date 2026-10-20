@@ -54,8 +54,8 @@ func TestCoerceArgsDropsUndeclaredOptions(t *testing.T) {
 	}
 }
 
-// The CLI's flag name has to be idiomatic on a shell, the handler's key a Go
-// identifier: accepting both means neither surface has to translate.
+// The CLI's flag name is idiomatic on a shell, the handler's key a Go
+// identifier; accepting both means neither surface has to translate.
 func TestCoerceArgsAcceptsTheFlagSpelling(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "load_order_file", Type: domain.ActionOptionString, Label: "File"},
@@ -153,8 +153,7 @@ func TestCoerceNumberSplitsIntegralFromFractional(t *testing.T) {
 	}
 }
 
-// A hand-written JSON payload can carry "NaN"; accepting it would put a value
-// into a handler that no arithmetic can use.
+// A hand-written JSON payload can carry "NaN", which no arithmetic can use.
 func TestCoerceNumberRefusesValuesWithoutMeaning(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "count", Type: domain.ActionOptionNumber, Label: "Count"},
@@ -228,8 +227,7 @@ func TestCoerceSelectAllowsAnEmptyOptionalAnswer(t *testing.T) {
 	}
 }
 
-// A nested object handed to a text option would mean inventing a rendering;
-// refusing keeps the declared type honest.
+// A nested object handed to a text option would need an invented rendering.
 func TestCoerceTextRefusesContainers(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "query", Type: domain.ActionOptionString, Label: "Query"},
@@ -243,7 +241,7 @@ func TestCoerceTextRefusesContainers(t *testing.T) {
 }
 
 // A frontend numeric field sends a number for an untyped text input; refusing it
-// would make the form's control type decide whether the action runs.
+// would let the form's control type decide whether the action runs.
 func TestCoerceTextRendersScalars(t *testing.T) {
 	declared := []domain.ActionOption{
 		{Name: "query", Type: domain.ActionOptionString, Label: "Query"},

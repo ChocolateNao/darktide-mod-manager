@@ -10,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestListSourcesDescribesEveryBundledSource. The list must never be nil: the
-// frontend iterates it to draw a tab bar, and null there is a different code path
-// from an empty list in every framework a desktop webview is written in.
 func TestListSourcesDescribesEveryBundledSource(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -34,8 +31,7 @@ func TestListSourcesDescribesEveryBundledSource(t *testing.T) {
 			assert.True(t, ok, "ListSources omits the bundled source %q; got %v", id, idsOf(infos))
 		}
 	}
-	// A source switched off in the configuration is listed but disabled, so a
-	// settings screen can show it and explain why it is off.
+
 	assert.False(
 		t,
 		byID["nexus"].Enabled,
@@ -90,7 +86,6 @@ func TestSourceInfoReportsAnUnknownSource(t *testing.T) {
 	}
 }
 
-// TestSearchSourceFindsALocalMod.
 func TestSearchSourceFindsALocalMod(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -113,7 +108,6 @@ func TestSearchSourceFindsALocalMod(t *testing.T) {
 	assert.Len(t, all, 2, "SearchSource(\"\") = %v, want both mods", idsOfMods(all))
 }
 
-// TestSearchSourceReportsAnUnknownSource.
 func TestSearchSourceReportsAnUnknownSource(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	{
@@ -128,9 +122,6 @@ func TestSearchSourceReportsAnUnknownSource(t *testing.T) {
 	}
 }
 
-// TestSearchAllUnionsTheSearchableSources. Every remote source is switched off in
-// this workspace, so the local one is the only one that can answer — which is the
-// point: the fan-out must produce the local results rather than nothing.
 func TestSearchAllUnionsTheSearchableSources(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -154,8 +145,6 @@ func TestSearchAllUnionsTheSearchableSources(t *testing.T) {
 	assert.Empty(t, empty, "SearchAll = %v, want nothing", idsOfMods(empty))
 }
 
-// TestSearchAllReportsWhenNothingCanAnswer: with every source disabled there is
-// no provider to ask, and an empty list would read as "this mod does not exist".
 func TestSearchAllReportsWhenNothingCanAnswer(t *testing.T) {
 	w := newWorkspace(t)
 
@@ -168,7 +157,6 @@ func TestSearchAllReportsWhenNothingCanAnswer(t *testing.T) {
 	}
 }
 
-// TestGetSourceModFetchesDetailsWithoutInstalling.
 func TestGetSourceModFetchesDetailsWithoutInstalling(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -207,9 +195,6 @@ func TestGetSourceModFetchesDetailsWithoutInstalling(t *testing.T) {
 	}
 }
 
-// TestAuthenticateSourceRefusesCredentialsTheSourceDoesNotWant. The local source
-// needs none, so there is nothing to ask for and the frontend must not be left
-// with a form that cannot succeed.
 func TestAuthenticateSourceRefusesCredentialsTheSourceDoesNotWant(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -224,8 +209,6 @@ func TestAuthenticateSourceRefusesCredentialsTheSourceDoesNotWant(t *testing.T) 
 	)
 }
 
-// TestAuthenticateSourceOnASourceThatNeedsCredentials: the blocking stub accepts
-// anything, so this pins only that the credentials arrive and the badge flips.
 func TestAuthenticateSourceOnASourceThatNeedsCredentials(t *testing.T) {
 	const sourceID = "commands-auth"
 	registerBlockingSource(t, sourceID)
@@ -260,8 +243,6 @@ func TestAuthenticateSourceOnASourceThatNeedsCredentials(t *testing.T) {
 	}
 }
 
-// TestTestSourceConnectionOnTheLocalSourceIsSilent: browsing is not a broken
-// login, so there is nothing to report.
 func TestTestSourceConnectionOnTheLocalSourceIsSilent(t *testing.T) {
 	w := newWorkspace(t)
 	w.writeModArchive(t, "better_ui", "1.2.0")
@@ -283,8 +264,6 @@ func TestTestSourceConnectionOnTheLocalSourceIsSilent(t *testing.T) {
 	}
 }
 
-// TestSetSourceAuthenticatedFlipsTheBadge. The frontend signs in on a provider's
-// own page for some sources, so the manager has to be told.
 func TestSetSourceAuthenticatedFlipsTheBadge(t *testing.T) {
 	const sourceID = "commands-badge"
 	registerBlockingSource(t, sourceID)
@@ -311,8 +290,6 @@ func TestSetSourceAuthenticatedFlipsTheBadge(t *testing.T) {
 	assert.False(t, info.Authenticated, "the badge did not clear")
 }
 
-// TestSetSourceAuthenticatedIsSilentAboutAnUnknownSource: the flag is bookkeeping
-// for display and a source that has gone has nothing left to badge.
 func TestSetSourceAuthenticatedIsSilentAboutAnUnknownSource(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	{
@@ -321,7 +298,6 @@ func TestSetSourceAuthenticatedIsSilentAboutAnUnknownSource(t *testing.T) {
 	}
 }
 
-// idsOf lists the source ids a ListSources call reported.
 func idsOf(infos []api.ModSourceInfo) []string {
 	out := make([]string, 0, len(infos))
 	for _, info := range infos {
@@ -331,7 +307,6 @@ func idsOf(infos []api.ModSourceInfo) []string {
 	return out
 }
 
-// idsOfMods lists the mod ids a search reported.
 func idsOfMods(mods []api.Mod) []string {
 	out := make([]string, 0, len(mods))
 	for _, mod := range mods {

@@ -1,9 +1,6 @@
 // Package sourceutil holds the behaviour every mod source plugin needs but none
-// of them should own.
-//
-// A source differs from its peers in what it talks to and what the payloads look
-// like; paging, query matching, error summarising and credential lookup are the
-// same everywhere, so they are written once and tested once rather than drifting.
+// of them should own: paging, query matching, error summarising and credential
+// lookup, written once so they cannot drift between sources.
 package sourceutil
 
 import (
@@ -20,9 +17,8 @@ import (
 // DefaultPageSize is the page size used when a query does not ask for one.
 const DefaultPageSize = 20
 
-// SelectMods filters mods by the query and then applies the requested sorting and
-// paging, so every source agrees on what "page 2" means. The steps stay separate so
-// a caller holding the full result set can reuse MatchesQuery or Paginate on its own.
+// SelectMods filters, sorts and pages so every source agrees on what "page 2"
+// means. The steps stay separate so a caller can reuse MatchesQuery or Paginate.
 func SelectMods(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 	kept := make([]domain.Mod, 0, len(mods))
 	for _, m := range mods {
@@ -37,9 +33,8 @@ func SelectMods(mods []domain.Mod, q domain.SearchQuery) []domain.Mod {
 }
 
 // MatchesQuery reports whether a mod satisfies the query; an empty query matches
-// everything, which is what a plain "browse this source" call sends. Tags are ANDed
-// because listing two narrows the search rather than widening it, and a mod declaring
-// no game version is never filtered out on that axis.
+// everything. Tags are ANDed because listing two narrows the search, and a mod
+// declaring no game version is never filtered out on that axis.
 func MatchesQuery(m domain.Mod, q domain.SearchQuery) bool {
 	needle := strings.ToLower(strings.TrimSpace(q.Query))
 	if needle != "" {
@@ -74,9 +69,8 @@ func MatchesQuery(m domain.Mod, q domain.SearchQuery) bool {
 	return true
 }
 
-// Paginate slices a result set. An out-of-range page yields an empty slice rather than
-// a panic, and the result is always non-nil; a pageSize above the result length is not
-// an error either, the last page is simply short.
+// Paginate slices a result set. An out-of-range page yields an empty slice and
+// the result is always non-nil; a short last page is fine.
 func Paginate(mods []domain.Mod, page, pageSize int) []domain.Mod {
 	if len(mods) == 0 {
 		return []domain.Mod{}
@@ -106,9 +100,9 @@ func Paginate(mods []domain.Mod, page, pageSize int) []domain.Mod {
 	return out
 }
 
-// Summarize renders a handful of errors on one line for an aggregate message. At most
-// three are named, because a source that failed against forty repositories should not
-// bury the useful part; the count of the rest is reported rather than dropped silently.
+// Summarize renders a handful of errors on one line. At most three are named,
+// because a source that failed against forty repositories should not bury the
+// useful part; the count of the rest is included.
 func Summarize(errs []error) string {
 	parts := make([]string, 0, len(errs))
 	for _, err := range errs {
@@ -130,9 +124,9 @@ func Summarize(errs []error) string {
 	return strings.Join(parts, "; ")
 }
 
-// FirstNonBlank returns the first argument that is not blank, untrimmed. The original
-// spelling is returned because these values become identifiers and display names, and
-// trimming a name would change what the user sees.
+// FirstNonBlank returns the first non-blank argument, untrimmed: these values
+// become identifiers and display names, and trimming would change what the user
+// sees.
 func FirstNonBlank(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -143,9 +137,8 @@ func FirstNonBlank(values ...string) string {
 	return ""
 }
 
-// OptionList renders a config option that may arrive as a single string or as a
-// list. The config file round-trips through JSON, so the same option can be
-// written either way and both have to be accepted.
+// OptionList renders a config option that may arrive as a single string or a
+// list; the config file round-trips through JSON, so both have to be accepted.
 func OptionList(raw any) []string {
 	switch v := raw.(type) {
 	case nil:
@@ -168,9 +161,8 @@ func OptionList(raw any) []string {
 	}
 }
 
-// SplitList splits a comma or newline separated config value, dropping blanks.
-// A trailing comma in a hand-edited config file is a typo, not an empty entry
-// that should become an empty path.
+// SplitList splits a comma or newline separated value, dropping blanks: a
+// trailing comma in a hand-edited config is a typo.
 func SplitList(raw string) []string {
 	fields := strings.FieldsFunc(raw, func(r rune) bool {
 		return r == ',' || r == '\n' || r == '\r'
@@ -186,9 +178,9 @@ func SplitList(raw string) []string {
 	return out
 }
 
-// StringOf renders a SourceData value as a string, tolerating the many types it can
-// have after a round trip through the database: a string written by a source plugin
-// comes back as a string, one written by hand as float64 or bool.
+// StringOf renders a SourceData value as a string, tolerating the types it can
+// have after a round trip through the database: a hand-written number or bool
+// comes back as float64 or bool.
 func StringOf(raw any) string {
 	switch v := raw.(type) {
 	case nil:
@@ -202,8 +194,8 @@ func StringOf(raw any) string {
 	}
 }
 
-// CtxOrBackground tolerates a nil context, which happens when a caller passes one
-// straight through from a UI binding.
+// CtxOrBackground tolerates a nil context, which happens when a caller passes
+// one straight through from a UI binding.
 func CtxOrBackground(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()
@@ -225,9 +217,8 @@ func EnsureDir(dir string) error {
 	return nil
 }
 
-// FileSHA256 hashes a downloaded file for Verify. A file that is not there is a
-// cache miss rather than an I/O error, because that is the distinction the
-// cache manager acts on.
+// FileSHA256 hashes a downloaded file for Verify. A missing file is a cache
+// miss, which is the distinction the cache manager acts on.
 func FileSHA256(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -250,7 +241,7 @@ func FileSHA256(path string) (string, error) {
 	return sum, nil
 }
 
-// ModLabel names a mod for an error message without dereferencing nil.
+// ModLabel names a mod for an error message, tolerating nil.
 func ModLabel(mod *domain.Mod) string {
 	if mod == nil {
 		return "<unknown>"
@@ -263,9 +254,9 @@ func ModLabel(mod *domain.Mod) string {
 	return "<unknown>"
 }
 
-// CredValue returns the first credential present under any of keys. Sources
-// accept both snake_case and camelCase spellings because the same config file is
-// written by hand and produced by other tooling.
+// CredValue returns the first credential present under any of keys, accepting
+// both snake_case and camelCase because the config file is written by hand and
+// by other tooling.
 func CredValue(creds domain.AuthCredentials, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := creds.Get(k); ok {

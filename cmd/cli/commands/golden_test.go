@@ -11,10 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file records what the command line looks like from the outside. The
-// transcripts live in testdata; each is produced by running the real command
-// against a real container, so a change in the wiring shows up here rather than
-// in a user's terminal.
+// This file records the command line from the outside. The transcripts live in
+// testdata and are produced by running the real command against a real
+// container, so a wiring change shows up here, before a user sees it.
 
 func TestModLifecycle(t *testing.T) {
 	w := newWorkspace(t)
@@ -28,7 +27,7 @@ func TestModLifecycle(t *testing.T) {
 	g.run(w, "mod", "list")
 	g.run(w, "mod", "list", "--json")
 	// Padding around an id is corrected for, since it comes from a copy-paste.
-	// Case is not: two mods may differ only in case, so folding it would guess.
+	// Case is preserved: two mods may differ only in case.
 	g.run(w, "mod", "show", "  "+modID+"  ")
 	g.run(w, "mod", "show", strings.ToUpper(modID))
 	g.run(w, "mod", "path", modID)
@@ -47,8 +46,6 @@ func TestModLifecycle(t *testing.T) {
 }
 
 func TestModInstallWithoutAGameStaysDisabled(t *testing.T) {
-	// A mod installed before the game has been found is installed but not
-	// enabled, and the commands after it must report that honestly.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 	modID := w.writeModArchive(t, "Better UI", "1.2.0")
@@ -64,8 +61,6 @@ func TestModInstallWithoutAGameStaysDisabled(t *testing.T) {
 }
 
 func TestModInstallFlags(t *testing.T) {
-	// Every install flag is a decision the user makes deliberately, so each is
-	// exercised against a real install and its effect is in the transcript.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -94,8 +89,6 @@ func TestModInstallFlags(t *testing.T) {
 }
 
 func TestModHooksEditing(t *testing.T) {
-	// A hook set is read-modify-write, so the transcript has to show each step
-	// landing where the previous one left it.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -129,8 +122,6 @@ func TestModHooksEditing(t *testing.T) {
 	g.run(w, "mod", "hooks", "add", modID, "--phase", "pre_enable",
 		"--content", "   ")
 	g.run(w, "mod", "hooks", "add", "nothing-here", "--phase", "pre_enable", "--content", "a")
-	// No --index and no --all is a different code path from --all, and the one a
-	// person reaches for first, so both are recorded.
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "pre_enable")
 	g.run(w, "mod", "hooks", "list", modID)
 	g.run(w, "mod", "hooks", "remove", modID, "--phase", "pre_enable", "--all")
@@ -139,8 +130,6 @@ func TestModHooksEditing(t *testing.T) {
 }
 
 func TestModHooksFromAFile(t *testing.T) {
-	// --file and --from are the paths a person takes when a hook is longer than
-	// a command line, and both have to name the file in every failure.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -155,8 +144,8 @@ func TestModHooksFromAFile(t *testing.T) {
 
 	empty := filepath.Join(w.root, "empty.js")
 	require.NoError(t, os.WriteFile(empty, nil, 0o644), "write empty script")
-	// A hook set as the edit command accepts it: a pre_enable script and a
-	// post_enable one, so the whole set is replaced rather than merged.
+	// A hook set as edit accepts it: one pre_enable script and one post_enable,
+	// to exercise a whole-set replacement.
 	hooks := filepath.Join(w.root, "hooks.json")
 	require.NoError(
 		t,
@@ -180,8 +169,6 @@ func TestModHooksFromAFile(t *testing.T) {
 }
 
 func TestModShareAndImport(t *testing.T) {
-	// share and import are two halves of one feature, so both the refusals and
-	// the accepted forms belong in one transcript.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -202,8 +189,6 @@ func TestModShareAndImport(t *testing.T) {
 }
 
 func TestModUpdate(t *testing.T) {
-	// A local mod is the awkward case for an update check: the local source
-	// always versions it 0.0.0, so "up to date" is the truth.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -226,8 +211,8 @@ func TestModUpdate(t *testing.T) {
 }
 
 func TestTwoLocalVersionsOfOneModCollide(t *testing.T) {
-	// Both files resolve to the same id, and the local source refuses rather
-	// than picking one: install order deciding would change a deployed mod's payload.
+	// Both files resolve to the same id, and the local source refuses: install
+	// order would otherwise change a deployed mod's payload.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -252,8 +237,6 @@ func TestTwoLocalVersionsOfOneModCollide(t *testing.T) {
 }
 
 func TestModRelinkAndStatusWithoutDamage(t *testing.T) {
-	// relink with no argument only touches what is broken, so a healthy install
-	// has to say so rather than doing work and reporting nothing.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -269,8 +252,6 @@ func TestModRelinkAndStatusWithoutDamage(t *testing.T) {
 }
 
 func TestModReorderWithUnlistedMods(t *testing.T) {
-	// A mod that is not in the list loses its place, so the command has to say how
-	// many or the user cannot tell the order they set from the one the game uses.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -289,8 +270,8 @@ func TestModReorderWithUnlistedMods(t *testing.T) {
 }
 
 func TestSourceListingAndSearch(t *testing.T) {
-	// The three network sources are switched off in the settings file, so nothing
-	// here reaches the internet, and that is what makes the "disabled" column worth reading.
+	// The network sources are off in the settings file, so nothing here reaches
+	// the internet.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 	w.writeModArchive(t, "Better UI", "1.2.0")
@@ -313,8 +294,6 @@ func TestSourceListingAndSearch(t *testing.T) {
 }
 
 func TestSourceEnableDisable(t *testing.T) {
-	// enable and disable write one dotted key each, so the settings file keeps
-	// whatever else the user put in it. The transcript shows the round trip.
 	w := newWorkspace(t)
 	w.writeConfig(t)
 
@@ -331,8 +310,8 @@ func TestSourceEnableDisable(t *testing.T) {
 }
 
 func TestSourceAuthentication(t *testing.T) {
-	// A key typed on a command line is visible in the process list, so the flag
-	// set is deliberately awkward. Nexus is pointed at a stub the test controls.
+	// A key on a command line is visible in the process list, so the flag set is
+	// deliberately awkward. Nexus uses a test-controlled stub.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	probe := w.newCredentialProbe(t, 200, `{"data":{"mods":[]}}`)
@@ -346,12 +325,10 @@ func TestSourceAuthentication(t *testing.T) {
 	g.run(w, "source", "auth", "nexus", "--api-key-env", "DMM_MISSING_VARIABLE")
 	g.withStdin("").run(w, "source", "auth", "nexus", "--api-key-stdin")
 	g.withStdin("read-from-stdin\n").run(w, "source", "auth", "nexus", "--api-key-stdin")
-	// The key has to reach the source, or the transcript is proving nothing
-	// about the one line that matters.
 	g.run(w, "config", "get", "sources.nexus.api_key")
 
-	// A rejected key has to come back as a rejected credential rather than as "the
-	// service is down", and must not be left in the settings file for the next command.
+	// A rejected key must come back as a rejected credential and must not be left
+	// in the settings file.
 	probe.answer(
 		401,
 		`{"title":"Unauthorized","status":401,"detail":"Please provide a valid API Key"}`,
@@ -383,8 +360,8 @@ func TestSourceCredentialsSurviveWithoutTheSourceAndCanBeTakenBack(t *testing.T)
 	g.run(w, "source", "list")
 	g.run(w, "source", "auth", "nexus", "--forget")
 	g.run(w, "source", "test", "nexus")
-	// A key typed alongside --forget is a contradiction, not something to ignore:
-	// the user would be left with whichever of the two they did not mean.
+	// A key alongside --forget is a contradiction to refuse; ignoring it leaves
+	// the user with whichever of the two they did not mean.
 	g.run(w, "source", "auth", "nexus", "--forget", "--api-key", "k")
 	g.run(w, "source", "auth", "nexus", "--forget", "--no-verify")
 	g.run(w, "source", "auth", "local", "--forget")
@@ -416,8 +393,6 @@ func TestSourceTestChecksEverySource(t *testing.T) {
 }
 
 func TestGameCommands(t *testing.T) {
-	// The game commands answer different questions: the registry (list, current,
-	// use), the machine (detect), and the configured installation (info, path, validate).
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -429,8 +404,7 @@ func TestGameCommands(t *testing.T) {
 	g.run(w, "game", "current", "--json")
 	g.run(w, "game", "use", "darktide")
 	g.run(w, "game", "use", "darktide", "--json")
-	// An unknown id is refused rather than falling back to whatever game was
-	// already active — a typo must not silently run the wrong game.
+	// An unknown id is refused: a typo must not silently run the wrong game.
 	g.run(w, "game", "use", "nope")
 	g.run(w, "game", "switch", "darktide")
 	g.run(w, "game", "detect")
@@ -453,8 +427,6 @@ func TestGameCommands(t *testing.T) {
 }
 
 func TestGameCommandsWithNothingFound(t *testing.T) {
-	// No installation and no configured path: every command has to say so rather
-	// than print an empty table, and none may exit non-zero for a non-failure.
 	w := newWorkspace(t)
 	cfg := defaultConfigFor(t)
 	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = "" })
@@ -497,8 +469,8 @@ func TestCacheCommands(t *testing.T) {
 }
 
 func TestConfigCommands(t *testing.T) {
-	// `config show` prints what the manager believes rather than the file, so
-	// a hand-written layout is resolved before anybody reads it.
+	// `config show` prints what the manager believes, with a hand-written layout
+	// resolved first.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -535,8 +507,6 @@ func TestConfigCommands(t *testing.T) {
 }
 
 func TestCommandsAgainstAnUnreadableSettingsFile(t *testing.T) {
-	// A settings file that is not JSON is the failure a user is most likely to
-	// cause by hand, and every command has to report it the same way.
 	w := newWorkspace(t)
 	require.NoError(
 		t,

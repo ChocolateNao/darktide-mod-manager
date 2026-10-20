@@ -1,8 +1,6 @@
 // Package actions holds the registry and runner behind game-specific actions.
-//
 // A game declares an action, the registry holds the declarations and the runner
-// decides what running one means, so a surface only has to translate a click or
-// a flag into an (id, args) pair.
+// decides what running one means.
 package actions
 
 import (
@@ -14,30 +12,23 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// GameResolver is the slice of the game locator a run needs.
-//
-// An interface this narrow keeps the runner testable without a database and keeps
-// it from depending on anything else the locator happens to offer.
+// GameResolver is the slice of the game locator a run needs, narrow enough to
+// test without a database.
 type GameResolver interface {
-	// Active returns the game the manager is currently pointed at and its settings.
 	Active() (domain.GameDefinition, domain.GameSettings, error)
-	// Current returns the installation of the active game, or an error.
 	Current(ctx context.Context) (*domain.GameInstallation, error)
 	// GetModsPath resolves the mods folder, honouring the user's override.
 	GetModsPath(install *domain.GameInstallation) (string, error)
 }
 
-// DefinitionLookup resolves a game definition by its registry id.
-//
-// It is separate from GameResolver because an action may belong to a game that is
-// not currently active: listing and describing its actions must still work.
+// DefinitionLookup resolves a game definition by its registry id. It is separate
+// from GameResolver because an action may belong to a game that is not active.
 type DefinitionLookup interface {
 	Get(id string) (domain.GameDefinition, bool)
 }
 
-// RunnerDeps is what a Runner needs. Each field is optional in a meaningful way:
-// a nil Opener or Commands disables the actions that need it rather than crashing
-// the manager.
+// RunnerDeps is what a Runner needs. A nil Opener or Commands disables the
+// actions that need it.
 type RunnerDeps struct {
 	Definitions DefinitionLookup
 	Games       GameResolver
@@ -62,10 +53,8 @@ type Runner struct {
 	platform    domain.Platform
 }
 
-// NewRunner builds a Runner, filling in the platform default.
-//
-// The error return exists for the one mistake that cannot be defaulted: a runner
-// with no registry could only ever report every action as missing.
+// NewRunner builds a Runner, filling in the platform default. The error return
+// covers a runner with no registry, which could only report every action missing.
 func NewRunner(deps RunnerDeps) (*Runner, error) {
 	if deps.Registry == nil {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -93,7 +82,6 @@ func NewRunner(deps RunnerDeps) (*Runner, error) {
 	}, nil
 }
 
-// Platform reports the platform this runner dispatches against.
 func (r *Runner) Platform() domain.Platform {
 	if r == nil {
 		return ""
@@ -104,11 +92,9 @@ func (r *Runner) Platform() domain.Platform {
 
 // Run executes one action and returns what it reported.
 //
-// The failure modes are deliberately distinct, because a caller must be able to
-// tell them apart: ACTION_NOT_FOUND means the surface offered something stale,
-// ACTION_UNAVAILABLE means the platform filter or a missing prerequisite stopped
-// it, OPERATION_CANCELED means the user changed their mind, and everything else
-// is the action's own fault.
+// The failure modes stay distinct: ACTION_NOT_FOUND means the surface offered
+// something stale, ACTION_UNAVAILABLE a platform filter or missing prerequisite,
+// OPERATION_CANCELED the user, and ACTION_FAILED the action's own fault.
 func (r *Runner) Run(
 	ctx context.Context,
 	actionID string,
@@ -165,11 +151,9 @@ func (r *Runner) Run(
 	return normaliseResult(action, result, logger), nil
 }
 
-// buildContext assembles everything a handler is allowed to touch.
-//
-// Anything the handler does not need is not resolved: asking the locator for an
-// installation is not free, and an action that only prints a sentence should
-// still run on a machine with no game installed.
+// buildContext assembles everything a handler is allowed to touch. Anything the
+// handler does not need is not resolved: an action that only prints a sentence
+// should run on a machine with no game installed.
 func (r *Runner) buildContext(
 	ctx context.Context,
 	action domain.GameAction,
@@ -218,7 +202,6 @@ func (r *Runner) buildContext(
 	return actx, nil
 }
 
-// definition resolves the game an action belongs to.
 func (r *Runner) definition(action domain.GameAction) (domain.GameDefinition, error) {
 	if r.definitions == nil {
 		return nil, appErrors.New(appErrors.ErrCodeActionUnavailable,
@@ -234,7 +217,6 @@ func (r *Runner) definition(action domain.GameAction) (domain.GameDefinition, er
 	return def, nil
 }
 
-// resolveInstallation fills the path fields of a context from the active game.
 func (r *Runner) resolveInstallation(
 	ctx context.Context,
 	action domain.GameAction,
@@ -274,8 +256,8 @@ func (r *Runner) resolveInstallation(
 
 	modsPath, err := r.games.GetModsPath(install)
 	if err != nil {
-		// The mods folder is not the installation itself: an action that only reads
-		// the game directory is still worth running, so this degrades the context.
+		// An action that only reads the game directory is still worth running, so
+		// an unresolved mods folder degrades the context.
 		actx.Logf("could not resolve the mods folder: %v", err)
 
 		return actx, nil
@@ -286,11 +268,9 @@ func (r *Runner) resolveInstallation(
 	return actx, nil
 }
 
-// runScript dispatches a script-based action.
-//
-// Scripts are never handed to a shell. The command and its arguments are fixed by
-// the game definition and executed directly: running them through /bin/sh would
-// turn a definition typo into arbitrary code execution.
+// runScript dispatches a script-based action. Scripts never reach a shell: the
+// command and its arguments are fixed by the game definition and executed
+// directly, so a definition typo cannot become arbitrary code execution.
 func (r *Runner) runScript(
 	ctx context.Context,
 	action domain.GameAction,
@@ -357,7 +337,7 @@ func (r *Runner) runScript(
 			action.ID, command.Path, output.ExitCode, firstLine(output.Combined()))
 	}
 
-	actx.Logger.Printf("%s", output.Combined())
+	actx.Logger.Logf("%s", output.Combined())
 
 	return &domain.GameActionResult{
 		Success: true,
@@ -371,10 +351,8 @@ func (r *Runner) runScript(
 	}, nil
 }
 
-// normaliseResult guarantees a handler's result is safe to hand to a surface.
-//
-// A handler that returns (nil, nil) is a bug, not a crash: the frontend needs a
-// value to render, so an empty success is synthesised here.
+// normaliseResult guarantees a handler's result is safe to hand to a surface. A
+// handler that returns (nil, nil) is a bug, so an empty success is synthesised.
 func normaliseResult(
 	action domain.GameAction,
 	result *domain.GameActionResult,
@@ -399,11 +377,9 @@ func normaliseResult(
 	return result
 }
 
-// wrapActionError keeps the code a lower layer chose.
-//
-// ExecRunner already maps an exit status, a missing binary and a cancelled context
-// onto distinct codes; re-wrapping them as a plain ACTION_FAILED would throw that
-// away.
+// wrapActionError keeps the code a lower layer chose. ExecRunner maps an exit
+// status, a missing binary and a cancelled context onto distinct codes; replacing
+// them with a plain ACTION_FAILED would throw that away.
 func wrapActionError(action domain.GameAction, err error) error {
 	if appErrors.CodeOf(err) != appErrors.CodeUnknown {
 		return err
@@ -412,7 +388,6 @@ func wrapActionError(action domain.GameAction, err error) error {
 	return appErrors.Wrap(err, appErrors.ErrCodeActionFailed, "action %q failed", action.ID)
 }
 
-// textOf reads a logger that may be any of the loggers in play.
 func textOf(logger domain.ActionLogger) string {
 	if capture, ok := logger.(*captureLogger); ok {
 		return capture.Text()
@@ -421,9 +396,8 @@ func textOf(logger domain.ActionLogger) string {
 	return ""
 }
 
-// firstLine trims a command's output down to something that fits an error
-// message; a tool that prints a hundred lines of stack should not produce a
-// hundred-line error.
+// firstLine trims a command's output to something that fits an error message; a
+// tool that prints a hundred lines of stack should not produce a hundred-line error.
 func firstLine(text string) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -437,11 +411,9 @@ func firstLine(text string) string {
 	return text
 }
 
-// renderArgs substitutes {{option}} placeholders in a declared argument list.
-//
-// A placeholder that names nothing declared is refused rather than expanded to an
-// empty string, because that turns a typo in a game definition into a command
-// that runs with a missing argument.
+// renderArgs substitutes {{option}} placeholders in a declared argument list. A
+// placeholder that names nothing declared is refused, because a typo then turns
+// into a command running with a missing argument.
 func renderArgs(args []string, values map[string]any) ([]string, error) {
 	rendered := make([]string, 0, len(args))
 
@@ -457,7 +429,6 @@ func renderArgs(args []string, values map[string]any) ([]string, error) {
 	return rendered, nil
 }
 
-// renderDir expands a working directory, which may be empty.
 func renderDir(dir string, actx domain.ActionContext) (string, error) {
 	if dir == "" {
 		return "", nil
@@ -474,10 +445,9 @@ func renderDir(dir string, actx domain.ActionContext) (string, error) {
 	return renderTemplate(dir, values)
 }
 
-// renderTemplate expands every {{name}} occurrence in text.
-//
-// Values are stringified here rather than by the command runner so that one
-// argument holding a placeholder followed by a suffix stays a single argument.
+// renderTemplate expands every {{name}} occurrence in text. Values are
+// stringified here so one argument holding a placeholder plus a suffix stays a
+// single argument.
 func renderTemplate(text string, values map[string]any) (string, error) {
 	var out strings.Builder
 
@@ -514,7 +484,6 @@ func renderTemplate(text string, values map[string]any) (string, error) {
 	return out.String(), nil
 }
 
-// templateValue renders an option value as text for a command argument.
 func templateValue(value any) string {
 	switch typed := value.(type) {
 	case nil:

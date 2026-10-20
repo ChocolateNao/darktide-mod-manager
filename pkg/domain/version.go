@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// Version is a dotted numeric version. Manifests use semver-ish strings
-// ("1.2.0", "2.0", "1.2.3-beta.1"), so parsing is lenient: missing components
-// default to zero and a pre-release suffix is kept but ordered below its release.
+// Version is a dotted numeric version. Manifest strings are semver-ish, so
+// parsing is lenient: missing components default to zero and a pre-release suffix
+// is kept but ordered below its release.
 type Version struct {
 	PreRelease string
 	Major      int
@@ -15,7 +15,6 @@ type Version struct {
 	Patch      int
 }
 
-// String renders the version back to its canonical form.
 func (v Version) String() string {
 	var b strings.Builder
 	b.WriteString(strconv.Itoa(v.Major))
@@ -32,13 +31,12 @@ func (v Version) String() string {
 	return b.String()
 }
 
-// IsZero reports whether the version is 0.0.0 with no pre-release.
 func (v Version) IsZero() bool {
 	return v.Major == 0 && v.Minor == 0 && v.Patch == 0 && v.PreRelease == ""
 }
 
-// Compare returns -1, 0 or 1 depending on the ordering of v and other. A
-// pre-release sorts before its release, matching semver.
+// Compare returns -1, 0 or 1 for the ordering of v and other. A pre-release sorts
+// before its release, matching semver.
 func (v Version) Compare(other Version) int {
 	if c := compareInt(v.Major, other.Major); c != 0 {
 		return c
@@ -83,8 +81,8 @@ func comparePreRelease(a, b string) int {
 }
 
 // ParseVersion parses a version string, ignoring a leading "v" and surrounding
-// whitespace. Unparseable input yields the zero version and ok=false so a
-// malformed manifest field is "unknown" rather than a failed install.
+// whitespace. Unparseable input yields the zero version and ok=false, so a
+// malformed manifest field is "unknown".
 func ParseVersion(s string) (Version, bool) {
 	v := Version{}
 
@@ -96,7 +94,7 @@ func ParseVersion(s string) (Version, bool) {
 	s = strings.TrimPrefix(s, "v")
 	s = strings.TrimPrefix(s, "V")
 
-	// Split off the pre-release and build metadata, which semver says must not
+	// Split off build metadata and the pre-release, which semver says must not
 	// affect precedence. A leading '-' means no numeric part, which is invalid.
 	if strings.HasPrefix(s, "-") {
 		return v, false
@@ -140,9 +138,8 @@ func ParseVersion(s string) (Version, bool) {
 	return v, true
 }
 
-// CompareVersions parses both strings and compares them. Unparseable versions
-// sort below parseable ones, and two unparseable versions compare equal so that
-// callers do not see spurious updates for garbage input.
+// CompareVersions parses both strings and compares them. Unparseable versions sort
+// below parseable ones, and two unparseable versions compare equal.
 func CompareVersions(a, b string) int {
 	va, okA := ParseVersion(a)
 
@@ -159,7 +156,6 @@ func CompareVersions(a, b string) int {
 	}
 }
 
-// VersionConstraint is a single comparator such as ">=1.0.0".
 type VersionConstraint struct {
 	Op      string
 	Version Version
@@ -177,9 +173,8 @@ var emptyConstraint = []VersionConstraint{}
 //	"1.2.3"          → exact match (equivalent to "==1.2.3")
 //	">=1.0.0,<2.0.0" → conjunction, all terms must hold
 //
-// Whitespace is ignored. A term containing "||" is rejected rather than
-// silently widening what a mod claims to support. ok is false if any component
-// is malformed.
+// Whitespace is ignored. "||" is rejected, since it would silently widen what a
+// mod claims to support. ok is false if any component is malformed.
 func ParseVersionConstraints(s string) ([]VersionConstraint, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" || s == "*" {
@@ -238,9 +233,8 @@ func parseConstraintTerm(term string) (VersionConstraint, bool) {
 	return VersionConstraint{Op: "==", Version: v}, true
 }
 
-// Satisfies reports whether version meets every constraint in the list. An empty
-// constraint list (what an unrestricted manifest field parses to) accepts any
-// version, including one that cannot be parsed.
+// Satisfies reports whether version meets every constraint. An empty list accepts
+// any version, including one that cannot be parsed.
 func Satisfies(version string, constraints []VersionConstraint) bool {
 	if len(constraints) == 0 {
 		return true
@@ -260,9 +254,8 @@ func Satisfies(version string, constraints []VersionConstraint) bool {
 	return true
 }
 
-// SatisfiesExpression parses expr and reports whether version matches. It returns
-// false for a malformed expression, so a broken manifest field cannot silently
-// enable a mod that should be rejected.
+// SatisfiesExpression parses expr and reports whether version matches. A malformed
+// expression returns false, so a broken manifest field cannot enable a mod.
 func SatisfiesExpression(version, expr string) bool {
 	constraints, ok := ParseVersionConstraints(expr)
 	if !ok {

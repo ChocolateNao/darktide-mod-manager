@@ -37,7 +37,7 @@ func steamURL(workshopID string) string {
 
 // launchCommand is the per-platform command that starts the game.
 //
-// The table is data rather than a branch in the handler because which command
+// The table is data: not a branch in the handler because which command
 // applies is a fact about the operating system, not about the action.
 var launchCommand = []domain.ActionCommand{
 	{Path: "steam", Args: []string{"-applaunch", SteamAppID}},

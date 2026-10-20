@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newSourceCommand assembles `dmm source`.
 func newSourceCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "source",
@@ -33,7 +32,6 @@ func newSourceCommand(s *session) *cobra.Command {
 	return group
 }
 
-// sourceView is the JSON shape of one source.
 type sourceView struct {
 	ID             string `json:"id"`
 	Name           string `json:"name,omitempty"`
@@ -90,7 +88,7 @@ func newSourceListCommand(s *session) *cobra.Command {
 				return s.writeJSONOrTable(s.env.Out, views, table, "No sources are registered.")
 			}
 			// With --details every source also gets a field block, so a description
-			// is not squeezed into a column; the table still comes first.
+			// is not squeezed into a column.
 			if err := s.writeJSONOrTable(
 				s.env.Out,
 				views,
@@ -206,10 +204,9 @@ func newSourceSearchCommand(s *session) *cobra.Command {
 	return command
 }
 
-// searchMods performs the search the command asked for, through the public client.
-// The two forms are separate questions, and the single-source form carries only a
-// text query: SearchSource takes a string, not a SearchQuery. The extra filters are
-// refused rather than dropped — unfiltered results after --tag would be a lie.
+// searchMods performs the search the command asked for. The single-source form
+// carries only a text query, so extra filters are refused: unfiltered results
+// after --tag would be a lie.
 func searchMods(ctx context.Context, client *api.Client, sourceID, text string,
 	tags []string, gameVersion string, page, pageSize int, sortBy string,
 ) ([]api.Mod, error) {
@@ -241,7 +238,6 @@ func searchMods(ctx context.Context, client *api.Client, sourceID, text string,
 	return client.SearchSource(ctx, sourceID, strings.TrimSpace(text))
 }
 
-// extraFilterNames lists the filters a single-source search cannot carry.
 func extraFilterNames(
 	tags []string,
 	gameVersion string,
@@ -272,9 +268,8 @@ func extraFilterNames(
 	return names
 }
 
-// validateSort checks the --sort argument rather than letting an unknown value
-// reach the sources, which each handle it differently and one of which would
-// silently ignore it.
+// validateSort checks --sort here: each source handles an unknown value
+// differently, and one would silently ignore it.
 func validateSort(sortBy string) error {
 	switch sortBy {
 	case "", domain.SortRelevance, domain.SortUpdated, domain.SortDownloads, domain.SortName:
@@ -410,16 +405,9 @@ func newSourceAuthCommand(s *session) *cobra.Command {
 	return command
 }
 
-// resolveAPIKey works out which credential to authenticate with. The sources are
-// tried in the order the help lists them and the terminal comes last, because an
-// explicit choice is never second-guessed by a prompt: a prompt that appears when
-// somebody asked for something specific is one they must dismiss rather than
-// answer. Prompting only fills a gap, so `dmm source auth nexus` asks at a
-// terminal while the same command in a script still fails naming the variable.
-//
-// An environment variable the caller named is a mistake to report when empty
-// rather than a gap to fill elsewhere: somebody who typed --api-key-env has said
-// where the key is.
+// resolveAPIKey works out which credential to authenticate with: sources in the
+// order the help lists, the terminal last, and a named environment variable that
+// is empty reported as a mistake.
 func (s *session) resolveAPIKey(
 	ctx context.Context,
 	sourceID, apiKey string,
@@ -470,8 +458,8 @@ func (s *session) resolveAPIKey(
 	return key, nil
 }
 
-// keyFlagsGiven reports whether any flag that supplies a key was used. --forget
-// must refuse a key rather than ignore it: the user would keep the one they did not mean.
+// keyFlagsGiven reports whether any flag that supplies a key was used.
+// --forget with a key is refused: the user would keep the one they did not mean.
 func keyFlagsGiven(
 	apiKey string,
 	apiKeyStdin bool,
@@ -589,10 +577,9 @@ const (
 	sourceTestNotConfigured = "not configured"
 )
 
-// sourceTestState decides what can honestly be said about one source. A source
-// that takes no credentials is reported as working; one that takes them but has
-// none stored is reported as not configured, because the check is a no-op there
-// and calling it a success would report the absence of a check as its result.
+// sourceTestState decides what can honestly be said about one source. One that
+// takes credentials but has none stored is not configured, because calling a
+// no-op check a success reports the absence of a check as its result.
 func sourceTestState(ctx context.Context, client *api.Client, id string) string {
 	info, err := client.SourceInfo(ctx, id)
 	if err != nil {
@@ -657,8 +644,8 @@ func (s *session) setSourceEnabled(cmd *cobra.Command, sourceID string, enabled 
 	if _, err := client.SourceInfo(cmd.Context(), sourceID); err != nil {
 		return err
 	}
-	// Written through the dotted settings key rather than a struct, so the file
-	// keeps whatever the user hand-edited into it.
+	// Written through the dotted settings key, so the file keeps whatever the
+	// user hand-edited into it.
 	if err := client.SetConfigValue(cmd.Context(),
 		fmt.Sprintf("sources.%s.enabled", sourceID), yesNo(enabled)); err != nil {
 		return err
@@ -674,8 +661,7 @@ func (s *session) setSourceEnabled(cmd *cobra.Command, sourceID string, enabled 
 	return err
 }
 
-// sourceIDs extracts the ids of a source list, sorted, for a command that was
-// not told which sources to act on.
+// sourceIDs extracts the sorted ids of a source list.
 func sourceIDs(infos []api.ModSourceInfo) []string {
 	ids := make([]string, 0, len(infos))
 	for _, info := range infos {

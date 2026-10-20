@@ -22,8 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// workspace is one isolated manager tree: a configuration file, a cache, a
-// storage folder and the database that sits beside it.
 type workspace struct {
 	home         string
 	configPath   string
@@ -37,10 +35,9 @@ type workspace struct {
 
 // newWorkspace points every platform directory at one temporary tree.
 //
-// This is not tidiness: pkg/api calls platform.CurrentDirs() before it looks at
-// any option, so a test supplying only some paths still reads the user's real
-// configuration file for the rest — and one with no paths at all would write to
-// it.
+// pkg/api calls platform.CurrentDirs() before it looks at any option, so a test
+// supplying only some paths still reads the user's real configuration file for
+// the rest, and one with no paths at all would write to it.
 func newWorkspace(t *testing.T) *workspace {
 	t.Helper()
 
@@ -67,8 +64,6 @@ func newWorkspace(t *testing.T) *workspace {
 	return w
 }
 
-// options is the option set a test would normally pass: private config, cache
-// and storage, nothing else.
 func (w *workspace) options() Options {
 	return Options{
 		ConfigPath:  w.configPath,
@@ -78,8 +73,8 @@ func (w *workspace) options() Options {
 }
 
 // makeGame builds a folder the detector accepts as an installation. The mods
-// folder is what an install is deployed into, so its absence stops a mod being
-// enabled automatically.
+// folder is what an install is deployed into; without it a mod is not enabled
+// automatically.
 func (w *workspace) makeGame(t *testing.T) {
 	t.Helper()
 
@@ -93,8 +88,6 @@ func (w *workspace) makeGame(t *testing.T) {
 	require.NoError(t, err, "write Darktide.exe: %v", err)
 }
 
-// saveConfig writes a configuration file, starting from the defaults and letting
-// the caller adjust it.
 func (w *workspace) saveConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	t.Helper()
 
@@ -106,7 +99,6 @@ func (w *workspace) saveConfig(t *testing.T, mutate func(cfg *domain.Config)) {
 	w.writeConfig(t, &cfg)
 }
 
-// writeConfig serialises a configuration the way the store would.
 func (w *workspace) writeConfig(t *testing.T, cfg *domain.Config) {
 	t.Helper()
 
@@ -118,8 +110,6 @@ func (w *workspace) writeConfig(t *testing.T, cfg *domain.Config) {
 	require.NoError(t, err, "save config: %v", err)
 }
 
-// writeModArchive writes a real mod archive: a manifest, so the mod has an id and
-// a version, and a payload file, so there is something to deploy.
 func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	t.Helper()
 
@@ -167,7 +157,6 @@ func writeZipEntry(zw *zip.Writer, name, body string) error {
 	return nil
 }
 
-// mustContainer fails the test unless the container builds.
 func mustContainer(t *testing.T, ctx context.Context, opts Options) *Container {
 	t.Helper()
 
@@ -179,8 +168,8 @@ func mustContainer(t *testing.T, ctx context.Context, opts Options) *Container {
 	return container
 }
 
-// recordingHandler collects events. Events are delivered synchronously but from
-// whatever goroutine published them, so the mutex is not paranoia.
+// recordingHandler collects events. Events may arrive from any publishing
+// goroutine, so the mutex is required.
 type recordingHandler struct {
 	events []api.Event
 	mu     sync.Mutex
@@ -218,7 +207,6 @@ func (h *recordingHandler) has(want api.EventType) bool {
 	return false
 }
 
-// recordingLogger collects formatted messages.
 type recordingLogger struct {
 	messages []string
 	mu       sync.Mutex
@@ -268,8 +256,7 @@ func TestNewContainerWiresEveryService(t *testing.T) {
 		"CleanupFuncs is empty; nothing would release the database",
 	)
 
-	// The client must wrap the very same services: two graphs stay invisible until a
-	// mod installed through one is missing from the other.
+	// The client must wrap the very same services; two graphs diverge invisibly.
 	deps := container.Client.Services()
 	assert.Equal(
 		t,
@@ -320,7 +307,7 @@ func TestNewContainerWiresEveryService(t *testing.T) {
 		"the client's event bus is not the container's",
 	)
 
-	// One bus, not two: a handler registered through either path must see the
+	// One bus for both paths, so a handler registered through either sees the
 	// same events.
 	assert.Equal(
 		t,
@@ -379,8 +366,8 @@ func TestNewContainerUsesTheSuppliedPaths(t *testing.T) {
 		w.databasePath,
 	)
 
-	// The database sits beside the payload tree: the local source scans folders and
-	// would offer a database file to the user as a mod.
+	// The database sits beside the payload tree: the local source scans folders
+	// and would offer a database file to the user as a mod.
 	assert.True(
 		t,
 		strings.HasPrefix(container.DatabasePath, filepath.Dir(container.StorageRoot)),
@@ -410,11 +397,9 @@ func TestNewContainerFallsBackToThePlatformDirectories(t *testing.T) {
 	dirs, err := platform.CurrentDirs()
 	require.NoError(t, err, "platform.CurrentDirs")
 
-	// Every location comes from the platform, and the unwritten configuration file is
-	// reported from where it would be created.
 	container := mustContainer(t, context.Background(), Options{})
 
-	// The file keeps the user's own empty paths; the resolved locations live on the
+	// The file keeps the user's empty paths; resolved locations live on the
 	// container, where CacheRoot is where the archives really are.
 	assert.Equal(
 		t,
@@ -457,8 +442,8 @@ func TestNewContainerIgnoresBlankPaths(t *testing.T) {
 	dirs, err := platform.CurrentDirs()
 	require.NoError(t, err, "platform.CurrentDirs")
 
-	// An all-spaces path is no opinion, not a folder: passing one would replace the
-	// user's own configuration with a default.
+	// An all-spaces path is no opinion; passing one would replace the user's
+	// configuration with a default.
 	container := mustContainer(t, context.Background(), Options{
 		ConfigPath:  "   ",
 		CachePath:   "\t",
@@ -500,8 +485,7 @@ func TestNewContainerPersistsAValidGamePath(t *testing.T) {
 		container.Config.ActiveSettings().Path,
 		w.gameDir,
 	)
-	// And on disk, so the next launch starts from the same answer instead of
-	// re-detecting.
+	// On disk too, so the next launch starts from the same answer.
 	reloaded := storage.NewConfigStore(w.configPath)
 
 	cfg, err := reloaded.Load()
@@ -592,8 +576,8 @@ func TestNewContainerConfiguresTheSourcesItIsGiven(t *testing.T) {
 
 	container := mustContainer(t, context.Background(), opts)
 
-	// Read from the container's config, not the client's: the client's GetConfig reads
-	// the file, and source options are deliberately not written back to it.
+	// Read from the container's config: the client's GetConfig reads the file, and
+	// source options are kept in memory.
 	block, ok := container.Config.SourceConfigFor("local")
 	require.True(t, ok, "the local source has no configuration block")
 
@@ -630,9 +614,9 @@ func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 
 	container := mustContainer(t, context.Background(), opts)
 
-	// Read from the log rather than from the diagnostic logger: a source that cannot
-	// be configured is a warning, and warnings belong in the file where a user with
-	// the same broken credentials next month will still find them.
+	// Read the log file: a source that cannot be configured is a warning, and
+	// warnings belong where a user with the same broken credentials next month
+	// will still find them.
 	reported := readLogFile(t, container.Logging.Directory())
 	require.NotEqual(t, "", reported, "a source that failed to configure was not reported anywhere")
 
@@ -647,8 +631,8 @@ func TestNewContainerLogsSourcesItCouldNotConfigure(t *testing.T) {
 	)
 }
 
-// readLogFile returns the contents of dir's dmm.log. A directory with no log in
-// it reads as empty: the assertion about to be made is about what is missing.
+// readLogFile returns the contents of dir's dmm.log. A missing log reads as
+// empty, since the assertions are about what is missing.
 func readLogFile(t *testing.T, dir string) string {
 	t.Helper()
 
@@ -711,8 +695,8 @@ func TestContainerInstallsThroughItsOwnPaths(t *testing.T) {
 		mod.Enabled,
 		"the mod was not enabled even though a game mods folder was configured",
 	)
-	// The payload must land under the container's storage root, which is the one
-	// thing that proves the option reached the mod service rather than the cache.
+	// The payload must land under the container's storage root; that proves the
+	// option reached the mod service.
 	want := domain.ModStoragePath(container.StorageRoot, mod.GameID, mod.ID, mod.Version)
 	assert.Equal(t, want, mod.LocalPath, "LocalPath = %q, want %q", mod.LocalPath, want)
 
@@ -759,7 +743,7 @@ func TestContainerCloseReleasesEverything(t *testing.T) {
 	)
 
 	assert.True(t, container.Client.Closed(), "the client was not closed")
-	// The client must refuse to work rather than reach into a released database.
+	// The client must refuse to work after the database is released.
 	_, err = container.Client.ListMods(context.Background())
 	assert.Error(t, err, "a closed client still served a request")
 
@@ -922,7 +906,7 @@ func TestOptionsMapSourcesInASortedOrder(t *testing.T) {
 			len(want),
 		)
 	}
-	// And the ids themselves are in sorted order in the source map we build from.
+	// The ids themselves are in sorted order in the source map we build from.
 	ids := make([]string, 0, len(opts.SourceConfigs))
 	for id := range opts.SourceConfigs {
 		ids = append(ids, id)
@@ -982,8 +966,8 @@ func TestNewContainerRegistersTheBundledSources(t *testing.T) {
 	w := newWorkspace(t)
 	container := mustContainer(t, context.Background(), w.options())
 
-	// Membership, not a count: the bundled sources are announced by their packages'
-	// init functions, and a count would fail every time somebody adds a fourth.
+	// Membership, because the bundled sources come from package init functions
+	// and a count breaks when a fourth is added.
 	registered := make([]string, 0, 3)
 
 	for _, want := range []string{"github", "local", "nexus"} {
@@ -1053,8 +1037,7 @@ func TestContainerFieldsSurviveAReloadOfTheConfiguration(t *testing.T) {
 		block,
 		ok,
 	)
-	// And the cache manager was built from that same configuration rather than
-	// from the defaults.
+	// The cache manager was built from that same configuration.
 	assert.Equal(
 		t,
 		11,
@@ -1071,8 +1054,8 @@ func TestContainerIsUsableFromMoreThanOnePlatform(t *testing.T) {
 	container := mustContainer(t, context.Background(), w.options())
 
 	if _, err := container.Client.GetModsPath(context.Background(), nil); err != nil {
-		// The error is the point: the call reached the real locator rather than
-		// panicking on a half-built graph.
+		// The error is the point: the call reached the real locator and did not
+		// panic on a half-built graph.
 		assert.True(
 			t,
 			appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound),
@@ -1083,7 +1066,7 @@ func TestContainerIsUsableFromMoreThanOnePlatform(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		// The deployer's mode is the only platform-dependent thing here, and it
-		// is decided by platform.SupportsSymlinks rather than by this package.
+		// is decided by platform.SupportsSymlinks.
 		t.Log("running on Windows; symlink deployment may fall back to copying")
 	}
 }

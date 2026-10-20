@@ -30,7 +30,6 @@ func TestErrorTrimsSurroundingWhitespace(t *testing.T) {
 
 func TestErrorAppendsTheCauseOnce(t *testing.T) {
 	cause := goerrors.New("no such column: modsx")
-	// A message that does not restate the cause gains it as a suffix.
 	plain := Wrap(cause, ErrCodeConfigIO, "query mods")
 	assert.Equal(t, "CONFIG_IO: query mods: no such column: modsx", plain.Error(), "Error()")
 	// `Wrap(err, code, "do %s", err)` appears throughout this codebase; without the
@@ -42,15 +41,13 @@ func TestErrorAppendsTheCauseOnce(t *testing.T) {
 		restated.Error(),
 		"restated Error()",
 	)
-	// The cause is still reachable either way, because Unwrap does not consult
-	// the message.
 	assert.True(
 		t,
 		goerrors.Is(restated, cause) && goerrors.Is(plain, cause),
 		"the cause must stay reachable through Unwrap in both forms",
 	)
-	// A message that merely *mentions* the cause is not a restatement: only a
-	// suffix is, so a message that puts the cause first still gets the colon.
+	// Only a suffix counts as a restatement, so a message that puts the cause first
+	// still gets the colon appended.
 	forward := Wrap(cause, ErrCodeConfigIO, "%v: while saving", cause)
 	assert.Equal(
 		t,
@@ -58,7 +55,7 @@ func TestErrorAppendsTheCauseOnce(t *testing.T) {
 		forward.Error(),
 		"forward Error()",
 	)
-	// An empty cause renders as nothing rather than as a trailing colon.
+	// An empty cause renders as nothing, with no trailing colon.
 	inner := &AppError{Code: ErrCodeHookFailed, Message: "hook exited"}
 
 	outer := Wrap(inner, ErrCodeConfigIO, "run %q", "install")
@@ -95,8 +92,8 @@ func TestWrapPreservesCauseChain(t *testing.T) {
 }
 
 func TestIsMatchesByCodeNotPointer(t *testing.T) {
-	// A freshly built error with the same code must match the sentinel, even
-	// though the pointers differ and the messages differ.
+	// A freshly built error with the same code matches the sentinel even though the
+	// pointer and prose differ.
 	fresh := New(ErrCodeModNotFound, "totally different prose")
 
 	assert.True(t, goerrors.Is(fresh, ErrModNotFound), "errors.Is should match by code")
@@ -240,8 +237,8 @@ func TestSentinelsHaveUniqueCodes(t *testing.T) {
 }
 
 func TestAppErrorJSONShape(t *testing.T) {
-	// The frontend relies on {code, message} and must never receive the cause,
-	// which can carry absolute paths and other local detail.
+	// The frontend relies on {code, message} and must never receive the cause, which
+	// can carry absolute paths.
 	err := Wrap(New(ErrCodeConfigInvalid, "bad"), ErrCodeConfigIO, "outer")
 
 	data, marshalErr := json.Marshal(err)
@@ -255,8 +252,8 @@ func TestAnnotateDoesNotRepeatACode(t *testing.T) {
 
 	err := Annotate(inner, ErrCodeGameNotFound, "action %q could not locate an installation", "x:y")
 
-	// The rendered text is what a user reads. Stating the code twice makes one
-	// failure look like two.
+	// A user reads the rendered text; stating the code twice makes one failure look
+	// like two.
 	assert.Equal(t,
 		`GAME_NOT_FOUND: action "x:y" could not locate an installation: `+
 			`no installation found; set the game path in the settings`,
@@ -264,8 +261,7 @@ func TestAnnotateDoesNotRepeatACode(t *testing.T) {
 
 	assert.Equal(t, 1, strings.Count(err.Error(), string(ErrCodeGameNotFound)), "code repetition")
 
-	// The cause survives so callers can still branch on the original error, and
-	// the inner code is still reachable through the chain.
+	// The cause survives, and the inner code is still reachable through the chain.
 	assert.ErrorIs(t, err, inner, "errors.Is")
 	assert.True(t, IsAppError(err, ErrCodeGameNotFound), "inner code still reachable")
 }
@@ -281,8 +277,7 @@ func TestAnnotateAdoptsTheCodeWhenItDiffers(t *testing.T) {
 
 	assert.True(t, IsAppError(err, ErrCodeActionUnavailable), "outer code")
 
-	// IsAppError walks the whole chain, so a caller asking about the cause's
-	// code still gets an answer.
+	// IsAppError walks the whole chain, so the cause's code also answers.
 	assert.True(t, IsAppError(err, ErrCodeConfigIO), "inner code")
 }
 
@@ -290,8 +285,8 @@ func TestAnnotatePassesNilThrough(t *testing.T) {
 	assert.Nil(t, Annotate(nil, ErrCodeActionFailed, "unused"), "Annotate(nil)")
 }
 
-// Annotate has to cope with an error that carries no code at all: a bare
-// os.PathError from somewhere the typed model has not reached yet.
+// Annotate has to cope with an error carrying no code at all: a bare os.PathError
+// from somewhere the typed model has not reached yet.
 func TestAnnotateWrapsAPlainError(t *testing.T) {
 	inner := goerrors.New("no such file")
 

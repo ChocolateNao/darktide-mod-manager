@@ -193,7 +193,7 @@ func (p ActionPlatform) IsValid() bool {
 }
 
 // Normalize returns the restriction when valid and universal otherwise. An unrecognised
-// restriction is not an error at read time, or actions from a newer manager disappear.
+// restriction is not an error at read time: actions from a newer manager disappear.
 func (p ActionPlatform) Normalize() ActionPlatform {
 	if p.IsValid() {
 		return p
@@ -217,7 +217,7 @@ func (p ActionPlatform) Matches(target Platform) bool {
 // redeclared so pkg/domain need not import pkg/api. A handler gets this rather than a
 // *zerolog.Logger because its output belongs to whoever ran it.
 type ActionLogger interface {
-	Printf(format string, args ...any)
+	Logf(format string, args ...any)
 }
 
 // ActionOpener lets a handler ask the operating system to open a folder or a URL. It is
@@ -278,7 +278,7 @@ func (a ActionContext) Logf(format string, args ...any) {
 		return
 	}
 
-	a.Logger.Printf(format, args...)
+	a.Logger.Logf(format, args...)
 }
 
 // GameAction is a code-defined action specific to one game.

@@ -16,11 +16,9 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// loopbackConfig is a peer configuration that works without touching the network.
-//
-// No STUN and no mDNS, with loopback candidates included: the peers in these tests
-// live in one process on one host, so asking a public STUN server to reflect a
-// loopback address is pointless and a network-dependent test fails in a sandbox.
+// loopbackConfig is a peer configuration that works without touching the network:
+// no STUN, no mDNS, loopback candidates included, because the peers live in one
+// process on one host.
 func loopbackConfig(t *testing.T) p2p.Config {
 	t.Helper()
 
@@ -40,7 +38,6 @@ func loopbackConfig(t *testing.T) p2p.Config {
 	return cfg
 }
 
-// writeArchive stages a file of the given size with recognisable content.
 func writeArchive(t *testing.T, dir, name string, size int) domain.P2PSharedFile {
 	t.Helper()
 
@@ -65,7 +62,6 @@ func writeArchive(t *testing.T, dir, name string, size int) domain.P2PSharedFile
 	}
 }
 
-// connectPeers runs the SDP exchange and returns two open peers.
 func connectPeers(t *testing.T, ctx context.Context) (*p2p.Peer, *p2p.Peer) {
 	t.Helper()
 
@@ -121,7 +117,6 @@ func connectPeers(t *testing.T, ctx context.Context) (*p2p.Peer, *p2p.Peer) {
 	return sender, receiver
 }
 
-// TestTransferRoundTrip is the end-to-end case: two archives cross a data channel byte-for-byte.
 func TestTransferRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -133,7 +128,7 @@ func TestTransferRoundTrip(t *testing.T) {
 
 	small := writeArchive(t, stage, "small.zip", 1024)
 	// Larger than the chunk size so the transfer spans many CHUNK frames and
-	// the flow-control path is exercised rather than short-circuited.
+	// exercises the flow-control path.
 	large := writeArchive(t, stage, "large.zip", 200*1024)
 
 	offer := domain.P2PShareOffer{
@@ -240,7 +235,6 @@ func TestTransferRoundTrip(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsWrongSecret covers a peer without the link secret writing no bytes.
 func TestReceiveRejectsWrongSecret(t *testing.T) {
 	t.Parallel()
 
@@ -284,9 +278,8 @@ func TestReceiveRejectsWrongSecret(t *testing.T) {
 		t.Fatal("Receive accepted a peer holding the wrong secret")
 	}
 
-	// The receiver's own error is a handshake failure; whichever side failed
-	// first is a matter of timing, so both are accepted as long as the
-	// transfer did not succeed.
+	// Whichever side failed first is a matter of timing, so both errors are
+	// accepted as long as the transfer did not succeed.
 	if sendResult == nil {
 		t.Fatal("Send completed against a receiver that rejected the handshake")
 	}
@@ -301,7 +294,6 @@ func TestReceiveRejectsWrongSecret(t *testing.T) {
 	}
 }
 
-// TestReceiveDetectsCorruptedFile covers an archive arriving with wrong bytes being removed.
 func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	t.Parallel()
 
@@ -314,7 +306,7 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	file := writeArchive(t, stage, "mod.zip", 4096)
 
 	// The offer publishes the hash of what was staged, so the corruption is
-	// introduced on disk afterwards — exactly what the receiver's digest must catch.
+	// introduced on disk afterwards.
 	offer := domain.P2PShareOffer{
 		OfferID: "offer-integrity",
 		GameID:  "darktide",
@@ -356,8 +348,8 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 		t.Fatal("Receive accepted an archive whose bytes did not match the offer")
 	}
 
-	// Either the length check or the digest check is a correct rejection; what
-	// must not happen is the file being left behind.
+	// Either the length check or the digest check is a correct rejection; the file
+	// must not be left behind.
 	if !errors.Is(err, p2p.ErrIntegrity) && !errors.Is(err, p2p.ErrSizeMismatch) &&
 		!errors.Is(err, p2p.ErrUnexpectedFrame) {
 		t.Logf("rejected with: %v", err)
@@ -373,7 +365,6 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsForeignManifest covers a peer holding the key but describing another transfer.
 func TestReceiveRejectsForeignManifest(t *testing.T) {
 	t.Parallel()
 
@@ -391,8 +382,8 @@ func TestReceiveRejectsForeignManifest(t *testing.T) {
 		Files:   []domain.P2PSharedFile{file},
 	}
 
-	// The sender believes there is a second, larger file. The receiver's offer
-	// lists one, so the manifests disagree.
+	// The sender believes there is a second, larger file, so the manifests
+	// disagree.
 	other := writeArchive(t, t.TempDir(), "other.zip", 4096)
 
 	senderOffer := offer
@@ -435,7 +426,6 @@ func TestReceiveRejectsForeignManifest(t *testing.T) {
 	}
 }
 
-// TestReceiveRejectsMismatchedOfferID covers a peer authenticating against another offer.
 func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 	t.Parallel()
 
@@ -482,7 +472,6 @@ func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 	}
 }
 
-// TestSendHonoursContextCancellation covers a closed window returning without draining.
 func TestSendHonoursContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -583,7 +572,8 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-// TestDefaultSTUNServers pins Google's public STUN and nothing else; default TURN relays mod data.
+// TestDefaultSTUNServers pins Google's public STUN and nothing else; a default TURN
+// relay would route mod data through a third party.
 func TestDefaultSTUNServers(t *testing.T) {
 	t.Parallel()
 
@@ -594,7 +584,6 @@ func TestDefaultSTUNServers(t *testing.T) {
 	}
 }
 
-// hashFile returns the hex SHA-256 of a file's contents.
 func hashFile(path string) (string, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {

@@ -13,11 +13,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// CommandSpec is one external program invocation.
-//
-// It is a struct rather than a long argument list because the three ways a
-// command can be run — directly, through an interpreter, from a working
-// directory — are variations of one call.
+// CommandSpec is one external program invocation: directly, through an
+// interpreter, or from a working directory.
 type CommandSpec struct {
 	Path  string
 	Dir   string
@@ -32,12 +29,10 @@ type CommandOutput struct {
 	ExitCode int
 }
 
-// Succeeded reports whether the program exited zero.
 func (o CommandOutput) Succeeded() bool { return o.ExitCode == 0 }
 
-// Combined returns stdout and stderr in one string, which is what a result
-// message usually wants: a user should not have to know which stream a tool
-// preferred.
+// Combined returns stdout and stderr in one string, so a user need not know
+// which stream a tool preferred.
 func (o CommandOutput) Combined() string {
 	switch {
 	case strings.TrimSpace(o.Stderr) == "":
@@ -49,9 +44,8 @@ func (o CommandOutput) Combined() string {
 	}
 }
 
-// CommandRunner executes a script action's command line.
-//
-// The interface exists so the runner can be tested without launching anything.
+// CommandRunner executes a script action's command line. Tests substitute it to
+// avoid launching processes.
 type CommandRunner interface {
 	Run(ctx context.Context, spec CommandSpec) (CommandOutput, error)
 }
@@ -66,14 +60,13 @@ type ExecRunner struct {
 	LookPath LookPathFunc
 }
 
-// NewExecRunner returns a runner backed by os/exec.
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }
 
 // Run executes the command and captures both output streams.
 //
-// No shell, so a mod name in an argument can never become a command; and a
-// non-zero exit is reported as an error *and* returned as output, because a
-// tool's diagnostic text is usually the only useful part of its failure.
+// No shell is involved, so a mod name in an argument cannot become a command.
+// A non-zero exit returns both an error and the output, whose diagnostic text
+// is usually the only useful part of a failure.
 func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -124,8 +117,8 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, 
 		return output, nil
 	}
 
-	// A cancelled context means the user pressed stop, which is not a failure of
-	// the command and should not be reported as one.
+	// A cancelled context means the user pressed stop, which is a user choice and
+	// should not be reported as a command failure.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return output, appErrors.Wrap(ctxErr, appErrors.ErrCodeOperationCanceled,
 			"action command %q canceled", spec.Path)
@@ -146,10 +139,8 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, 
 		"action command %q could not be run", spec.Path)
 }
 
-// discardCommandRunner refuses to run anything.
-//
-// It is the default for a runner built without one, so a mis-wired composition
-// root produces a clear "no runner" error rather than a panic.
+// discardCommandRunner refuses to run anything. It backs a runner built without
+// one, so a mis-wired composition root gets a clear "no runner" error.
 type discardCommandRunner struct{}
 
 // ErrNoCommandRunner is returned when a script action is run without a runner.
@@ -160,33 +151,28 @@ func (discardCommandRunner) Run(context.Context, CommandSpec) (CommandOutput, er
 	return CommandOutput{}, ErrNoCommandRunner
 }
 
-// captureLogger collects what a handler logged so the result can carry it.
-//
-// A handler's progress text is otherwise lost: the CLI writes it to the terminal
-// and the frontend has nowhere to put it. The buffer is bounded because the
-// caller controls what runs.
+// captureLogger collects what a handler logged so the result can carry it. The
+// buffer is bounded because the caller controls what runs.
 type captureLogger struct {
 	sb   *strings.Builder
 	Echo domain.ActionLogger
-	// limit is the number of characters retained; lines past it are echoed but
-	// dropped, and the truncation is announced once.
+	// limit is the number of characters retained; later lines are echoed but
+	// dropped.
 	limit int
-	// dropped counts the discarded characters, so the result can say so rather
-	// than presenting a silently shortened log as complete.
-	dropped int
-	// announced records that the truncation notice has already been logged.
+	// dropped counts discarded characters, so a shortened log does not read as
+	// complete.
+	dropped   int
 	announced bool
 }
 
-// captureLogLimit bounds a captured handler log.
 const captureLogLimit = 64 << 10
 
 func newCaptureLogger(echo domain.ActionLogger) *captureLogger {
 	return &captureLogger{sb: &strings.Builder{}, Echo: echo, limit: captureLogLimit}
 }
 
-// Printf implements domain.ActionLogger.
-func (l *captureLogger) Printf(format string, args ...any) {
+// Logf implements domain.ActionLogger.
+func (l *captureLogger) Logf(format string, args ...any) {
 	if l == nil {
 		return
 	}
@@ -194,7 +180,7 @@ func (l *captureLogger) Printf(format string, args ...any) {
 	line := strings.TrimSuffix(fmt.Sprintf(format, args...), "\n")
 
 	if l.Echo != nil {
-		l.Echo.Printf("%s", line)
+		l.Echo.Logf("%s", line)
 	}
 
 	if l.sb.Len()+len(line)+1 > l.limit {
@@ -214,7 +200,6 @@ func (l *captureLogger) Printf(format string, args ...any) {
 	l.sb.WriteString("\n")
 }
 
-// Text returns everything logged so far.
 func (l *captureLogger) Text() string {
 	if l == nil {
 		return ""

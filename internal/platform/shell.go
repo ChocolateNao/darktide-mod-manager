@@ -196,7 +196,7 @@ func ReadShebang(scriptPath string) (string, error) {
 
 // ParseShebang turns an interpreter line into a Shell invocation. Both
 // "/bin/bash -e" and "/usr/bin/env bash" forms are understood, as is env's "-S"
-// split form. A malformed line is an error rather than a silent fallback,
+// split form. A malformed line is an error: not a silent fallback,
 // because running a script with the wrong interpreter produces baffling failures.
 func ParseShebang(line string) (Shell, error) {
 	trimmed := strings.TrimSpace(line)
@@ -283,7 +283,7 @@ var envFlagsWithValue = map[string]bool{
 	"-a": true, "--argv0": true,
 }
 
-// isFlag reports whether a shebang word is an option rather than a program name.
+// isFlag reports whether a shebang word is an option: not a program name.
 // A bare "-" is stdin, which is not a flag.
 func isFlag(word string) bool {
 	return len(word) > 1 && strings.HasPrefix(word, "-")

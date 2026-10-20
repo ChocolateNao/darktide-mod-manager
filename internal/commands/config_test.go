@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGetConfigHandsOutACopy: the frontend renders the value it is given and
-// sends back the object it edited, so handing out the live configuration would
-// let a half-filled form change what the manager is using.
 func TestGetConfigHandsOutACopy(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
@@ -56,11 +53,9 @@ func TestGetConfigHandsOutACopy(t *testing.T) {
 	)
 }
 
-// TestSetConfigValueRoundTrips.
 func TestSetConfigValueRoundTrips(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
-	// The key is trimmed, because it is usually pasted next to a value.
 	{
 		err := app.Config.SetConfigValue("  cache.max_size_gb  ", "7")
 		require.NoError(t, err, "SetConfigValue: %v", err)
@@ -71,7 +66,6 @@ func TestSetConfigValueRoundTrips(t *testing.T) {
 
 	assert.Equal(t, "7", value, "read back %q, want \"7\"", value)
 
-	// And it reached the file, because that is what the next launch reads.
 	cfg, err := app.Config.GetConfig()
 	require.NoError(t, err, "GetConfig")
 
@@ -84,9 +78,6 @@ func TestSetConfigValueRoundTrips(t *testing.T) {
 	)
 }
 
-// TestSetConfigValueRefusesABadValue. A boolean that stored "maybe" would be read
-// back as false at the next start-up, so the write has to be refused while the
-// user is looking at the field.
 func TestSetConfigValueRefusesABadValue(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -120,7 +111,6 @@ func TestSetConfigValueRefusesABadValue(t *testing.T) {
 	)
 }
 
-// TestGetConfigValueRefusesAnUnknownOrBlankKey.
 func TestGetConfigValueRefusesAnUnknownOrBlankKey(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 	{
@@ -144,9 +134,6 @@ func TestGetConfigValueRefusesAnUnknownOrBlankKey(t *testing.T) {
 	}
 }
 
-// TestSourceSettingsAreReachableThroughDottedKeys, and the one that is not
-// readable. A credential a settings screen can read back is a credential a bug
-// report can carry away, so writing one works and reading it does not.
 func TestSourceSettingsAreReachableThroughDottedKeys(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -194,7 +181,6 @@ func TestSourceSettingsAreReachableThroughDottedKeys(t *testing.T) {
 	assert.Equal(t, "5", option, "source option = %q, want \"5\"", option)
 }
 
-// TestConfigKeysListsEverySettingAndTheSourcePatterns.
 func TestConfigKeysListsEverySettingAndTheSourcePatterns(t *testing.T) {
 	app := newWorkspace(t).mustApp(t)
 
@@ -204,8 +190,8 @@ func TestConfigKeysListsEverySettingAndTheSourcePatterns(t *testing.T) {
 	require.NotNil(t, keys, "ConfigKeys returned nil")
 
 	joined := strings.Join(keys, " ")
-	// The patterns are listed by name rather than enumerated per source: the set of
-	// sources is the configuration's business.
+	// Patterns are listed by name; the set of sources is the configuration's
+	// business.
 	for _, want := range []string{
 		"cache.max_size_gb", "game.path",
 		"sources.<id>.enabled", "sources.<id>.api_key", "sources.<id>.paths",
@@ -214,7 +200,6 @@ func TestConfigKeysListsEverySettingAndTheSourcePatterns(t *testing.T) {
 	}
 }
 
-// TestConfigPathMatchesTheFile.
 func TestConfigPathMatchesTheFile(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -225,9 +210,6 @@ func TestConfigPathMatchesTheFile(t *testing.T) {
 	assert.Equal(t, w.configPath, path, "ConfigPath = %q, want %q", path, w.configPath)
 }
 
-// TestUpdateConfigAppliesDefaultsAndSaves. A frontend that sends an empty object
-// — because it built a fresh form — must not wipe the user's settings with zeroes
-// that then read as "unset".
 func TestUpdateConfigAppliesDefaultsAndSaves(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -263,7 +245,6 @@ func TestUpdateConfigAppliesDefaultsAndSaves(t *testing.T) {
 		assert.Error(t, err, "UpdateConfig accepted a nil configuration")
 	}
 
-	// And the file the next launch reads has the same values.
 	reloaded, err := newConfigStore(t, w.configPath).Load()
 	require.NoError(t, err, "reload the configuration")
 

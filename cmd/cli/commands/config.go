@@ -50,8 +50,8 @@ func newConfigShowCommand(s *session) *cobra.Command {
 			}
 
 			fmt.Fprintf(s.env.Out, "# %s\n", path)
-			// Marshalling the decoded configuration is not printing the file, and
-			// that is deliberate: this shows what the manager believes, defaults and all.
+			// The decoded configuration is printed deliberately: this shows what the
+			// manager believes, defaults and all.
 			return writeJSON(s.env.Out, cfg)
 		},
 	}

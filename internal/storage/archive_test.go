@@ -973,8 +973,8 @@ func TestExtractFailsOnTruncatedTar(t *testing.T) {
 
 	err = os.WriteFile(archive, full[:len(full)/2], 0o600)
 	require.NoError(t, err)
-	// A half-written mod looks complete to the game, so this must be an error
-	// rather than a short inventory.
+
+	// A half-written mod looks complete to the game, so this must be an error.
 	_, err = NewArchiveExtractor().Extract(context.Background(), archive, filepath.Join(dir, "out"))
 	require.Error(t, err, "expected a truncated archive to fail")
 }

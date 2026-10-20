@@ -1,9 +1,7 @@
 // Package host is the restricted capability surface a hook script runs against.
-//
-// Every language binding exposes the same operations and every one resolves
-// through this Host type: a single construction site (New), the permission check
-// before a provider is touched, and injected providers, so a script can never
-// reach the network, a subprocess or the process environment.
+// Every language binding resolves through this Host: one construction site (New),
+// a permission check before a provider is touched, and injected providers, so a
+// script cannot reach the network, a subprocess or the process environment.
 package host
 
 import (
@@ -20,30 +18,26 @@ import (
 const (
 	logLineTruncation = "…"
 
-	// maxReadBytes is the largest file a script may read in one call.
 	maxReadBytes = 4 << 20
 
-	// permissionsKeyPrefix is the config namespace scripts may never write,
-	// whatever their config_write grant: the permission model is not editable.
+	// permissionsKeyPrefix is the config namespace scripts may never write, whatever
+	// their config_write grant: the permission model is not editable.
 	permissionsKeyPrefix = "hooks.permissions"
 )
 
 const (
-	// MaxLogLines and MaxLogLineLength bound the per-run log buffer so a chatty
-	// script cannot grow memory without limit; both bindings expose them so a
-	// script can ask how much of its output survives.
+	// MaxLogLines and MaxLogLineLength bound the per-run log buffer so a chatty script
+	// cannot grow memory without limit; both bindings expose them.
 	MaxLogLines      = 200
 	MaxLogLineLength = 4096
 )
 
-// DirEntry describes one directory entry returned by List.
 type DirEntry struct {
 	Name  string `json:"name"`
 	IsDir bool   `json:"is_dir"`
 	Size  int64  `json:"size"`
 }
 
-// FileInfo describes one file returned by Stat.
 type FileInfo struct {
 	Name    string `json:"name"`
 	Size    int64  `json:"size"`
@@ -51,7 +45,6 @@ type FileInfo struct {
 	ModTime int64  `json:"mod_time"`
 }
 
-// StorageEntry describes one stored mod version returned by StorageList.
 type StorageEntry struct {
 	GameID  string `json:"game_id"`
 	ModID   string `json:"mod_id"`
@@ -59,8 +52,7 @@ type StorageEntry struct {
 	Path    string `json:"path"`
 }
 
-// FileSystem is the file access a script gets. The default implementation
-// talks to the operating system; tests inject their own.
+// FileSystem is the file access a script gets; tests inject their own.
 type FileSystem interface {
 	ReadFile(path string) ([]byte, error)
 	ReadDir(path string) ([]DirEntry, error)
@@ -69,14 +61,12 @@ type FileSystem interface {
 	MkdirAll(path string) error
 }
 
-// ConfigAccess is the manager configuration a script may read or write.
 type ConfigAccess interface {
 	Get(key string) (string, error)
 	Set(key, value string) error
 	Values() (map[string]string, error)
 }
 
-// StorageAccess is the mod storage a script may inspect.
 type StorageAccess interface {
 	List(ctx context.Context) ([]StorageEntry, error)
 	Path(ctx context.Context, gameID, modID, version string) (string, error)
@@ -85,8 +75,8 @@ type StorageAccess interface {
 // LogFunc receives one log line; level is info, warn, error or debug.
 type LogFunc func(level, msg string)
 
-// Providers are the injected dependencies of a Host. Nothing else reaches the
-// script: whatever is nil is simply unavailable and reports as an error.
+// Providers are the injected dependencies of a Host; anything nil is unavailable
+// and reports as an error.
 type Providers struct {
 	FileSystem FileSystem
 	Config     ConfigAccess
@@ -95,7 +85,6 @@ type Providers struct {
 	TempDir    string
 }
 
-// Options configure one Host for one script run.
 type Options struct {
 	Providers   Providers
 	Ctx         context.Context

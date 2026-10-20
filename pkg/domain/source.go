@@ -7,82 +7,55 @@ import (
 	"sync"
 )
 
-// ModSource is the plugin contract every mod provider implements.
-//
-// A generic factory (RegisterSourceFactory) is visible to every game; a
-// game-scoped one (RegisterGameSourceFactory) is preferred while its game is
-// active. Scope is a property of the factory, not of the source.
+// ModSource is the plugin contract every mod provider implements. A generic
+// factory (RegisterSourceFactory) is visible to every game; a game-scoped one
+// (RegisterGameSourceFactory) only while its game is active. Scope belongs to the
+// factory.
 type ModSource interface {
-	// ID returns the stable identifier used in config and in the CLI ("vortex").
 	ID() string
-	// Name returns the display name ("Vortex Mods").
 	Name() string
-	// Description returns a one line summary for the source picker.
 	Description() string
-	// Version returns the plugin implementation version.
 	Version() string
 
-	// SupportsSearch reports whether Search returns meaningful results.
 	SupportsSearch() bool
-	// SupportsAuth reports whether Authenticate does anything useful.
 	SupportsAuth() bool
-	// RequiresAPIKey reports whether the source cannot be used without credentials.
 	RequiresAPIKey() bool
 
-	// Search lists mods matching query.
 	Search(ctx context.Context, query SearchQuery) ([]Mod, error)
-	// GetMod fetches metadata for a single mod.
 	GetMod(ctx context.Context, modID string) (*Mod, error)
 	// Download writes the mod's payload below destPath and returns the path of
 	// the downloaded file.
 	Download(ctx context.Context, mod *Mod, destPath string) (string, error)
-	// Authenticate installs credentials. It is a no-op for sources that do not
-	// support authentication.
 	Authenticate(ctx context.Context, credentials AuthCredentials) error
-	// ValidateCredentials reports whether the currently held credentials work.
 	ValidateCredentials(ctx context.Context) error
 }
 
-// GameScopedSource lets a caller ask which game a source belongs to without
-// naming the concrete plugin.
-//
-// It is optional, like CredentialForgetter: the registration scope of the factory
-// already decides which games can see the source.
+// GameScopedSource lets a caller ask which game a source belongs to. It is
+// optional: the factory's registration scope already decides visibility.
 type GameScopedSource interface {
-	// GameID returns the registry id of the game this source serves.
 	GameID() string
 }
 
-// CredentialForgetter is implemented by sources that can drop the credential they hold.
+// CredentialForgetter is implemented by sources that can drop the credential they
+// hold. It is optional: a folder of mods on disk has nothing to forget.
 //
-// It is optional and deliberately not part of ModSource: a folder of mods on disk
-// has nothing to forget.
-//
-// Deleting a key is two-part. Clearing the settings file stops it coming back on
-// the next launch, but the source built during this process would keep sending it
-// until restart. A source that cannot forget is told so rather than left holding a
-// key the user deleted.
+// Deleting a key is two-part: clearing the settings file stops it coming back on
+// the next launch, but the source built in this process would keep sending it.
 type CredentialForgetter interface {
-	// ForgetCredentials drops the held credential. It must not contact the
-	// network: the user asked for the key to be gone, and a call that can fail
-	// because a launcher is down cannot promise that.
+	// ForgetCredentials drops the held credential without touching the network: a
+	// call that can fail because a launcher is down cannot promise the key is gone.
 	ForgetCredentials()
 }
 
-// PathInspector is implemented by sources that read mods off the filesystem
-// instead of out of an index.
+// PathInspector is implemented by sources that read mods off the filesystem. It is
+// optional for the same reason CredentialForgetter is, and the manager needs it
+// because a drag gesture hands over a path.
 //
-// It is optional for the same reason CredentialForgetter is: a hosted provider has
-// no folders, so InspectPath could only ever say "not here". The manager needs it
-// because a drag gesture hands over a path, and nothing else in ModSource turns a
-// path into a mod.
-//
-// The boolean is "this source recognises the path", not "the read succeeded":
-// false means ask the next source, true means the Mod is the answer, and false
-// must not come with an error.
+// The boolean means "this source recognises the path": false asks the next source
+// and must come with no error; true means the Mod is the answer.
 type PathInspector interface {
-	// InspectPath describes the mod at path, or reports that it does not
-	// recognise it.
+	// InspectPath describes the mod at path, or reports that it does not recognise
+	// it.
 	InspectPath(ctx context.Context, path string) (mod *Mod, recognised bool, err error)
 }
 
@@ -105,8 +78,8 @@ const (
 	SortName      = "name"
 )
 
-// Normalized returns a copy of the query with a 1-based page and a positive page
-// size, so that providers never have to defend against zero or negative values.
+// Normalized returns a copy of the query with a 1-based page, a positive page size
+// and a default sort, so providers never defend against zero.
 func (q SearchQuery) Normalized() SearchQuery {
 	out := q
 	if out.Page < 1 {
@@ -148,7 +121,6 @@ func (c AuthCredentials) Get(key string) (string, bool) {
 	return v, true
 }
 
-// Has reports whether key is present with a non-empty value.
 func (c AuthCredentials) Has(key string) bool {
 	_, ok := c.Get(key)
 	return ok
@@ -195,7 +167,6 @@ func SearchAll(ctx context.Context, sources []ModSource, query SearchQuery) ([]M
 
 	for _, res := range results {
 		if res.mods == nil && res.err == nil {
-			// Provider was skipped.
 			continue
 		}
 

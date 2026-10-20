@@ -23,13 +23,9 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Bundle is a wired graph of services without a Client wrapped around it.
-//
-// internal/di returns one so the GUI and the CLI can hold the individual
-// services — the Wails bindings and the cobra commands both need a narrower view
-// than a client provides. The alternative, building the graph twice, is how two
-// halves of the same program end up disagreeing about where the configuration
-// lives.
+// Bundle is a wired graph of services without a Client wrapped around it; internal/di
+// returns one so the Wails and cobra fronts can hold the individual services. Building
+// the graph twice is how two halves of the same program disagree about where config lives.
 type Bundle struct {
 	// Deps is what a Client needs.
 	Deps ClientDeps
@@ -43,14 +39,12 @@ type Bundle struct {
 	CacheRoot string
 	// StorageRoot is where mod payloads live.
 	StorageRoot string
-	// Logging is the log fan-out for this process. It is exposed so a host (the
-	// CLI, the Wails bindings) can tail the file, read the level and change it
-	// without building a second log service. It is never nil after a successful
-	// wire: a caller that cannot have a logger at all has bigger problems.
+	// Logging is the log fan-out for this process, exposed so a host (the CLI, the
+	// Wails bindings) can tail the file, read the level and change it without building
+	// a second log service. Never nil after a successful wire.
 	Logging *logging.Service
-	// Cleanups release everything that was opened, in acquisition order. A
-	// Bundle does not own them; the caller decides when to run them, which is
-	// why Close-on-the-Client is not the only option.
+	// Cleanups release everything that was opened, in acquisition order. A Bundle does not
+	// own them: the caller decides when to run them, so Client.Close is not the only option.
 	Cleanups []func() error
 }
 
@@ -84,23 +78,14 @@ func (b *Bundle) Close() error {
 	}
 }
 
-// NewClient wires the whole manager and wraps it in a client.
+// NewClient wires the whole manager and wraps it in a client. The order is load-bearing:
+// platform directories give every path a default, the configuration loads and options are
+// applied on top (a validated game path fails construction rather than the first install),
+// then database, cache and deployer open, and the enabled sources register.
 //
-// The order of the work matters and is worth stating, because each step depends
-// on the one before it:
-//
-//  1. resolve the platform directories, so every path has a default;
-//  2. load the configuration, which is where the user's own path overrides live;
-//  3. apply the options on top, and validate a supplied game path before storing
-//     it — a bad path should fail construction, not the first install;
-//  4. open the database, the cache and the deployer;
-//  5. register the sources that are enabled, logging rather than failing for one
-//     that is misconfigured.
-//
-// Step 5 is the only one that can fail partially, and it deliberately does not:
-// the bundled sources are announced by their packages' init functions, so a
-// source whose credentials are half-filled should still be listed, marked
-// unauthenticated, rather than absent.
+// Only source registration can fail partially, and it deliberately does not: bundled
+// sources announce themselves via their packages' init functions, so a source with
+// half-filled credentials is listed unauthenticated rather than absent.
 func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	set, err := applyOptions(opts)
 	if err != nil {
@@ -148,9 +133,8 @@ func NewBundle(ctx context.Context, opts ...Option) (*Bundle, error) {
 // wire builds the graph from already-applied settings.
 func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if ctx == nil {
-		// A nil context is a caller's mistake, but it is the kind of mistake made
-		// once at start-up; treating it as Background keeps it from being a
-		// panic in the middle of the wiring.
+		// A nil context is a start-up-time caller mistake; treating it as Background
+		// keeps it diagnosable rather than a panic mid-wiring.
 		ctx = context.Background()
 	}
 
@@ -167,17 +151,14 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		configPath = dirs.ConfigFilePath()
 	}
 
-	// The registry must know the bundled games before the configuration is
-	// resolved: active_game names a registry id, and an empty one means "the
-	// default", which only the registry can answer.
+	// The registry must know the bundled games first: active_game names a registry id,
+	// and an empty value means "the default", which only the registry can answer.
 	if err := games.EnsureBuiltins(); err != nil {
 		return nil, err
 	}
 
-	// Wrapping the store rather than fixing up the loaded copy: every later
-	// reader (the game locator, the settings API, the source registry) goes
-	// through the same store, so a configuration that only the wiring path
-	// healed would still be broken for all of them.
+	// Wrap the store rather than fix up the loaded copy: every later reader goes through
+	// the same store, so a configuration only the wiring path healed would still be broken.
 	store := services.NewGameStore(storage.NewConfigStore(configPath))
 
 	cfg, err := store.Load()
@@ -189,9 +170,8 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	migrateLevel(cfg)
 	cfg.ApplyDefaults()
 
-	// An explicit WithGame wins over whatever the file says, but only for a
-	// game the registry knows: a typo on the command line should be reported,
-	// not silently healed back to the default the user was trying to leave.
+	// An explicit WithGame wins over the file, but only for a registered id: a command-line
+	// typo should be reported, not silently healed back to the default being left behind.
 	if id := strings.TrimSpace(set.gameID); id != "" {
 		def, ok := games.Get(id)
 		if !ok {
@@ -219,19 +199,13 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if set.storagePath != "" {
 		cfg.Storage.Path = set.storagePath
 	}
-	// The per-source option blocks win over the file, but a block supplied here
-	// must not erase one that only exists in the file — a caller setting one
-	// source's token should not silently unconfigure the others.
+	// Per-source blocks win over the file, but must not erase a file-only block: setting
+	// one source's token should not silently unconfigure the others.
 	for id, block := range set.sourceConfigs {
 		existing, found := cfg.SourceConfigFor(id)
 		if !found {
-			// A source the file never mentions counts as enabled, which is the
-			// rule the registry, RegisterAll and EnabledSources all follow. It has
-			// to be restated here: the zero value of a SourceConfig is
-			// Enabled=false, so merging onto it as though it were a real block
-			// would mean that configuring a source's paths switched the source
-			// off. The symptom is invisible until someone asks for a folder of
-			// mods, at which point the source reports that it has nowhere to look.
+			// Enabled is the rule RegisterAll and EnabledSources follow; restated because a
+			// zero SourceConfig has Enabled=false, so merging onto it would switch the source off.
 			existing = domain.SourceConfig{Enabled: true}
 		}
 
@@ -247,19 +221,17 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if storageRoot == "" {
 		storageRoot = dirs.StorageRoot()
 	}
-	// The database sits next to the storage root rather than inside it. Mod
-	// payloads live in <storage>/<game>/<id>/<version>, so a database in there
-	// would sit among the mod folders — and a user who pointed the local source
-	// at their storage tree would find it offering a database file as a mod.
+	// Next to the storage root, not inside it: payloads live in
+	// <storage>/<game>/<id>/<version>, so a database in there would be offered as a
+	// mod to anyone pointing the local source at storage.
 	databasePath := filepath.Join(filepath.Dir(storageRoot), "mods.db")
 
 	events := NewEventBus()
 	now := time.Now
 
-	// Logging is built before anything that can produce a diagnostic, and closed
-	// last, so a line written while the rest of the graph shuts down still
-	// reaches the file. Its own failure is not fatal: an unusable log directory
-	// degrades to console only inside logging.New.
+	// Built before anything that can emit a diagnostic and closed last, so shutdown-time
+	// lines still reach the file. Its own failure is not fatal: an unusable log directory
+	// degrades to console-only inside logging.New.
 	logService, logCleanup := buildLogging(set, cfg, events)
 	cleanups := []func() error{logCleanup}
 
@@ -279,10 +251,8 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 
 	shareStore := storage.NewShareStore(db)
 
-	// The cloud providers sit behind the registry the same way the mod sources
-	// do. Providers register their own factories, so the S3 adapter (and every
-	// one after it) is built from the configuration here and reaches the
-	// orchestrator only through the CloudProvider interface.
+	// Providers register their own factories, so the S3 adapter (and every one after) is built
+	// here from configuration and reaches the orchestrator only through CloudProvider.
 	cloudRegistry := services.NewCloudRegistry()
 	if err := cloud.RegisterConfigured(
 		cloudRegistry,
@@ -294,21 +264,14 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		logService.Logger().Warn().Err(err).Msg("cloud providers not configured")
 	}
 
-	// The registry is built before the cache because the cache's downloader is
-	// the registry: a mod's bytes come from whichever source owns it, and every
-	// bundled source both lists and downloads its own mods. Nothing the cache
-	// needs depends on the sources — only the other way round.
-	//
-	// WithConfig hands it cfg, the merged configuration, rather than letting it
-	// reload the file. Source overrides are deliberately not written back — a
-	// token supplied on a command line should not end up in a file — so without
-	// this the registry would report a source the caller switched off as enabled,
-	// having correctly declined to build it.
-	// The store resolved ActiveGame to a registered id while loading, so this
-	// can only fail if the registry lost its builtins in between — refuse rather
-	// than build every source against the wrong game.
+	// The registry is built before the cache because the cache's downloader is the registry:
+	// a mod's bytes come from whichever source owns it. WithConfig hands it the merged cfg
+	// rather than letting it reload the file — source overrides are never written back, so
+	// reloading would report a deliberately declined source as enabled.
 	gameDef, ok := games.Get(cfg.ActiveGame)
 	if !ok {
+		// The store resolved ActiveGame to a registered id while loading, so failure here
+		// means the registry lost its builtins: refuse rather than build for the wrong game.
 		_ = joinAll(cleanups)
 
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -319,10 +282,8 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		WithConfig(func() *domain.Config { return cfg }).
 		WithLogger(logService.Logger())
 	if err := sources.RegisterAll(registry, cfg.Sources, gameDef); err != nil {
-		// Logged, not returned. The alternative — refusing to start because one
-		// optional source is misconfigured — makes the manager unusable for a
-		// problem the user can see and fix in the settings screen. The error text
-		// names every broken source, so the message is actionable.
+		// Logged, not returned: refusing to start over one misconfigured optional source makes
+		// the manager unusable for a fix the user can make in settings. The message names each.
 		logService.Logger().Warn().
 			Err(err).
 			Msg("some sources could not be configured")
@@ -355,11 +316,9 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 
 	hookExecutor := services.NewHookExecutor(services.HookExecutorDeps{
 		Config: cfg.Hooks,
-		// Read from the file on every policy question: the active game can
-		// change while the process runs (UseGame), and the permission
-		// scopes are keyed by that id — a snapshot taken here would answer
-		// for the game that was active at start-up. The in-memory cfg is
-		// the fallback for a transient read failure.
+		// Re-read the file on every policy question: the active game can change while the
+		// process runs (UseGame) and permission scopes are keyed by that id, so a snapshot
+		// would answer for the start-up game. cfg is the fallback for a transient read failure.
 		ConfigProvider: func() domain.HooksConfig {
 			if fresh, err := store.Load(); err == nil && fresh != nil {
 				return fresh.Hooks
@@ -369,10 +328,8 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		},
 		Platform: platformName,
 		GamePath: func() string { return configuredGamePath(store) },
-		// Read from the live configuration object on every run: WithGame
-		// mutates it before any hook can run, and UseGame mutates it at
-		// switch time, so the permission cap for the active game applies
-		// without a restart.
+		// Read from the live configuration on every run: WithGame/UseGame mutate it before
+		// any hook runs, so the permission cap for the active game applies without a restart.
 		GameID:  func() string { return cfg.ActiveGame },
 		Context: hookContextFunc(store, cacheRoot, storageRoot),
 		Events:  events,
@@ -418,9 +375,8 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
-	// Actions are registered from the games themselves: a game package is the
-	// only thing that knows what is special about its game, so a new game
-	// becomes supported here without editing this file.
+	// Actions are registered from the games themselves: a game package is the only thing
+	// that knows what is special about its game, so a new game needs no edit to this file.
 	actionRegistry := actions.NewRegistry()
 
 	for _, game := range games.All() {
@@ -432,17 +388,14 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		}
 	}
 
-	// One launcher serves both the action runner and the client's source-link
-	// methods: "open this address in the user's browser" is the same act however
-	// it was asked for, and two instances would mean two places to change the
-	// allowlist or the platform's opener command.
+	// One launcher serves both the action runner and the source-link methods: "open this
+	// address in a browser" is the same act whoever asks, and two instances mean two allowlists.
 	urlLauncher := &platform.URLLauncher{Platform: platformName}
 
 	actionRunner, err := actions.NewRunner(actions.RunnerDeps{
 		Registry: actionRegistry,
-		// internal/games satisfies DefinitionLookup as it stands, so the runner
-		// can describe an action belonging to a game the user has not made
-		// active without the runner knowing how games are registered.
+		// games.Lookup already satisfies DefinitionLookup, so the runner can describe an
+		// inactive game's action without knowing how games are registered.
 		Definitions: games.Lookup{},
 		Games:       locator,
 		Opener:      urlLauncher,
@@ -476,14 +429,13 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		GameLocator:  locator,
 		ModInstaller: modService,
 		Logger:       *logService.Logger(),
+		Events:       events,
 		Config:       p2pConfig(cfg),
 		Clock:        now,
 	})
 
-	// Closing the service closes every peer connection and deletes every staged
-	// archive, so it has to run before the mod service and the database go away.
-	// Prepending rather than appending keeps that ordering true however the rest
-	// of the wiring grows.
+	// Closing the service closes every peer connection and deletes staged archives, so it
+	// must run before the mod service and database go away; prepending keeps that true.
 	cleanups = append([]func() error{func() error {
 		p2pShareService.Close()
 
@@ -519,11 +471,9 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	}, nil
 }
 
-// p2pConfig builds the transport configuration for peer-to-peer sharing.
-//
-// The STUN servers the user configured are the default, and Google's public
-// server is the last resort. A relay is never added automatically: a TURN server
-// forwards the payload, which is the one thing this feature exists to avoid.
+// p2pConfig builds the transport configuration for peer-to-peer sharing. The STUN servers
+// the user configured come first and Google's public server is the last resort. A relay is
+// never added automatically: a TURN server forwards the payload, what this feature avoids.
 func p2pConfig(cfg *domain.Config) *services.P2PShareConfig {
 	servers := []string(nil)
 
@@ -554,24 +504,18 @@ func p2pConfig(cfg *domain.Config) *services.P2PShareConfig {
 		Peer: p2p.Config{
 			STUNServers: servers,
 			ChunkSize:   chunkSize,
-			// pion narrates its own internals at a volume that would bury a
-			// CLI's output — "RTP stream is already closed" is what a
-			// successful teardown looks like from inside the library. The
-			// adapter writes into the one logger this process has, so that
-			// volume lands in the log file and costs nothing until somebody
-			// asks for it by lowering the level.
+			// pion narrates its internals loudly enough to bury CLI output — "RTP stream is already
+			// closed" is normal teardown — so the adapter writes into the one process logger; the
+			// noise costs nothing until somebody lowers the level.
 			PionLogger: logging.PionLogger(),
 		},
 		DefaultExpiry: expiry,
 	}
 }
 
-// buildLogging returns the log service for this process and its cleanup.
-//
-// A service supplied through WithLogging is adopted as-is — the caller built it
-// deliberately, usually before the config was even readable — except that the
-// event sink is attached so the GUI's log view works. Otherwise the service is
-// built from the persisted logging block plus the per-invocation overrides.
+// buildLogging returns the log service for this process and its cleanup. A WithLogging
+// service is adopted as-is — the caller built it deliberately, usually before the config
+// was readable — except that the event sink is attached so the GUI's log view works.
 func buildLogging(
 	set *settings,
 	cfg *domain.Config,
@@ -587,11 +531,8 @@ func buildLogging(
 	return service, service.Close
 }
 
-// persistGamePath validates a caller-supplied game path and stores it.
-//
-// The validation happens here rather than lazily so a bad path is a construction
-// failure. A caller that discovers it has the wrong path thirty seconds later,
-// after a download has started, has learned nothing useful.
+// persistGamePath validates a caller-supplied game path and stores it. Validation is up
+// front so a bad path is a construction failure rather than a discovery made mid-download.
 func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string) error {
 	gameID := strings.TrimSpace(cfg.ActiveGame)
 	if gameID == "" {
@@ -634,10 +575,9 @@ func homeDir() string {
 	return home
 }
 
-// configuredGamePath reads the stored game path, returning "" when it cannot be
-// read. It is the hook executor's GamePath source and runs on every hook, so a
-// configuration that has become unreadable degrades to "no game folder" instead of
-// failing the hook with a configuration error the mod author cannot act on.
+// configuredGamePath reads the stored game path, returning "" when it cannot be read.
+// It runs on every hook, so an unreadable configuration degrades to "no game folder"
+// rather than failing the hook with an error the mod author cannot act on.
 func configuredGamePath(store services.ConfigStore) string {
 	if store == nil {
 		return ""
@@ -651,13 +591,10 @@ func configuredGamePath(store services.ConfigStore) string {
 	return strings.TrimSpace(cfg.ActiveSettings().Path)
 }
 
-// hookContextFunc builds the per-script hook context.
-//
-// It reads the configuration on every call instead of closing over a snapshot:
-// the game path is discovered and can change while the manager runs, and a hook
-// context pointing at a stale install is how a script ends up writing into a
-// folder the user deleted an hour ago. The struct is built fresh per call for
-// the same reason — hooks can run concurrently.
+// hookContextFunc builds the per-script hook context, reading the configuration on every
+// call instead of closing over a snapshot: the game path is discovered and can change while
+// the manager runs, and a context pointing at a stale install is how a script writes into
+// a folder the user deleted an hour ago. The struct is fresh per call — hooks run concurrently.
 func hookContextFunc(
 	store services.ConfigStore,
 	cacheRoot, storageRoot string,
@@ -681,13 +618,9 @@ func hookContextFunc(
 	}
 }
 
-// registryProvider adapts the source registry to the context-aware shape the mod
-// service depends on.
-//
-// The registry's Get takes no context because building a source is local work —
-// it reads configuration and constructs an object — so there is nothing for a
-// context to interrupt. The mod service still wants the deadline honoured before
-// it goes looking, so the cancellation check is made here rather than dropped.
+// registryProvider adapts the source registry to the context-aware shape the mod service
+// depends on. The registry's Get takes no context because building a source is local work;
+// the cancellation check lives here so the deadline is honoured before any lookup.
 type registryProvider struct {
 	registry *services.SourceRegistry
 }
@@ -701,9 +634,8 @@ func (p registryProvider) Get(ctx context.Context, id string) (domain.ModSource,
 	return p.registry.Get(id)
 }
 
-// joinAll runs cleanups and discards their failures. It is for the error paths of
-// the wiring itself, where the caller is about to be handed a more interesting
-// failure and has nowhere to report a second one.
+// joinAll runs cleanups and discards their failures: it is for the wiring's own error
+// paths, where the caller is about to be handed a more interesting failure to report.
 func joinAll(cleanups []func() error) error {
 	var failures []error
 

@@ -54,7 +54,7 @@ func ResolveActiveGame(cfg *domain.Config) bool {
 }
 
 // gameStore wraps a ConfigStore so that every configuration the program reads
-// or writes already names a registered game. Healing here rather than in each
+// or writes already names a registered game. Healing here: not in each
 // caller is what makes the fix hold, because the game locator, the settings API
 // and the source registry all read through the same store.
 type gameStore struct {

@@ -24,7 +24,7 @@ type clientOperation struct {
 }
 
 // everyOperation lists each operation that has to notice a closed client. Written out
-// rather than discovered by reflection so that adding a method without adding it here
+// rather than discovered by reflection: not adding a method without adding it here
 // is visible in a diff; a method missing the guard would nil-panic in production.
 func everyOperation() []clientOperation {
 	ctx := context.Background()
@@ -396,7 +396,7 @@ func TestClientServicesRoundTrip(t *testing.T) {
 		"Services returned a different registry than the client was given",
 	)
 	// The accessor hands back the live pointers, so it reaches a service this
-	// package does not wrap rather than giving a second view of the graph.
+	// package does not wrap: not giving a second view of the graph.
 	assert.Equal(
 		t,
 		deps.Sources,
@@ -572,7 +572,7 @@ func TestAuthenticateSourceHandsOverEveryCredential(t *testing.T) {
 
 	cfg := domain.DefaultConfig()
 	// Without a store a sign-in has nowhere to land, and AuthenticateSource says so
-	// rather than reporting a login a restart throws away.
+	// rather than reporting a login: not a restart throws away.
 	client, err := NewClientFromServices(ClientDeps{
 		Sources: registry,
 		Config:  &configStoreStub{cfg: &cfg},
@@ -807,7 +807,7 @@ func TestSearchFansOutToEverySearchableSource(t *testing.T) {
 	defer client.Close()
 
 	// The registry skips a source that cannot search, and the caller sees an empty
-	// result rather than an error because the other sources answered fine.
+	// result: not an error because the other sources answered fine.
 	mods, err := client.Search(context.Background(), SearchQuery{Query: "ui"})
 	require.NoError(t, err, "Search")
 

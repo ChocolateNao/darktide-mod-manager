@@ -258,7 +258,7 @@ func TestSourceConfigForPrefersTheExactKey(t *testing.T) {
 }
 
 func TestSourceConfigForRejectsABlankSourceID(t *testing.T) {
-	// A blank id must report absent rather than falling through to the loose
+	// A blank id must report absent: not falling through to the loose
 	// comparison and matching a key that normalises to the empty string.
 	c := Config{Sources: map[string]SourceConfig{"   ": {Enabled: true}}}
 	for _, id := range []string{"", "   ", "\t"} {

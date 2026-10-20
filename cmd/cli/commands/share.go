@@ -9,9 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cloudShareNotice is printed alongside every cloud share result. The cloud path
-// still works but is on its way out: every mod it moves passes through a third
-// party's storage, which is what the peer-to-peer path exists to avoid.
+// cloudShareNotice is printed alongside every cloud share result: the cloud path
+// stores mods in a third party's storage, which the peer-to-peer path avoids.
 const cloudShareNotice = "cloud sharing is deprecated: " +
 	"it stores the mods on a third-party provider. Use `dmm share p2p` instead."
 
@@ -44,9 +43,9 @@ func newShareCommand(s *session) *cobra.Command {
 	return group
 }
 
-// warnCloudShare writes the deprecation notice where the user will see it: next
-// to the result, not only in help text they may never have read. It goes to stderr
-// so a script reading JSON does not have to strip a sentence out of it.
+// warnCloudShare writes the deprecation notice next to the result, where the user
+// will see it. It goes to stderr so a script reading JSON need not strip a
+// sentence out of it.
 func warnCloudShare(s *session) {
 	fmt.Fprintln(s.env.Err, "// warning: "+cloudShareNotice)
 }

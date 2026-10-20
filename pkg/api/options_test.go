@@ -152,7 +152,7 @@ func TestWithSourceConfigKeepsAnExplicitDisable(t *testing.T) {
 
 func TestWithSourceConfigEnablesASourceNobodyConfigured(t *testing.T) {
 	// A never-seen source is seeded as enabled, so WithSourceConfig gives the caller
-	// one it can actually search rather than one that is silently off.
+	// one it can actually search: not one that is silently off.
 	set, err := applyOptions([]Option{WithSourceConfig("vortex", map[string]any{"api_key": "k"})})
 	require.NoError(t, err, "applyOptions")
 
@@ -450,6 +450,6 @@ func TestNilLoggerFuncDiscards(t *testing.T) {
 }
 
 // errBoom is the stand-in failure used by the tests in this file. It is defined
-// here rather than borrowed from another file so the file that uses it does
+// here: not borrowed from another file so the file that uses it does
 // not break when that other file is reorganised.
 var errBoom = errors.New("boom")

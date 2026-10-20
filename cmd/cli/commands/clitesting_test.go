@@ -25,15 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// updateGolden rewrites the recorded transcripts instead of comparing them.
 var updateGolden = flag.Bool(
 	"update",
 	false,
 	"rewrite the golden transcripts instead of comparing them",
 )
 
-// workspace is a private manager installation: its own home, settings, cache,
-// storage and game folder, sharing nothing with the machine or between tests.
+// workspace is a private manager installation, sharing nothing with the machine
+// or between tests.
 type workspace struct {
 	root         string
 	home         string
@@ -47,7 +46,6 @@ type workspace struct {
 	stubBases    []string
 }
 
-// newWorkspace builds an isolated tree and points the environment at it.
 func newWorkspace(t *testing.T) *workspace {
 	t.Helper()
 	root := t.TempDir()
@@ -72,7 +70,7 @@ func newWorkspace(t *testing.T) *workspace {
 		localDir:    filepath.Join(root, "local"),
 	}
 	w.databasePath = filepath.Join(filepath.Dir(w.storageRoot), "mods.db")
-	// The mods directory is deliberately not created here: the detector accepts a
+	// The mods directory is deliberately not created: the detector accepts a
 	// folder holding one, so creating it would give every test a game.
 	for _, dir := range []string{w.cacheRoot, w.storageRoot, w.localDir} {
 		require.NoError(t, os.MkdirAll(dir, 0o755), "prepare %s", dir)
@@ -81,8 +79,8 @@ func newWorkspace(t *testing.T) *workspace {
 	return w
 }
 
-// args prepends the path flags, so a test reads as the command a person would
-// type rather than as a wall of temporary paths.
+// args prepends the path flags so a test reads as the command a person would
+// type.
 func (w *workspace) args(rest ...string) []string {
 	args := []string{
 		"--config", w.configPath,
@@ -93,7 +91,6 @@ func (w *workspace) args(rest ...string) []string {
 	return append(args, rest...)
 }
 
-// scrub replaces the machine-specific parts of a transcript with placeholders.
 func (w *workspace) scrub(text string) string {
 	// Longest first: the storage root is inside the tree, and replacing the
 	// tree first would leave the more specific placeholder with nothing to match.
@@ -122,10 +119,8 @@ func (w *workspace) scrub(text string) string {
 	return columnGap.ReplaceAllString(text, "  ")
 }
 
-// columnGap matches three or more spaces, a cell boundary in aligned output.
 var columnGap = regexp.MustCompile(` {3,}`)
 
-// writeConfig stores a settings file describing this workspace.
 func (w *workspace) writeConfig(t *testing.T) {
 	t.Helper()
 
@@ -160,7 +155,6 @@ type credentialProbe struct {
 	mu     sync.Mutex
 }
 
-// answer changes what the stub replies with next time.
 func (p *credentialProbe) answer(status int, body string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -168,7 +162,6 @@ func (p *credentialProbe) answer(status int, body string) {
 	p.status, p.body = status, body
 }
 
-// seen returns the keys the stub was handed, in order.
 func (p *credentialProbe) seen() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -176,7 +169,6 @@ func (p *credentialProbe) seen() []string {
 	return append([]string(nil), p.keys...)
 }
 
-// bodiesSeen returns the request bodies the stub was sent, in order.
 func (p *credentialProbe) bodiesSeen() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -184,7 +176,6 @@ func (p *credentialProbe) bodiesSeen() []string {
 	return append([]string(nil), p.bodies...)
 }
 
-// reject reports the complaint POST /mods/batch makes about body, or "" when accepted.
 func reject(body []byte) (int, string) {
 	var request struct {
 		ModIDs []string `json:"mod_ids"`
@@ -204,7 +195,6 @@ func reject(body []byte) (int, string) {
 			`"detail":"` + detail + `","instance":"/v3/mods/batch"}`
 }
 
-// newCredentialProbe starts a stub Nexus API answering the credential check.
 func (w *workspace) newCredentialProbe(t *testing.T, status int, body string) *credentialProbe {
 	t.Helper()
 
@@ -251,7 +241,6 @@ func (w *workspace) newCredentialProbe(t *testing.T, status int, body string) *c
 	return probe
 }
 
-// makeGame builds a folder the detector accepts as a Darktide installation.
 func (w *workspace) makeGame(t *testing.T) {
 	t.Helper()
 
@@ -276,8 +265,8 @@ func (w *workspace) makeGame(t *testing.T) {
 	), "write version")
 }
 
-// writeModArchive writes a real zip into the local source's folder and returns the
-// mod id it derives: the name carries a space because that is what the local source parses.
+// writeModArchive writes a real zip into the local source folder. The name
+// carries a space because that is what the local source parses.
 func (w *workspace) writeModArchive(t *testing.T, name, version string) string {
 	t.Helper()
 
@@ -334,8 +323,8 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o644), "write archive")
 }
 
-// golden records a command line and everything it printed, and compares the result
-// with a stored transcript, so a failure is readable in a diff.
+// golden records a command line and what it printed, so a failure is readable in a
+// diff.
 type golden struct {
 	t      *testing.T
 	name   string
@@ -349,13 +338,11 @@ func newGolden(t *testing.T, name string) *golden {
 	return &golden{t: t, name: name}
 }
 
-// withStdin sets what the next command lines read from standard input.
 func (g *golden) withStdin(text string) *golden {
 	g.stdin = text
 	return g
 }
 
-// run executes one command line against a workspace and records it.
 func (g *golden) run(w *workspace, args ...string) {
 	g.t.Helper()
 
@@ -382,8 +369,7 @@ func (g *golden) run(w *workspace, args ...string) {
 	fmt.Fprintf(&g.body, "! exit %d\n", code)
 }
 
-// stream records one output stream, skipping it when empty so a transcript is not
-// padded with blank blocks.
+// stream records one output stream, skipping it when empty.
 func (g *golden) stream(w *workspace, label, text string) {
 	text = strings.TrimRight(text, "\n")
 	if text == "" {
@@ -395,12 +381,10 @@ func (g *golden) stream(w *workspace, label, text string) {
 	}
 }
 
-// scrubbed records an already-formatted line, with the workspace scrubbed.
 func (g *golden) scrubbed(w *workspace, line string) {
 	g.body.WriteString(w.scrub(line) + "\n")
 }
 
-// placeholders rewrites the path arguments of a command line for display.
 func placeholders(w *workspace, args []string) []string {
 	out := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -410,19 +394,16 @@ func placeholders(w *workspace, args []string) []string {
 	return out
 }
 
-// scrubTimestamp is duplicated from the production package on purpose: the two are
-// independent, so breaking one shows up as a failing transcript.
+// scrubTimestamp is duplicated from production on purpose: breaking one shows up
+// as a failing transcript.
 var scrubTimestamp = regexp.MustCompile(
 	`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})`,
 )
 
-// transcript renders the whole session.
 func (g *golden) transcript() string {
 	return scrubTimestamp.ReplaceAllString(g.body.String(), "<time>")
 }
 
-// want compares the transcript with the stored one, or rewrites it under
-// -update.
 func (g *golden) want() {
 	g.t.Helper()
 	got := g.transcript()
@@ -460,7 +441,6 @@ func (g *golden) want() {
 	)
 }
 
-// defaultConfigFor builds a configuration with nothing pointed anywhere.
 func defaultConfigFor(t *testing.T) domain.Config {
 	t.Helper()
 

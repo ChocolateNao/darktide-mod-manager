@@ -8,9 +8,8 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
-// fakeGame is a minimal game definition. It implements the whole interface
-// explicitly so that a new method there breaks these tests loudly rather than
-// silently making the fake unusable.
+// fakeGame is a minimal game definition. Implementing the whole interface
+// explicitly makes a new method break these tests loudly.
 type fakeGame struct {
 	actionErr   error
 	id          string
@@ -43,7 +42,7 @@ func (g *fakeGame) InstallModes() []domain.ModInstallMode        { return nil }
 func (g *fakeGame) SourceDefaults() map[string]map[string]string { return nil }
 
 // GameActions returns the requested number of trivial actions, or none when
-// actionErr is set so a test can prove a validation error surfaces.
+// actionErr is set.
 func (g *fakeGame) GameActions() []domain.GameAction {
 	if g.actionErr != nil {
 		return nil
@@ -57,8 +56,7 @@ func (g *fakeGame) GameActions() []domain.GameAction {
 	return out
 }
 
-// stubGame adapts a fakeGame to the game registry's Get signature so the runner
-// can be tested without registering it globally.
+// stubGame adapts a fakeGame to the game registry's Get signature.
 type stubGame struct {
 	def domain.GameDefinition
 }
@@ -71,7 +69,6 @@ func (s stubGame) Get(string) (domain.GameDefinition, bool) {
 	return s.def, true
 }
 
-// stubResolver is the GameResolver a run consults.
 type stubResolver struct {
 	def         domain.GameDefinition
 	activeErr   error
@@ -138,7 +135,6 @@ func (o *recordingOpener) OpenURL(_ context.Context, rawURL string) error {
 	return o.urlErr
 }
 
-// recordingCommandRunner captures what a script action tried to run.
 type recordingCommandRunner struct {
 	err    error
 	output CommandOutput
@@ -155,12 +151,11 @@ func (r *recordingCommandRunner) Run(_ context.Context, spec CommandSpec) (Comma
 	return r.output, nil
 }
 
-// echoLogger collects the lines streamed to it.
 type echoLogger struct {
 	sb strings.Builder
 }
 
-func (l *echoLogger) Printf(format string, args ...any) {
+func (l *echoLogger) Logf(format string, args ...any) {
 	l.sb.WriteString(strings.TrimSuffix(fmt.Sprintf(format, args...), "\n"))
 	l.sb.WriteString("\n")
 }

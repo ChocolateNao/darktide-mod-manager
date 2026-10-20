@@ -126,7 +126,7 @@ func allowedSchemeList() []string {
 }
 
 // CanOpenURL reports whether rawURL would be accepted, without opening it, so a
-// frontend can hide the control rather than offer a button that can only fail.
+// frontend can hide the control; a button that can only fail is omitted.
 func CanOpenURL(rawURL string) bool {
 	_, err := ValidateURL(rawURL)
 

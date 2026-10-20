@@ -14,12 +14,11 @@ import (
 // stays so an existing share can still be listed and revoked, which is the one
 // operation that cannot be dropped without stranding someone's data.
 type ShareCommands struct {
-	// Embedded so the lifecycle methods reach a set directly: a caller holding
-	// one set must be able to shut it down without knowing the aggregate.
+	// Embedded so a caller holding one set can shut it down without the
+	// aggregate.
 	*base
 }
 
-// NewShareCommands builds the share command set.
 func NewShareCommands(deps Deps) *ShareCommands {
 	return &ShareCommands{base: newBase(deps)}
 }
@@ -28,7 +27,6 @@ func newShareCommands(b *base) *ShareCommands {
 	return &ShareCommands{base: b}
 }
 
-// ListShares reports every share, newest first.
 func (c *ShareCommands) ListShares() ([]api.ShareRecord, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -44,8 +42,6 @@ func (c *ShareCommands) ListShares() ([]api.ShareRecord, error) {
 	return shares, nil
 }
 
-// ListSharesByGame reports the shares for one game, so the Shares tab can be
-// scoped to the game the user is currently on.
 func (c *ShareCommands) ListSharesByGame(gameID string) ([]api.ShareRecord, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -61,7 +57,6 @@ func (c *ShareCommands) ListSharesByGame(gameID string) ([]api.ShareRecord, erro
 	return shares, nil
 }
 
-// GetShare returns one share by id.
 func (c *ShareCommands) GetShare(id string) (*api.ShareRecord, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -77,11 +72,6 @@ func (c *ShareCommands) GetShare(id string) (*api.ShareRecord, error) {
 	return share, nil
 }
 
-// CreateShare uploads mods to a cloud provider and returns the link.
-//
-// The provider list is the user's choice of where to upload. An empty list
-// uses the configured default, which is what a "Share" button that does not
-// ask should pass.
 func (c *ShareCommands) CreateShare(
 	modIDs []string,
 	providerIDs []string,
@@ -92,8 +82,8 @@ func (c *ShareCommands) CreateShare(
 	}
 	defer cancel()
 
-	// The ids are resolved here rather than in the service: a mod that is not
-	// installed has no files to upload, and the caller should hear that first.
+	// The ids are resolved here so an uninstalled mod is reported before the
+	// service is called.
 	mods := make([]api.Mod, 0, len(modIDs))
 
 	for _, id := range modIDs {
@@ -120,8 +110,6 @@ func (c *ShareCommands) CreateShare(
 	return result, nil
 }
 
-// ResolveShare previews a link: what it holds, and which game it installs
-// into, before a byte is downloaded.
 func (c *ShareCommands) ResolveShare(url string) (*api.SharePreview, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -142,7 +130,6 @@ func (c *ShareCommands) ResolveShare(url string) (*api.SharePreview, error) {
 	return preview, nil
 }
 
-// InstallShare downloads and installs every mod in a link.
 func (c *ShareCommands) InstallShare(url string) ([]api.Mod, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -163,7 +150,6 @@ func (c *ShareCommands) InstallShare(url string) ([]api.Mod, error) {
 	return mods, nil
 }
 
-// RevokeShare deletes the remote files and forgets the record.
 func (c *ShareCommands) RevokeShare(id string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -178,7 +164,6 @@ func (c *ShareCommands) RevokeShare(id string) error {
 	return nil
 }
 
-// UpdateShare adds or removes mods from an existing share.
 func (c *ShareCommands) UpdateShare(
 	id string,
 	addIDs, removeIDs []string,
@@ -189,7 +174,7 @@ func (c *ShareCommands) UpdateShare(
 	}
 	defer cancel()
 
-	// Both halves resolve through the same helper so a typo in either list
+	// Both halves resolve through the same helper, so a typo in either list
 	// reports the same way.
 	resolve := func(ids []string) ([]api.Mod, error) {
 		mods := make([]api.Mod, 0, len(ids))
@@ -224,8 +209,6 @@ func (c *ShareCommands) UpdateShare(
 	return record, nil
 }
 
-// ListShareProviders lists the providers the user can share to, so a picker
-// can be rendered without knowing which plugins this build ships.
 func (c *ShareCommands) ListShareProviders() ([]api.CloudProviderInfo, error) {
 	client, _, cancel, err := c.ready()
 	if err != nil {
@@ -241,8 +224,6 @@ func (c *ShareCommands) ListShareProviders() ([]api.CloudProviderInfo, error) {
 	return providers, nil
 }
 
-// DefaultShareProvider reports the provider a share uses when the user does
-// not pick one.
 func (c *ShareCommands) DefaultShareProvider() string {
 	client, _, cancel, err := c.ready()
 	if err != nil {

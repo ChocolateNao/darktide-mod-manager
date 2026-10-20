@@ -161,7 +161,7 @@ func (c *Cache) BlobPath(hash string) (string, error) {
 
 // NormalizeCacheKey validates a cache key and returns it in canonical form. The key
 // becomes a filename, so anything that could escape the blob directory is rejected
-// rather than sanitised. Only lowercase hex is accepted: the key is a SHA256, and
+// instead of sanitised. Only lowercase hex is accepted: the key is a SHA256, and
 // byte-for-byte comparison is easier with one spelling.
 func NormalizeCacheKey(hash string) (string, error) {
 	key := strings.TrimSpace(hash)

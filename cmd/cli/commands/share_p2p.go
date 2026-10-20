@@ -13,10 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newShareP2PCommand builds the peer-to-peer group, shaped around a share being
-// a conversation between two people probably not at the same machine at the same
-// time: `create` prints an offer link and waits, `accept` prints an answer and
-// waits. Both sides stay running until the transfer is done.
+// newShareP2PCommand builds the peer-to-peer group, shaped around a share being a
+// conversation between two people probably not at the same machine at the same
+// time. Both sides stay running until the transfer is done.
 func newShareP2PCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "p2p",
@@ -43,7 +42,6 @@ func newShareP2PCommand(s *session) *cobra.Command {
 	return group
 }
 
-// p2pSessionView is the machine-readable shape of one share in progress.
 type p2pSessionView struct {
 	OfferID     string `json:"offer_id"`
 	Role        string `json:"role"`
@@ -189,9 +187,8 @@ func newShareP2PCreateCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// p2pCreateOptions interprets the expiry in whichever form the user found natural:
-// a duration ("24h") or an absolute timestamp, which both mean the same thing to
-// the protocol.
+// p2pCreateOptions interprets the expiry as a duration ("24h") or an absolute
+// timestamp; both mean the same thing to the protocol.
 func p2pCreateOptions(expiry string, stun []string) (domain.P2PCreateOptions, error) {
 	opts := domain.P2PCreateOptions{}
 
@@ -219,8 +216,6 @@ func p2pCreateOptions(expiry string, stun []string) (domain.P2PCreateOptions, er
 	return opts, nil
 }
 
-// describeOffer prints everything the sender needs before handing a link to
-// somebody: what is in it, whether it expires, and that STUN never carries data.
 func (s *session) describeOffer(link *domain.P2PShareLink) {
 	if link == nil {
 		return
@@ -286,9 +281,8 @@ func newShareP2PPreviewCommand(s *session) *cobra.Command {
 	}
 }
 
-// describePreview is the answer to "should I trust this link?": what it holds,
-// what it costs, and where every mod can be fetched instead, so declining costs
-// the recipient nothing but the sender's bandwidth.
+// describePreview answers "should I trust this link?": what it holds, what it
+// costs, and where every mod can be fetched instead.
 func (s *session) describePreview(preview *domain.P2PSharePreview) error {
 	if preview == nil {
 		return nil
@@ -339,7 +333,7 @@ func (s *session) describePreview(preview *domain.P2PSharePreview) error {
 }
 
 // archiveSizesByMod totals each archive's size, keyed by archive name because that
-// is what a mod's FileIDs holds — joining on anything else silently yields zero.
+// is what a mod's FileIDs holds; any other key yields zero.
 func archiveSizesByMod(files []domain.P2PSharedFile) map[string]int64 {
 	sizes := make(map[string]int64, len(files))
 
@@ -350,8 +344,8 @@ func archiveSizesByMod(files []domain.P2PSharedFile) map[string]int64 {
 	return sizes
 }
 
-// sizeForMod sums the mod's archives. A mod declaring no files reports zero rather
-// than failing: the listing describes somebody else's share.
+// sizeForMod sums the mod's archives; a mod declaring no files reports zero,
+// since the listing describes somebody else's share.
 func sizeForMod(sizes map[string]int64, mod domain.SharedMod) int64 {
 	var total int64
 
@@ -362,8 +356,8 @@ func sizeForMod(sizes map[string]int64, mod domain.SharedMod) int64 {
 	return total
 }
 
-// modNamesByID maps a mod id to the name the user recognises it by, so a source
-// link can sit next to it. Names are recorded for the archives' mod ids too.
+// modNamesByID maps a mod id to the name the user recognises, so a source link
+// can sit next to it. Names are recorded for the archives' mod ids too.
 func modNamesByID(preview *domain.P2PSharePreview) map[string]string {
 	names := make(map[string]string, len(preview.Mods))
 	archiveToMod := make(map[string]string, len(preview.Files))
@@ -407,8 +401,8 @@ func unknownSender(name string) string {
 	return name
 }
 
-// bestSourceURL picks the one link to print: a recipient who declines needs one
-// place to go, not three.
+// bestSourceURL picks the one link to print: a recipient who declines needs
+// a single place to go.
 func bestSourceURL(link domain.ModSourceLink) string {
 	switch {
 	case link.DownloadURL != "":
@@ -573,9 +567,8 @@ func newShareP2PRejectCommand(s *session) *cobra.Command {
 	return cmd
 }
 
-// rejectOffer is shared by `reject` and `accept --reject`, which differ only in
-// whether the caller already printed a preview. The answer link goes out before
-// the wait: the sender cannot open the connection until they have it.
+// rejectOffer is shared by `reject` and `accept --reject`. The answer link goes
+// out before the wait: the sender cannot open the connection until they have it.
 func (s *session) rejectOffer(
 	cmd *cobra.Command,
 	client p2pClient,
@@ -602,8 +595,8 @@ func (s *session) rejectOffer(
 }
 
 // newShareP2PInstallCommand installs a share already received in this session.
-// It lives with accept on purpose: the received archives are staged in a
-// temporary directory owned by this process.
+// It lives with accept because the received archives are staged in a temporary
+// directory owned by this process.
 func newShareP2PInstallCommand(s *session) *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
@@ -710,8 +703,8 @@ func newShareP2PCancelCommand(s *session) *cobra.Command {
 }
 
 // writeSessionOutcome reports how a transfer ended. The sender can never ask the
-// recipient afterwards, so this line is the only confirmation they get — and "the
-// recipient declined" must be distinguishable from a failure.
+// recipient afterwards, so this is their only confirmation, and "the recipient
+// declined" must be distinguishable from a failure.
 func (s *session) writeSessionOutcome(ctx context.Context, client p2pClient, offerID string) error {
 	session, err := client.GetP2PShareSession(ctx, offerID)
 	if err != nil {
@@ -739,17 +732,16 @@ func (s *session) writeSessionOutcome(ctx context.Context, client p2pClient, off
 	return nil
 }
 
-// p2pClient is the slice of the client the outcome reporting and the refusal
-// path need, declared here to keep this file's dependency to three methods.
+// p2pClient is the slice of the client the outcome and refusal paths need, kept to
+// three methods.
 type p2pClient interface {
 	GetP2PShareSession(ctx context.Context, offerID string) (*domain.P2PShareSession, error)
 	RejectP2PShare(ctx context.Context, link string, reason string) (*domain.P2PAnswerLink, error)
 	AwaitRejectedP2PShare(ctx context.Context, offerID string) error
 }
 
-// readAnswerLink reads the answer link a user pasted in: one token on one line, so
-// the whole read is one trimmed line. An empty answer is reported as an error by
-// the caller, the only place that knows what an empty offer means.
+// readAnswerLink reads one token on one line. An empty answer is reported by the
+// caller, the only place that knows what an empty offer means.
 func readAnswerLink(in io.Reader) (string, error) {
 	if in == nil {
 		return "", fmt.Errorf("this command needs an input stream to read the answer link from")

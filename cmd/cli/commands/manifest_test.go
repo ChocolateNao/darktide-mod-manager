@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// runManifestInit runs `dmm manifest init` and fails if anything asks for the container.
 func runManifestInit(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 

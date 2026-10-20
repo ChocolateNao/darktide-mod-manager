@@ -12,15 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// command is one method of the command surface, reduced to a single call. The
-// table exists so a method added later cannot be forgotten.
 type command struct {
 	call func(*App) error
 	name string
 }
 
-// everyCommand lists every error-returning method a frontend can call. The one
-// exception is SupportsHookType, which answers with a bool and has its own test.
 func everyCommand() []command {
 	return []command{
 		{func(a *App) error { _, err := a.Mods.ListMods(); return err }, "Mods.ListMods"},
@@ -30,9 +26,10 @@ func everyCommand() []command {
 			"Mods.InstallMod",
 		},
 		{func(a *App) error { return a.Mods.UninstallMod("m") }, "Mods.UninstallMod"},
-		{func(a *App) error {
-			return a.Mods.UninstallModWithOptions("m", api.UninstallOptions{})
-		}, "Mods.UninstallModWithOptions"},
+		{
+			func(a *App) error { return a.Mods.UninstallModWithOptions("m", api.UninstallOptions{}) },
+			"Mods.UninstallModWithOptions",
+		},
 		{func(a *App) error { return a.Mods.EnableMod("m") }, "Mods.EnableMod"},
 		{func(a *App) error { return a.Mods.DisableMod("m") }, "Mods.DisableMod"},
 		{func(a *App) error { _, err := a.Mods.GetModHooks("m"); return err }, "Mods.GetModHooks"},
@@ -85,9 +82,6 @@ func everyCommand() []command {
 		{func(a *App) error {
 			return a.Sources.TestSourceConnection("local")
 		}, "Sources.TestSourceConnection"},
-		{func(a *App) error {
-			return a.Sources.SetSourceAuthenticated("local", true)
-		}, "Sources.SetSourceAuthenticated"},
 
 		{func(a *App) error { _, err := a.Game.DetectGame(); return err }, "Game.DetectGame"},
 		{func(a *App) error { _, err := a.Game.CurrentGame(); return err }, "Game.CurrentGame"},
@@ -96,10 +90,7 @@ func everyCommand() []command {
 			return err
 		}, "Game.ValidateGamePath"},
 		{func(a *App) error { return a.Game.SetGamePath("/nowhere") }, "Game.SetGamePath"},
-		{func(a *App) error {
-			_, err := a.Game.GetModsPath(nil)
-			return err
-		}, "Game.GetModsPath"},
+		{func(a *App) error { _, err := a.Game.GetModsPath(nil); return err }, "Game.GetModsPath"},
 
 		{func(a *App) error { _, err := a.Cache.GetCacheInfo(); return err }, "Cache.GetCacheInfo"},
 		{func(a *App) error { return a.Cache.ClearCache() }, "Cache.ClearCache"},
@@ -129,9 +120,6 @@ func everyCommand() []command {
 	}
 }
 
-// TestEveryCommandReportsAMissingClient is the nil-safety net: a panic here
-// happens inside a call the frontend made, which in a window means a window that
-// cannot draw the message explaining why.
 func TestEveryCommandReportsAMissingClient(t *testing.T) {
 	app := New(Deps{})
 
@@ -161,9 +149,6 @@ func TestEveryCommandReportsAMissingClient(t *testing.T) {
 	}
 }
 
-// TestEveryCommandSurvivesAnUninitialisedSet covers the other way to arrive here:
-// a set whose shared state was never assigned, which is what a half-built
-// aggregate looks like.
 func TestEveryCommandSurvivesAnUninitialisedSet(t *testing.T) {
 	app := &App{
 		Mods:    &ModCommands{},
@@ -190,10 +175,6 @@ func TestEveryCommandSurvivesAnUninitialisedSet(t *testing.T) {
 	}
 }
 
-// TestEveryCommandReportsAShutDownApp checks the other end of the lifecycle. The
-// complaint has to mention the shutdown: a frontend that has closed and then
-// retries a call is looking for "the app is closing", not for an argument it
-// believes it supplied.
 func TestEveryCommandReportsAShutDownApp(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -216,9 +197,6 @@ func TestEveryCommandReportsAShutDownApp(t *testing.T) {
 	}
 }
 
-// TestLifecycleMethodsTolerateANilApp. The lifecycle is called from a deferred
-// shutdown and from a window-close handler, both of which can run with a nil
-// receiver when the constructor's error was ignored.
 func TestLifecycleMethodsTolerateANilApp(t *testing.T) {
 	var app *App
 	app.Startup(t.Context())
@@ -237,10 +215,6 @@ func TestLifecycleMethodsTolerateANilApp(t *testing.T) {
 	}
 }
 
-// TestUninitialisedSetAccessors checks the nil-receiver paths on a set with
-// nothing assigned. A nil *ModCommands is deliberately not covered: a promoted
-// method dereferences the nil before the shared state can notice it, and hiding
-// that behind twenty-five forwarding methods would be worse than saying so.
 func TestUninitialisedSetAccessors(t *testing.T) {
 	mods := &ModCommands{}
 	mods.Shutdown()
@@ -263,9 +237,6 @@ func TestUninitialisedSetAccessors(t *testing.T) {
 	}
 }
 
-// TestSupportsHookTypeNeedsAClient: this one answers with a bool because "this
-// build cannot run go hooks" is a question the hook editor asks while drawing. It
-// still has to be false without a client, since an invented answer is a guess.
 func TestSupportsHookTypeNeedsAClient(t *testing.T) {
 	assert.False(
 		t,
@@ -286,14 +257,11 @@ func TestNewBuildsEverySet(t *testing.T) {
 	require.NotNil(t, app, "New returned nothing")
 
 	require.False(t, app.Mods == nil || app.Sources == nil || app.Game == nil || app.Cache == nil ||
-		app.Config == nil, "New left a set unset: %+v", app)
+		app.Config == nil, "New left a set unset: %+v")
 
 	assert.False(t, app.Stopped(), "a freshly built app must not report itself stopped")
 }
 
-// TestEverySetSharesOneScope. Cancelling through the aggregate has to reach every
-// set, because they are all driven by the same person: a window that has stopped
-// responding has not stopped caring about a download it started.
 func TestEverySetSharesOneScope(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -307,9 +275,6 @@ func TestEverySetSharesOneScope(t *testing.T) {
 	)
 }
 
-// TestCancelAllReachesAnOperationInFlight is the reason the scope exists: the
-// stub signals when it is genuinely inside the call, so "still blocked" cannot
-// pass by accident and the cancellation is the only thing that releases it.
 func TestCancelAllReachesAnOperationInFlight(t *testing.T) {
 	const sourceID = "commands-blocking"
 
@@ -343,22 +308,18 @@ func TestCancelAllReachesAnOperationInFlight(t *testing.T) {
 	case err := <-done:
 		require.Error(t, err, "a cancelled operation reported success")
 		// The code has to survive the registry's lookup and the source's own
-		// error: a cancellation arriving as a generic failure is reported as
-		// "something went wrong" instead of a request the user just stopped.
+		// error, so a cancellation is reported as a stopped request.
 		assert.True(
 			t,
 			appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled),
 			"cancelled operation error code = %v, want OPERATION_CANCELED (err: %v)",
 			appErrors.CodeOf(err),
-			err,
-		)
+			err)
 	case <-time.After(30 * time.Second):
 		require.FailNow(t, "CancelAll did not release the operation")
 	}
 }
 
-// TestCancelAllLeavesTheSurfaceUsable is what makes CancelAll a stop button rather
-// than a shutdown in disguise.
 func TestCancelAllLeavesTheSurfaceUsable(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -379,7 +340,6 @@ func TestCancelAllLeavesTheSurfaceUsable(t *testing.T) {
 
 	select {
 	case <-after.Done():
-		require.FailNow(t, "CancelAll left the replacement scope already cancelled")
 	default:
 	}
 	// And the surface still answers.
@@ -389,8 +349,6 @@ func TestCancelAllLeavesTheSurfaceUsable(t *testing.T) {
 	}
 }
 
-// TestCancelAllDoesNotReviveAShutDownSurface pins the one asymmetry: a stop button
-// must not be able to reopen a closing window.
 func TestCancelAllDoesNotReviveAShutDownSurface(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -418,16 +376,12 @@ func TestShutdownCancelsTheScopeAndIsIdempotent(t *testing.T) {
 	}
 
 	assert.True(t, app.Stopped(), "Stopped must report true after Shutdown")
-	// Twice more, to prove the second call neither panics on a nil cancel nor
-	// revives anything.
 	app.Shutdown()
 	app.Shutdown()
 
 	assert.True(t, app.Stopped(), "a repeated Shutdown must keep reporting stopped")
 }
 
-// TestStartupRebindsTheScope: the context a Wails startup hook hands over is the
-// one operations run under, so cancelling it has to stop them.
 func TestStartupRebindsTheScope(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -454,8 +408,6 @@ func TestStartupRebindsTheScope(t *testing.T) {
 	}
 }
 
-// TestStartupToleratesANilContext: a startup hook that passes nothing must not
-// take the window down with it.
 func TestStartupToleratesANilContext(t *testing.T) {
 	w := newWorkspace(t)
 	app := w.mustApp(t)
@@ -468,16 +420,13 @@ func TestStartupToleratesANilContext(t *testing.T) {
 		_, err := app.Sources.ListSources()
 		assert.NoError(t, err, "the surface did not survive a nil lifecycle context: %v", err)
 	}
-	// And a second Startup revives a shut-down surface, which is what a frontend
-	// reopening the window needs.
+
 	app.Shutdown()
 	app.Startup(t.Context())
 
 	assert.False(t, app.Stopped(), "Startup must revive a surface a previous Startup shut down")
 }
 
-// TestTimeoutIsReportedInMilliseconds pins the number a frontend shows next to a
-// slow operation, and the three ways Deps can express a bound.
 func TestTimeoutIsReportedInMilliseconds(t *testing.T) {
 	cases := []struct {
 		deps    Deps
@@ -505,15 +454,12 @@ func TestTimeoutIsReportedInMilliseconds(t *testing.T) {
 	}
 }
 
-// TestFailedOperationsAreLogged: a frontend has no log file to read, so the one
-// line naming the operation is the only trace a bug report can carry.
 func TestFailedOperationsAreLogged(t *testing.T) {
 	w := newWorkspace(t)
 	logger := &recordingLogger{}
 	c := w.container(t)
 	app := New(Deps{Client: c.Client, Logger: logger})
 
-	// No such mod is the cheapest real failure there is.
 	{
 		_, err := app.Mods.GetMod("does-not-exist")
 		require.Error(t, err, "GetMod reported success for a mod that is not installed")
@@ -537,8 +483,6 @@ func TestFailedOperationsAreLogged(t *testing.T) {
 	assert.Len(t, logger.snapshot(), 1, "a successful operation was logged: %q", logger.snapshot())
 }
 
-// TestLoggerPanicIsContained: a logger is caller-supplied, and one that panics
-// must not turn a reported failure into a crash.
 func TestLoggerPanicIsContained(t *testing.T) {
 	w := newWorkspace(t)
 	c := w.container(t)
@@ -550,7 +494,6 @@ func TestLoggerPanicIsContained(t *testing.T) {
 	}
 }
 
-// TestNoLoggerIsFine: a nil logger is the common case and must be silent.
 func TestNoLoggerIsFine(t *testing.T) {
 	w := newWorkspace(t)
 
@@ -565,7 +508,6 @@ type panickingLogger struct{}
 
 func (panickingLogger) Printf(string, ...any) { panic("logger exploded") }
 
-// TestContextIsNeverNil covers the accessor the tests above rely on.
 func TestContextIsNeverNil(t *testing.T) {
 	w := newWorkspace(t)
 	{

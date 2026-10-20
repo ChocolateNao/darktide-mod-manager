@@ -11,10 +11,8 @@ import (
 )
 
 // coerceArgs turns caller-supplied values into the types an action declared.
-//
-// Every declared option ends up present — filled from its default, or from its
-// type's zero value — so a handler never has to check whether one arrived.
-// Undeclared options are dropped: nothing promised their type.
+// Every declared option is materialised from its default or zero value, so a
+// handler never checks whether one arrived; undeclared options are dropped.
 func coerceArgs(declared []domain.ActionOption, supplied map[string]any) (map[string]any, error) {
 	coerced := make(map[string]any, len(declared))
 
@@ -50,10 +48,8 @@ func coerceArgs(declared []domain.ActionOption, supplied map[string]any) (map[st
 	return coerced, nil
 }
 
-// zeroValue is what an option nobody answered reads as.
-//
-// Materialising it rather than omitting the key is what lets a handler treat its
-// options uniformly, and gives the frontend a form whose fields all render.
+// zeroValue is what an option nobody answered reads as. Materialising the key
+// lets a handler treat its options uniformly and gives the frontend every field.
 func zeroValue(optionType domain.ActionOptionType) any {
 	switch optionType {
 	case domain.ActionOptionBool:
@@ -63,15 +59,13 @@ func zeroValue(optionType domain.ActionOptionType) any {
 	case domain.ActionOptionString, domain.ActionOptionPath, domain.ActionOptionSelect:
 		return ""
 	default:
-		// Registration rejects unknown types, so this is unreachable in
-		// practice; "" is the least surprising value for a caller that gets here.
+		// Registration rejects unknown types, so this is unreachable in practice.
 		return ""
 	}
 }
 
 // lookup finds an option's value, accepting the kebab-case spelling the command
-// line uses as an alias for the declared snake_case name, so neither surface has
-// to translate.
+// line uses as an alias for the declared snake_case name.
 func lookup(supplied map[string]any, name string) (any, bool) {
 	if value, ok := supplied[name]; ok {
 		return value, true
@@ -87,7 +81,6 @@ func lookup(supplied map[string]any, name string) (any, bool) {
 	return nil, false
 }
 
-// coerce converts one raw value to the option's declared type.
 func coerce(option domain.ActionOption, raw any) (any, error) {
 	switch option.Type {
 	case domain.ActionOptionString, domain.ActionOptionPath:
@@ -99,18 +92,15 @@ func coerce(option domain.ActionOption, raw any) (any, error) {
 	case domain.ActionOptionSelect:
 		return coerceSelect(option, raw)
 	default:
-		// Registration validates the type, so this is unreachable through the
-		// runner; it is a programming error rather than a caller error.
+		// Registration validates the type, so reaching this is a programming error.
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"action option %q has unknown type %q", option.Name, option.Type)
 	}
 }
 
-// coerceText accepts anything that is textual once rendered.
-//
-// A numeric field from a frontend form is not a mistake for an untyped option, so
-// scalars are rendered through their literal text; containers are refused because
-// there is no honest text for them.
+// coerceText accepts anything textual once rendered. Scalars are rendered through
+// their literal text; containers are refused because there is no honest text for
+// them.
 func coerceText(option domain.ActionOption, raw any) (any, error) {
 	switch value := raw.(type) {
 	case string:
@@ -134,8 +124,7 @@ func coerceText(option domain.ActionOption, raw any) (any, error) {
 }
 
 // truthyValues are the spellings a boolean accepts from a command line or a
-// hand-written JSON payload. The list is explicit because silently accepting a
-// value nobody typed is worse than refusing one.
+// hand-written JSON payload.
 var truthyValues = map[string]struct{}{
 	"1": {}, "t": {}, "true": {}, "yes": {}, "y": {}, "on": {},
 }
@@ -173,8 +162,7 @@ func coerceBool(option domain.ActionOption, raw any) (any, error) {
 }
 
 // coerceNumber produces an int when the value is integral and a float64
-// otherwise, so ActionContext.ArgInt works for an amount, a port or a count
-// without every caller asserting a type.
+// otherwise, so ActionContext.ArgInt works without every caller asserting a type.
 func coerceNumber(option domain.ActionOption, raw any) (any, error) {
 	switch value := raw.(type) {
 	case int:
@@ -233,8 +221,8 @@ func fitFloat(value float64) (any, error) {
 		return value, nil
 	}
 
-	// A whole number too large for an int is a typo — a count, a port or a timeout
-	// that lost a digit — and a float would hand the handler an unindexable value.
+	// A whole number too large for an int is a typo, and a float would hand the
+	// handler an unindexable value.
 	if value < math.MinInt || value > math.MaxInt {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"%v does not fit in an int", value)
@@ -251,8 +239,7 @@ func coerceSelect(option domain.ActionOption, raw any) (any, error) {
 
 	text, _ := value.(string)
 
-	// An empty value is left empty rather than refused: an optional select with
-	// nothing chosen means "use whatever is default".
+	// An empty optional select means "use whatever is default", so it is accepted.
 	for _, choice := range option.Choices {
 		if choice == text {
 			return text, nil

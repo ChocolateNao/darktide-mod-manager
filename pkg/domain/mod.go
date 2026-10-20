@@ -1,7 +1,6 @@
-// Package domain holds the pure data model of the mod manager. It has no
-// dependencies outside the standard library and performs no I/O: everything in
-// here is a type, a constant, or a pure function over those types. Services,
-// storage and UI layers build on this package, never the other way around.
+// Package domain holds the pure data model of the mod manager: types,
+// constants and pure functions, with no I/O and no dependency outside the
+// standard library. Every other layer builds on this package, not the reverse.
 package domain
 
 import (
@@ -14,13 +13,11 @@ import (
 type ModInstallMode string
 
 const (
-	// InstallModeModsFolder deploys the mod into the game's mods folder
-	// (<game>/mods/<mod folder>). This is the default for regular mods.
+	// InstallModeModsFolder deploys the mod into <game>/mods/<mod folder>,
+	// the default for regular mods.
 	InstallModeModsFolder ModInstallMode = "mods_folder"
-	// InstallModeGameRoot deploys the mod by merging its contents into the
-	// game root folder. Used for mods that patch the game and already contain
-	// the "mods_folder" defined by the game folder and other game directories in their archive
-	// structure.
+	// InstallModeGameRoot merges the mod into the game root. Used for mods that
+	// patch the game and already carry the game's directory structure.
 	InstallModeGameRoot ModInstallMode = "game_root"
 )
 
@@ -32,10 +29,9 @@ func (m ModInstallMode) Valid() bool {
 // String implements fmt.Stringer.
 func (m ModInstallMode) String() string { return string(m) }
 
-// Mod is an installed mod as tracked by the manager. Fields that describe where a
-// mod came from (SourceID, SourceData) are separated from fields that describe
-// where it lives on disk (LocalPath) so that the same struct can represent a
-// remote listing and an installed mod.
+// Mod is an installed mod as tracked by the manager. Where it came from
+// (SourceID, SourceData) is kept apart from where it lives (LocalPath) so the same
+// struct can describe both a remote listing and an installed mod.
 type Mod struct {
 	UpdatedAt     time.Time      `json:"updated_at"`
 	InstalledAt   time.Time      `json:"installed_at"`
@@ -74,9 +70,8 @@ type ModFile struct {
 	SizeBytes  int64  `json:"size_bytes"`
 }
 
-// Clone returns a deep copy so that callers can mutate a mod without touching
-// the copy held by the index. Slices and maps are duplicated; time values are
-// values already.
+// Clone returns a deep copy so a caller can mutate a mod without touching the copy
+// held by the index.
 func (m *Mod) Clone() *Mod {
 	if m == nil {
 		return nil
@@ -170,36 +165,35 @@ const (
 
 // ConflictReport is a single detected conflict between two mods.
 type ConflictReport struct {
-	Type           ConflictType
-	ModA           *Mod
-	ModB           *Mod
-	Details        string
-	Severity       ConflictSeverity
-	Recommendation string
+	// ID is the identity the resolution path takes. A field rather than a
+	// method because a method does not serialise, and a bridge caller has
+	// nothing but the JSON to refer back to.
+	ID             string           `json:"id"`
+	Type           ConflictType     `json:"type"`
+	ModA           *Mod             `json:"mod_a,omitempty"`
+	ModB           *Mod             `json:"mod_b,omitempty"`
+	Details        string           `json:"details"`
+	Severity       ConflictSeverity `json:"severity"`
+	Recommendation string           `json:"recommendation"`
 }
 
-// ID returns a stable identity for a report so a caller can hold on to it and
-// refer to it later — "resolve conflict 3" becomes "resolve <id>".
+// ID returns a stable identity for a report so a caller can refer to it later —
+// "resolve conflict 3" becomes "resolve <id>".
 //
-// A ConflictReport has no natural key of its own: Details is prose, and Type
-// alone is not unique. The identity is therefore derived from what actually
-// distinguishes one report from another — its type and the pair of mods involved.
-//
-// The two mod ids are sorted so that a report found with ModA and ModB swapped
-// produces the same ID: the order the detector happened to walk the mods in is
-// not part of the conflict. An empty id is kept as an empty field rather than
-// dropped, so "declared:" and "declared::" cannot collide.
-func (r ConflictReport) ID() string {
+// A report has no natural key: Details is prose and Type is not unique. The ids
+// are sorted so a report found with ModA and ModB swapped gets the same identity,
+// and an empty id is kept as an empty field so "declared:" and "declared::" cannot
+// collide.
+func (r ConflictReport) Identity() string {
 	a, b := r.modIDs()
 	return string(r.Type) + ":" + a + ":" + b
 }
 
 // modIDs returns the two mod ids in sorted order, tolerating a missing side.
 //
-// The missing side sorts *last*, not first: the empty string compares below every
-// real id, so sorting naively would make a one-sided report read
-// "load_order::better_ui" and, worse, give it the same id as any pair whose
-// first id were the empty string.
+// The missing side sorts last: the empty string compares below every real id, so
+// sorting naively would give a one-sided report the same id as a pair whose first
+// id is empty.
 func (r ConflictReport) modIDs() (string, string) {
 	a, b := "", ""
 	if r.ModA != nil {
@@ -217,9 +211,8 @@ func (r ConflictReport) modIDs() (string, string) {
 	return a, b
 }
 
-// ModIDs returns the two mod ids involved in the report, in sorted order, and
-// whether both ends are present. A single-sided report (one mod contradicts a
-// version requirement rather than another mod) still reports what it has.
+// ModIDs returns the two mod ids in sorted order and whether both ends are
+// present, so a single-sided report still reports what it has.
 func (r ConflictReport) ModIDs() (first, second string, both bool) {
 	a, b := r.modIDs()
 	return a, b, a != "" && b != ""
@@ -234,9 +227,8 @@ type CacheInfo struct {
 	TotalSize int64     `json:"total_size"`
 }
 
-// ModSourceInfo is the serialisable description of a registered source. The
-// live ModSource interface cannot cross the Wails boundary, so the UI receives
-// this projection instead.
+// ModSourceInfo is the serialisable description of a registered source: the live
+// ModSource interface cannot cross the Wails boundary, so the UI gets this.
 type ModSourceInfo struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -247,9 +239,7 @@ type ModSourceInfo struct {
 	RequiresAPIKey bool   `json:"requires_api_key"`
 	Enabled        bool   `json:"enabled"`
 	Authenticated  bool   `json:"authenticated"`
-	// HasAPIKey reports that a credential is stored for this source. It is
-	// deliberately a yes/no answer and never the key: a settings screen needs to
-	// know whether to show an input box or a "key stored, replace it?" prompt,
-	// and the value itself has no business in a JSON payload a UI renders.
+	// HasAPIKey reports only that a credential is stored, never the key: a UI
+	// needs to choose an input box, and the value has no business in JSON.
 	HasAPIKey bool `json:"has_api_key"`
 }

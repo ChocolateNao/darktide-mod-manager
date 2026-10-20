@@ -138,13 +138,12 @@ func TestOneLineFoldsAMultiLineError(t *testing.T) {
 }
 
 func TestEnvWithDefaultsFillsOnlyWhatIsMissing(t *testing.T) {
-	// A nil writer is a mistake in a test or an embedder, and a panic there
-	// says nothing about the command that was running.
+	// A nil writer is a caller mistake; a panic here would say nothing about the
+	// command.
 	env := Env{}.withDefaults()
 	require.NotNil(t, env.Out, "withDefaults left a field nil: %+v", env)
 	require.NotNil(t, env.Err, "withDefaults left a field nil: %+v", env)
 	require.NotNil(t, env.In, "withDefaults left a field nil: %+v", env)
-	// Discarding is better than panicking, so a defaulted field has to be writable.
 	_, err := env.Out.Write([]byte("out"))
 	assert.NoError(t, err, "writing to a defaulted Out failed: %v", err)
 
@@ -155,8 +154,7 @@ func TestEnvWithDefaultsFillsOnlyWhatIsMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, 0, read, "a defaulted In produced %d bytes, want an empty reader", read)
 
-	// A supplied writer is not replaced: a caller whose captured output went to
-	// io.Discard would have a very confusing test.
+	// A supplied writer must survive, or a caller's captured output would vanish.
 	var out, errOut strings.Builder
 
 	given := Env{Out: &out, Err: &errOut, In: strings.NewReader("x")}.withDefaults()
@@ -181,8 +179,8 @@ func TestEnvWithDefaultsFillsOnlyWhatIsMissing(t *testing.T) {
 }
 
 func TestOneInvocationBuildsOneContainer(t *testing.T) {
-	// One invocation is one process. A container that could be rebuilt mid-run
-	// would be able to disagree with itself.
+	// One invocation is one process; a container rebuilt mid-run could disagree
+	// with itself.
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
@@ -198,8 +196,7 @@ func TestOneInvocationBuildsOneContainer(t *testing.T) {
 			return di.NewContainer(ctx, opts)
 		},
 	}
-	// Each is a separate invocation as far as the container is concerned, so the
-	// counter has to go up once per invocation, not once per test binary run.
+	// Each is a separate invocation, so the counter goes up once per invocation.
 	invocations := [][]string{
 		w.args("mod", "list"),
 		w.args("source", "list"),
@@ -232,8 +229,7 @@ func TestOneInvocationBuildsOneContainer(t *testing.T) {
 }
 
 func TestVersionAndHelpBuildNoContainer(t *testing.T) {
-	// A version query has to work when the settings file is unreadable, and so
-	// does help: somebody who cannot start the manager needs to read it.
+	// Version and help must work when the settings file is unreadable.
 	for _, args := range [][]string{{"version"}, {"--help"}, {"mod", "--help"}, {"mod", "list", "--help"}} {
 		builds := 0
 
@@ -264,7 +260,7 @@ func TestVersionAndHelpBuildNoContainer(t *testing.T) {
 }
 
 func TestAMissingContainerFactoryIsReportedNotPanicked(t *testing.T) {
-	// A caller that forgot the factory gets an error that says so, not a nil
+	// A caller that forgot the factory gets an error naming it, never a nil
 	// dereference inside a command.
 	var out, errOut strings.Builder
 
@@ -283,8 +279,7 @@ func TestAMissingContainerFactoryIsReportedNotPanicked(t *testing.T) {
 }
 
 func TestABuildFailureIsRememberedAndReportedOnce(t *testing.T) {
-	// Retrying a start-up already shown to fail would repeat the message, or
-	// replace it with a second failure after the first left something half-built.
+	// Retrying a start-up already shown to fail would repeat or replace its message.
 	builds := 0
 
 	var out, errOut strings.Builder
@@ -300,8 +295,7 @@ func TestABuildFailureIsRememberedAndReportedOnce(t *testing.T) {
 			)
 		},
 	}
-	// `mod list` asks for the client more than once, which is how the second
-	// acquire is exercised: one invocation runs one command.
+	// `mod list` asks for the client more than once, exercising the second acquire.
 	code := RunContext(context.Background(), env, []string{"mod", "list"})
 	assert.Equal(t, ExitError, code, "exited %d, want %d", code, ExitError)
 
@@ -317,7 +311,6 @@ func TestABuildFailureIsRememberedAndReportedOnce(t *testing.T) {
 }
 
 func TestSessionAcquireRemembersAFailure(t *testing.T) {
-	// The session decides whether to build again, so it is tested directly.
 	builds := 0
 	s := &session{env: Env{
 		NewContainer: func(context.Context, di.Options) (*di.Container, error) {
@@ -437,8 +430,7 @@ func TestGlobalFlagsReachTheContainer(t *testing.T) {
 }
 
 func TestAnUnsetPathIsPassedThroughBlank(t *testing.T) {
-	// di treats a blank path as "no opinion" and falls back to the settings file,
-	// which is what inventing a default here would override.
+	// di treats a blank path as "no opinion" and falls back to the settings file.
 	var (
 		seen        di.Options
 		out, errOut strings.Builder
@@ -468,8 +460,8 @@ func TestQuietSilencesStartUpDiagnosticsButNotErrors(t *testing.T) {
 	w := newWorkspace(t)
 	w.makeGame(t)
 	w.writeConfig(t)
-	// A source that cannot be built produces a diagnostic rather than a failure,
-	// so --quiet's effect is only visible in the failing run checked below.
+	// A source that cannot be built produces a diagnostic, so --quiet shows only
+	// in the failing run below.
 	var errOut strings.Builder
 
 	env := Env{
@@ -516,7 +508,7 @@ func TestQuietSilencesStartUpDiagnosticsButNotErrors(t *testing.T) {
 	)
 	code = RunContext(context.Background(), env, failing)
 	assert.Equal(t, ExitError, code, "a failing command exited %d, want %d", code, ExitError)
-	// --quiet silences start-up chatter, not the failure the user asked about.
+	// --quiet silences start-up chatter.
 	assert.Contains(
 		t,
 		errOut.String(),
@@ -535,8 +527,8 @@ func TestQuietSilencesStartUpDiagnosticsButNotErrors(t *testing.T) {
 }
 
 func TestTheGameFlagNamesAGameAndRefusesUnknownOnes(t *testing.T) {
-	// An unknown --game has to fail start-up rather than fall back to the
-	// configured game: a typo that runs the wrong game is worse than one that stops.
+	// An unknown --game fails start-up: a typo that runs the wrong game is worse
+	// than one that stops.
 	w := newWorkspace(t)
 	w.makeGame(t)
 
@@ -613,28 +605,21 @@ func TestNewRootCommandHasTheWholeTree(t *testing.T) {
 	walk(root)
 
 	want := []string{
-		// groups
 		"mod", "source", "game", "cache", "config", "manifest", "version",
-		// mod
 		"list", "show", "install", "uninstall", "enable", "disable", "update",
 		"reorder", "path", "relink", "symlink-status", "conflicts", "share", "import-link",
 		"hooks",
-		// source
 		"search", "auth", "test",
-		// game
 		"detect", "validate", "info", "use", "current",
-		// cache
 		"clear", "prune",
-		// config
 		"show", "get", "set", "edit",
-		// manifest
 		"init",
 	}
 	for _, name := range want {
 		assert.True(t, found[name], "the tree has no %q command", name)
 	}
-	// "list", "show" and "info" appear under more than one group, hence the
-	// group names above. The count catches a tree that failed to assemble.
+	// "list", "show" and "info" appear under more than one group. The count
+	// catches a tree that failed to assemble.
 	assert.GreaterOrEqual(t, len(found), len(want),
 		"the walk found %d commands, fewer than the %d the contract names",
 		len(found),
@@ -654,12 +639,11 @@ func TestNewRootCommandHasTheWholeTree(t *testing.T) {
 }
 
 func TestEveryGroupHasHelp(t *testing.T) {
-	// A group reached by name prints its own help, not the root's.
+	// A group reached by name prints its own help.
 	for _, name := range []string{"mod", "source", "game", "cache", "config", "manifest"} {
 		var out, errOut strings.Builder
 
 		env := Env{Out: &out, Err: &errOut}
-		// The bare group prints help through its own RunE, not through a flag.
 		code := RunContext(context.Background(), env, []string{name})
 		assert.Equal(t, ExitOK, code, "`dmm %s` exited %d, want 0", name, code)
 

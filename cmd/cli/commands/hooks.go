@@ -16,7 +16,7 @@ import (
 
 // newModHooksCommand assembles `dmm mod hooks`. Every subcommand is a
 // read-modify-write over one mod's whole hook set, because UpdateModHooks
-// replaces the set rather than merging into it, so a racing change loses one.
+// replaces the set; a racing change loses one.
 func newModHooksCommand(s *session) *cobra.Command {
 	group := &cobra.Command{
 		Use:   "hooks",
@@ -34,7 +34,6 @@ func newModHooksCommand(s *session) *cobra.Command {
 	return group
 }
 
-// hookView is the JSON shape of one script in `dmm mod hooks list`.
 type hookView struct {
 	Phase      string   `json:"phase"`
 	Type       string   `json:"type"`
@@ -43,8 +42,8 @@ type hookView struct {
 	Env        []string `json:"env,omitempty"`
 	Position   int      `json:"position"`
 	Timeout    int      `json:"timeout,omitempty"`
-	// EffectiveTimeout is what the executor would apply — the declared value
-	// after the configured default, game and permission caps — in seconds.
+	// EffectiveTimeout is what the executor would apply after the default, game
+	// and permission caps, in seconds.
 	EffectiveTimeout int `json:"effective_timeout"`
 }
 
@@ -70,8 +69,8 @@ func newHooksListCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			// Permission scopes hang off the mod, so the effective timeout is only
-			// exact with it in hand; the hooks were readable, so a miss is tolerated.
+			// Permission scopes hang off the mod, so the effective timeout is exact
+			// only with it; a miss is tolerated.
 			mod, err := client.GetMod(ctx, args[0])
 			if err != nil {
 				mod = nil
@@ -223,8 +222,8 @@ func newHooksRemoveCommand(s *session) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Asked of the flag set, not the value: 0 is the zero value whether
-			// the user typed --index 0 or typed nothing, and positions are 1-based.
+			// Positions are 1-based, and 0 is the zero value whether or not
+			// --index was typed.
 			givenIndex := cmd.Flags().Changed("index")
 			if givenIndex && index <= 0 {
 				return fatalf("--index is 1-based, got %d; 0 names no script", index)
@@ -346,8 +345,7 @@ func newHooksEditCommand(s *session) *cobra.Command {
 }
 
 // readHooksFile reads a hook set from JSON on disk. Every failure names the file:
-// "unexpected end of JSON input" with no path sends the user hunting through
-// their shell history.
+// a bare JSON error with no path sends the user hunting through shell history.
 func readHooksFile(path string) (api.ModHooks, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -373,8 +371,8 @@ func readHooksFile(path string) (api.ModHooks, error) {
 }
 
 // hookContent returns the script body from --content or --file, exactly one of
-// which must be given. A blank body reaches the executor as a hook that still
-// runs and still times out, so it is refused here.
+// which must be given. A blank body still runs and still times out, so it is
+// refused here.
 func hookContent(content, file string) (string, error) {
 	content = strings.TrimSpace(content)
 
@@ -411,7 +409,6 @@ func validateEnvEntry(entry string) error {
 	return nil
 }
 
-// parseHookPhase turns a --phase argument into a phase.
 func parseHookPhase(text string) (domain.HookPhase, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -427,8 +424,8 @@ func parseHookPhase(text string) (domain.HookPhase, error) {
 }
 
 // parseHookLanguage turns a --type argument into a script language. The
-// comparison is case-insensitive because a shell user types `LUA` and means lua,
-// but the stored value is the canonical lower-case one the executor's registry is keyed by.
+// comparison is case-insensitive because a shell user types `LUA` and means lua;
+// the stored value is the lower-case one the executor's registry is keyed by.
 func parseHookLanguage(text string) (domain.ScriptLanguage, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -475,9 +472,8 @@ func timeoutText(seconds int) string {
 	return strconv.Itoa(seconds) + "s"
 }
 
-// effectiveText renders the timeout the executor will apply. Zero here means
-// no executor is wired (or the duration rounded away), and "-" says that
-// better than "default" would: this column is an answer, not a declaration.
+// effectiveText renders the timeout the executor will apply. Zero means none is
+// wired or the duration rounded away, so a dash is printed.
 func effectiveText(d time.Duration) string {
 	switch {
 	case d <= 0:

@@ -23,7 +23,7 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements json.Unmarshaler. Only duration strings are
-// accepted; a bare number is rejected rather than silently reinterpreted,
+// accepted; a bare number is rejected: not silently reinterpreted,
 // because nanoseconds and seconds differ by nine zeroes and guessing wrong
 // turns "30" into a third of a microsecond.
 func (d *Duration) UnmarshalJSON(data []byte) error {

@@ -7,9 +7,8 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// EventType names a thing that happened. The strings are part of the public
-// contract: pkg/api re-exports them and the frontend switches on them, so they
-// are declared once here rather than spelled out at each publish site.
+// EventType names a thing that happened. The strings are public contract:
+// pkg/api re-exports them and the frontend switches on them.
 type EventType string
 
 const (
@@ -33,20 +32,31 @@ const (
 	EventCachePruned     EventType = "cache.pruned"
 	EventCacheCleared    EventType = "cache.cleared"
 
+	// Share events exist because a transfer can sit in connecting for minutes
+	// behind NAT, which no polling interval can tell from a stalled transfer.
+	EventShareCreated   EventType = "share.created"
+	EventShareOffered   EventType = "share.offered"
+	EventShareAccepted  EventType = "share.accepted"
+	EventShareProgress  EventType = "share.progress"
+	EventShareCompleted EventType = "share.completed"
+	EventShareRejected  EventType = "share.rejected"
+	EventShareExpired   EventType = "share.expired"
+	EventShareFailed    EventType = "share.failed"
+
 	EventLog EventType = "log"
 )
 
-// allEventTypes lists every declared type in the order they are declared. It
-// backs EventTypes, which exists so pkg/api can assert that the events it
-// documents are exactly the events this layer publishes — a hand-written second
-// list would drift, and the drift would be invisible until a subscriber stopped
-// firing.
+// allEventTypes lists every declared type, backing EventTypes so pkg/api can
+// assert the events it documents are exactly the ones published here.
 var allEventTypes = []EventType{
 	EventModInstallStarted, EventModInstallProgress, EventModInstallCompleted,
 	EventModInstallFailed, EventModUninstallStarted, EventModUninstallCompleted,
 	EventModEnabled, EventModDisabled, EventModUpdated, EventModUpdateStarted,
 	EventModUpdateCompleted, EventHookStarted, EventHookFinished, EventHookFailed,
-	EventCacheDownloaded, EventCachePruned, EventCacheCleared, EventLog,
+	EventCacheDownloaded, EventCachePruned, EventCacheCleared,
+	EventShareCreated, EventShareOffered, EventShareAccepted, EventShareProgress,
+	EventShareCompleted, EventShareRejected, EventShareExpired, EventShareFailed,
+	EventLog,
 }
 
 // EventTypes returns every event type this layer can publish, in a fresh slice so
@@ -68,9 +78,8 @@ type Event struct {
 	SourceID string
 }
 
-// EventSink receives events. The API layer adapts its EventBus onto it; tests
-// use a slice-collecting fake. Publishing must never block or fail the caller,
-// so an implementation is expected to drop or buffer events rather than error.
+// EventSink receives events. The API layer adapts its EventBus onto it and tests
+// use a slice-collecting fake. Publishing must never block or fail the caller.
 type EventSink interface {
 	Publish(Event)
 }

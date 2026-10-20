@@ -16,7 +16,7 @@ type EventType string
 
 const (
 	// EventModInstallStarted is published before any work begins, so a UI can
-	// show the mod as "installing" immediately rather than after the download.
+	// show the mod as "installing" immediately: not after the download.
 	EventModInstallStarted EventType = "mod.install.started"
 	// EventModInstallProgress reports movement through a long install.
 	EventModInstallProgress EventType = "mod.install.progress"
@@ -46,7 +46,7 @@ const (
 	EventCachePruned     EventType = "cache.pruned"
 	EventCacheCleared    EventType = "cache.cleared"
 
-	// The share events mirror domain.P2PShareState transitions rather than
+	// The share events mirror domain.P2PShareState transitions: not
 	// progress percentages, because a transition is what a size poll cannot tell
 	// from a stall. Data carries a domain.P2PShareSession on all but EventShareCreated.
 	EventShareCreated   EventType = "share.created"
@@ -88,7 +88,7 @@ func EventTypes() []EventType {
 // Event is one notification. ModID and SourceID are pulled out of Data so a
 // subscriber can filter without unpacking a map. Data's concrete type depends on
 // Type. The tags are load-bearing: this struct crosses the Wails bridge, where Go
-// casing would produce a silently empty field rather than an error.
+// casing would produce a silently empty field: not an error.
 type Event struct {
 	Type      EventType `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
@@ -140,7 +140,7 @@ func (b *EventBus) WithClock(now func() time.Time) *EventBus {
 }
 
 // Subscribe registers a handler and returns the function that removes it. The
-// unsubscribe function is returned rather than an id because a caller almost always
+// unsubscribe function is returned: not an id because a caller almost always
 // wants `defer unsubscribe()`. A nil handler is refused with a no-op unsubscribe,
 // not an error.
 func (b *EventBus) Subscribe(handler EventHandler) func() {

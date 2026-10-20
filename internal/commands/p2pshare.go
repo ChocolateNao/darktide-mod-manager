@@ -10,19 +10,15 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// P2PShareCommands is peer-to-peer sharing as a frontend drives it.
-//
-// The flow is four separate calls rather than one blocking one, because a share
-// is a conversation between two people not necessarily at their computers at the
-// same moment: pack and offer, preview and decide, feed the answer back, install.
-//
-// Nothing is received or installed until the recipient has previewed and decided,
-// which is what makes declining a real option rather than a courtesy.
+// P2PShareCommands is peer-to-peer sharing as a frontend drives it. The flow is
+// four separate calls, because a share is a conversation between two people not
+// necessarily at their computers at the same moment. Nothing is received or
+// installed until the recipient has previewed and decided, which makes declining
+// a real option.
 type P2PShareCommands struct {
 	*base
 }
 
-// NewP2PShareCommands builds the peer-to-peer sharing command set.
 func NewP2PShareCommands(deps Deps) *P2PShareCommands {
 	return &P2PShareCommands{base: newBase(deps)}
 }
@@ -62,10 +58,9 @@ func (c *P2PShareCommands) CreateShare(
 	return link, nil
 }
 
-// createOptions turns the two fields a frontend collects into service options.
-//
-// The expiry arrives as a string because a JavaScript date is a string. Empty
-// means no expiry: a share with no time limit is permanent, and the link says so.
+// createOptions turns the fields a frontend collects into service options. The
+// expiry arrives as a string because a JavaScript date is a string; empty means no
+// expiry, a permanent share, and the link says so.
 func createOptions(
 	expiresAt string,
 	senderName string,
@@ -93,8 +88,7 @@ func createOptions(
 }
 
 // resolveMods turns the ids a frontend collected into the records the service
-// packs. Re-reading them here means the archives are built from what is on disk
-// now rather than from what a stale form claimed.
+// packs. Re-reading them here builds the archives from what is on disk now.
 func (c *P2PShareCommands) resolveMods(
 	ctx context.Context,
 	client *api.Client,
@@ -121,9 +115,9 @@ func (c *P2PShareCommands) resolveMods(
 	return mods, nil
 }
 
-// PreviewShare describes an offer without connecting to anybody. This is the
-// call that makes a decline informed: it reports the mods, their sizes, the
-// fallback download locations and whether the link has already expired.
+// PreviewShare describes an offer without connecting to anybody, so a decline is
+// informed: it reports the mods, their sizes, fallback download locations and
+// whether the link has expired.
 func (c *P2PShareCommands) PreviewShare(link string) (*api.P2PSharePreview, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -163,10 +157,8 @@ func (c *P2PShareCommands) AcceptShare(
 }
 
 // RejectShare declines an offer. The recipient gets nothing installed, and the
-// sender is told why rather than being left to time out.
-//
-// The sender holds the connection, so this returns as soon as the link exists;
-// use AwaitRejectedShare to learn whether it arrived.
+// sender is told why. The sender holds the connection, so this returns as soon as
+// the link exists; use AwaitRejectedShare to learn whether it arrived.
 func (c *P2PShareCommands) RejectShare(link string, reason string) (*api.P2PAnswerLink, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -237,10 +229,9 @@ func (c *P2PShareCommands) AwaitShare(offerID string) error {
 	return nil
 }
 
-// InstallShare installs the verified archives of a completed share.
-//
-// Enabling is a parameter rather than a policy: a share is mods the user picked to
-// try, and some are meant to sit in the folder disabled.
+// InstallShare installs the verified archives of a completed share. Enabling is a
+// parameter: a share is mods the user picked to try, and some belong in the folder
+// disabled.
 func (c *P2PShareCommands) InstallShare(offerID string, enable bool) ([]api.Mod, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
@@ -331,11 +322,9 @@ func (c *P2PShareCommands) DiscardShare(offerID string) error {
 }
 
 // DefaultSTUNServers lists the STUN servers a share uses unless the user
-// configured others.
-//
-// A frontend shows this next to the link it hands out. STUN carries only a
-// reflexive address, but it is still a third party the traffic touches, and a
-// share is exactly the sort of thing a user is asked to trust blindly.
+// configured others. A frontend shows this next to the link it hands out: STUN is
+// a third party the traffic touches, and a share is exactly the sort of thing a
+// user is asked to trust blindly.
 func (c *P2PShareCommands) DefaultSTUNServers() []string {
 	client, _, cancel, err := c.ready()
 	if err != nil {

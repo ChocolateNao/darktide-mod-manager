@@ -16,13 +16,12 @@ func TestParseCSV(t *testing.T) {
 		want []string
 	}{
 		{name: "empty"},
-		// A string with nothing but separators and whitespace yields an empty
-		// slice, not a one-element slice of the input with spaces trimmed.
+		// Separators and whitespace only yield an empty slice.
 		{name: "whitespace only", in: "   ", want: []string{}},
 		{name: "one", in: "better-ui", want: []string{"better-ui"}},
 		{name: "three trimmed", in: " a , b , c ", want: []string{"a", "b", "c"}},
-		// An empty segment is dropped rather than passed through as a zero-length
-		// id: "a,,b" is a typo, and reporting "mod \"\" not found" points at a mod never asked for.
+		// An empty segment is dropped: "a,,b" is a typo, and "mod \"\" not found"
+		// points at a mod never asked for.
 		{name: "empty segments dropped", in: "a,,b,", want: []string{"a", "b"}},
 		{name: "no spaces needed", in: "one,two", want: []string{"one", "two"}},
 	}
@@ -48,13 +47,12 @@ func TestShareTableRendersProviders(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "abc")
 	assert.Contains(t, out, "darktide")
-	// The two providers of the second share are joined, so a row never wraps.
 	assert.Contains(t, out, "s3,dropbox")
 }
 
 func TestShareTableViewJSONShape(t *testing.T) {
-	// The field names here are the interface the frontend and any script consume,
-	// so they are pinned rather than left to whatever the struct happens to say.
+	// These field names are the interface the frontend and any script consume, so
+	// they are pinned.
 	views := []shareView{{
 		ID:        "abc",
 		GameID:    "darktide",
@@ -81,8 +79,8 @@ func TestShareTableViewJSONShape(t *testing.T) {
 }
 
 func TestShareLinkViewOmitsMissingExpiry(t *testing.T) {
-	// A share with no expiry must not carry the key at all rather than an empty
-	// string: a reader that renders the empty string shows the user a blank line.
+	// A share with no expiry must omit the key: a reader that renders an empty
+	// string shows a blank line.
 	raw, err := json.Marshal(shareLinkView{URL: "https://dmm.app/s/s3/x", Provider: "s3"})
 	require.NoError(t, err)
 
