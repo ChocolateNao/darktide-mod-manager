@@ -11,13 +11,13 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod share nothing-he
 e error: MOD_NOT_FOUND: mod "nothing-here" is not installed
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod import-link https://www.nexusmods.com/darktide/mods/7001
-e error: INVALID_ARGUMENT: "https://www.nexusmods.com/darktide/mods/7001" is a web address; give a Nexus link (nxm link <game>/<mod>/<file>)
+e error: INVALID_ARGUMENT: "https://www.nexusmods.com/darktide/mods/7001" is a web address; expected a Nexus link (nxm link <game>/<mod>/<file>)
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod import-link 900/7001
 e error: INVALID_ARGUMENT: "900/7001" is not a mod link; expected nxm link <game>/<mod>/<file>
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod import-link nxm link fallout4/900/7001
-e error: INVALID_ARGUMENT: "nxm link fallout4/900/7001" is a link for "fallout4", and this manager only handles "warhammer40kdarktide"
+e error: INVALID_ARGUMENT: "nxm link fallout4/900/7001" is a link for the "fallout4" version of nexus, which this manager does not have; it can install links for warhammer40kdarktide
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod import-link nxm link darktide/900
 e error: INVALID_ARGUMENT: "nxm link darktide/900" is not a complete Nexus link; expected nxm://<game>/<mod id>/<file id>
