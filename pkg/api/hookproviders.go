@@ -8,7 +8,6 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
-	"github.com/rs/zerolog"
 )
 
 // The providers handed to the hook sandbox. They are the only bridge between a
@@ -152,26 +151,4 @@ func (a hookStorageAccess) Path(
 	}
 
 	return domain.ModStoragePath(a.storageRoot, gameID, modID, version), nil
-}
-
-// hookLogFunc forwards a script's log line to the process logger.
-func hookLogFunc(logger *zerolog.Logger) host.LogFunc {
-	if logger == nil {
-		return nil
-	}
-
-	return func(level, msg string) {
-		event := logger.Info()
-
-		switch strings.ToLower(strings.TrimSpace(level)) {
-		case "warn", "warning":
-			event = logger.Warn()
-		case "error":
-			event = logger.Error()
-		case "debug":
-			event = logger.Debug()
-		}
-
-		event.Str("op", "hook.script").Msg(msg)
-	}
 }

@@ -57,9 +57,7 @@ func (z *ZerologLogger) Printf(format string, args ...any) {
 }
 
 // loggingConfig folds the persisted config block and the per-process overrides into
-// one logging.Config. logging.level wins over the legacy advanced.log_level, but
-// only once the user has set it: migrateLevel already copied the legacy value
-// across.
+// one logging.Config.
 func loggingConfig(cfg *domain.Config, opts LoggingOptions) logging.Config {
 	out := logging.DefaultConfig()
 	if cfg != nil {
@@ -115,22 +113,4 @@ func parseLogLevel(value string) (string, error) {
 	return "", appErrors.New(appErrors.ErrCodeInvalidArgument,
 		"%q is not a log level: expected one of %s", strings.TrimSpace(value),
 		strings.Join(logLevels, ", "))
-}
-
-// migrateLevel copies the legacy advanced.log_level into logging.level for a config
-// that predates the logging block, so an existing setting keeps working. It reports
-// whether it changed anything, so the caller can avoid saving an unchanged config.
-func migrateLevel(cfg *domain.Config) bool {
-	if cfg == nil || cfg.Logging.Level != "" {
-		return false
-	}
-
-	level := strings.TrimSpace(cfg.Advanced.LogLevel)
-	if level == "" {
-		return false
-	}
-
-	cfg.Logging.Level = level
-
-	return true
 }

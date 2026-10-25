@@ -21,7 +21,6 @@ var stringConfigFields = map[string]string{
 	"auto_update.last_check":             "2026-03-01T12:00:00Z",
 	"ui.theme":                           "dark",
 	"ui.language":                        "en",
-	"advanced.log_level":                 "debug",
 	"logging.level":                      "warn",
 	"logging.directory":                  "/var/log/dmm",
 	"storage.backup_retention_days":      "",
@@ -398,7 +397,7 @@ func TestConfigValueReportsUnknownKeys(t *testing.T) {
 			err,
 		)
 	}
-	// A blank key is a bad argument rather than a missing setting: the caller made
+	// A blank key is a bad argument, not a missing setting: the caller made
 	// a mistake, not a request the manager cannot answer.
 	for _, key := range []string{"", "   ", "\t"} {
 		_, err := ConfigValue(cfg, key)
@@ -713,7 +712,7 @@ func TestMergeSourceBlockLeavesTheFileAlone(t *testing.T) {
 func TestGameKeysReadAndWritePerGameSettings(t *testing.T) {
 	cfg := configPtr(domain.DefaultConfig())
 
-	// A game with no entry answers with the defaults rather than a failure:
+	// A game with no entry answers with the defaults, not a failure:
 	// auto_detect is what a fresh installation would do.
 	got, err := ConfigValue(cfg, "games.sietch.auto_detect")
 	require.NoError(t, err, "ConfigValue for an unconfigured game")

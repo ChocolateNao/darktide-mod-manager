@@ -45,7 +45,6 @@ o   "language": "en",
 o   "compact_mode": false
 o   },
 o   "advanced": {
-o   "log_level": "info",
 o   "enable_experimental": false
 o   },
 o   "storage": {

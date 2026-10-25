@@ -192,8 +192,7 @@ type UIConfig struct {
 
 // AdvancedConfig holds escape hatches.
 type AdvancedConfig struct {
-	LogLevel           string `json:"log_level"`
-	EnableExperimental bool   `json:"enable_experimental"`
+	EnableExperimental bool `json:"enable_experimental"`
 }
 
 // LoggingConfig is the persisted half of the logging settings. It carries none of the
@@ -251,9 +250,7 @@ func DefaultConfig() Config {
 			MaxAgeDays: 30,
 			Compress:   true,
 		},
-		Advanced: AdvancedConfig{
-			LogLevel: "info",
-		},
+		Advanced: AdvancedConfig{},
 	}
 }
 
@@ -348,10 +345,6 @@ func (c *Config) ApplyDefaults() {
 
 	if !c.Logging.Compress {
 		c.Logging.Compress = true
-	}
-
-	if c.Advanced.LogLevel == "" {
-		c.Advanced.LogLevel = d.Advanced.LogLevel
 	}
 }
 

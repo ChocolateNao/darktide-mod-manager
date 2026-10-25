@@ -57,6 +57,53 @@ func (l *LogCommands) logService() (*logging.Service, error) {
 	return l.logging, nil
 }
 
+// GetLogSettings returns what the Logs page renders its header from: the
+// severity in force, the resolved destinations and the rotation policy the
+// sinks run with. It reads the applied config.
+func (l *LogCommands) GetLogSettings() (LogSettings, error) {
+	service, err := l.logService()
+	if err != nil {
+		return LogSettings{}, err
+	}
+
+	cfg := service.Applied()
+
+	settings := LogSettings{
+		Level:        service.Level().String(),
+		Directory:    service.Directory(),
+		MaxSizeMB:    cfg.MaxSizeMB,
+		MaxBackups:   cfg.MaxBackups,
+		MaxAgeDays:   cfg.MaxAgeDays,
+		Compress:     cfg.Compress,
+		ConsoleOnly:  service.Directory() == "",
+		RedactFields: len(cfg.Redact) > 0,
+	}
+
+	if dir := service.Directory(); dir != "" {
+		settings.File = logging.LogPath(dir)
+	}
+
+	return settings, nil
+}
+
+// SetLogLevel changes the severity in force for this run. It is a runtime call
+// on purpose: the persisted config keeps its own level, edited via UpdateConfig.
+func (l *LogCommands) SetLogLevel(level string) error {
+	service, err := l.logService()
+	if err != nil {
+		return err
+	}
+
+	name, err := logLevelOf(level)
+	if err != nil {
+		return err
+	}
+
+	service.SetLevel(logging.ParseLevel(name))
+
+	return nil
+}
+
 // TailLogs returns the most recent records, filtered to minLevel.
 func (l *LogCommands) TailLogs(count int, minLevel string) ([]logging.LogLine, error) {
 	service, err := l.logService()
