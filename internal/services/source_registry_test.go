@@ -159,7 +159,7 @@ func (s *stubSource) ValidateCredentials(context.Context) error                 
 func registerFactory(t *testing.T, id string, factory SourceFactory) {
 	t.Helper()
 	// A leftover from a previous test with the same name would make
-	// RegisterSourceFactory fail; delete it rather than hiding that.
+	// RegisterSourceFactory fail; delete it.
 	forgetFactory(id)
 
 	{
@@ -1348,7 +1348,7 @@ func TestInfoReportsTheConfigurationRatherThanTheBuild(t *testing.T) {
 
 // forgettingSource is a fakeSource that can also drop its credential. It is a
 // separate type so that "this source can forget" stays a property of the plugin
-// rather than something every test double quietly has.
+// and is not quietly inherited by every test double.
 type forgettingSource struct {
 	*fakeSource
 	forgotten atomic.Int64

@@ -8,6 +8,8 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/crypto"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/p2p"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func sampleOffer() domain.P2PShareOffer {
@@ -37,9 +39,7 @@ func secretFor(t *testing.T) string {
 	t.Helper()
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("link secret: %v", err)
-	}
+	require.NoError(t, err, "link secret: %v", err)
 
 	return secret
 }
@@ -52,56 +52,47 @@ func TestLinkOfferRoundTrips(t *testing.T) {
 	sdp := "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\n"
 
 	link, err := p2p.LinkOffer(offer, sdp)
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
-	if !p2p.IsOfferLink(link.Link) {
-		t.Fatalf("the link does not announce itself as an offer: %q", link.Link)
-	}
+	assert.True(t, p2p.IsOfferLink(link.Link), "the link does not announce itself as an offer: %q", link.Link)
 
-	if p2p.IsAnswerLink(link.Link) {
-		t.Fatal("an offer link was mistaken for an answer link")
-	}
+	assert.False(t, p2p.IsAnswerLink(link.Link), "an offer link was mistaken for an answer link")
 
-	if strings.ContainsAny(link.Link, " \t\n\r") {
-		t.Fatal("the link contains whitespace")
-	}
+	assert.False(t, strings.ContainsAny(link.Link, " \t\n\r"), "the link contains whitespace")
 
-	if link.Offer.OfferID != offer.OfferID || link.Offer.GameID != offer.GameID {
-		t.Fatalf("the link did not keep the offer it was given: %+v", link.Offer)
-	}
+	assert.Equal(t, offer.OfferID, link.Offer.OfferID, "the link did not keep the offer it was given: %+v", link.Offer)
+	assert.Equal(t, offer.GameID, link.Offer.GameID, "the link did not keep the offer it was given: %+v", link.Offer)
 
-	if link.SDP != sdp {
-		t.Fatalf("sdp = %q", link.SDP)
-	}
+	assert.Equal(t, sdp, link.SDP, "sdp = %q", link.SDP)
 
 	opened, err := p2p.OpenOffer(link.Link)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	require.NoError(t, err, "open: %v", err)
 
-	if opened.Offer.OfferID != offer.OfferID || opened.Offer.SenderName != offer.SenderName {
-		t.Fatalf("offer = %+v", opened.Offer)
-	}
+	assert.Equal(t, offer.OfferID, opened.Offer.OfferID, "offer = %+v", opened.Offer)
+	assert.Equal(t, offer.SenderName, opened.Offer.SenderName, "offer = %+v", opened.Offer)
 
-	if opened.Offer.ExpiresAt == nil || !opened.Offer.ExpiresAt.Equal(*offer.ExpiresAt) {
-		t.Fatalf("expiry = %v", opened.Offer.ExpiresAt)
-	}
+	assert.True(
+		t,
+		opened.Offer.ExpiresAt != nil && opened.Offer.ExpiresAt.Equal(*offer.ExpiresAt),
+		"expiry = %v",
+		opened.Offer.ExpiresAt,
+	)
 
-	if len(opened.Offer.Files) != 1 ||
-		opened.Offer.Files[0].HashSHA256 != offer.Files[0].HashSHA256 {
-		t.Fatalf("files = %+v", opened.Offer.Files)
-	}
+	assert.True(
+		t,
+		len(opened.Offer.Files) == 1 && opened.Offer.Files[0].HashSHA256 == offer.Files[0].HashSHA256,
+		"files = %+v",
+		opened.Offer.Files,
+	)
 
-	if len(opened.Offer.SourceLinks) != 1 ||
-		opened.Offer.SourceLinks[0].SourceURL != offer.SourceLinks[0].SourceURL {
-		t.Fatalf("source links = %+v", opened.Offer.SourceLinks)
-	}
+	assert.True(
+		t,
+		len(opened.Offer.SourceLinks) == 1 && opened.Offer.SourceLinks[0].SourceURL == offer.SourceLinks[0].SourceURL,
+		"source links = %+v",
+		opened.Offer.SourceLinks,
+	)
 
-	if opened.Secret != link.Secret {
-		t.Fatal("the round trip returned a different secret")
-	}
+	assert.Equal(t, link.Secret, opened.Secret, "the round trip returned a different secret")
 }
 
 // TestLinkOfferHidesTheOffer covers a chat preview or a relaying server reading nothing inside.
@@ -109,14 +100,10 @@ func TestLinkOfferHidesTheOffer(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
 	for _, secret := range []string{"nexusmods.com", "sharpshooter", "darktide", "scout"} {
-		if strings.Contains(link.Link, secret) {
-			t.Fatalf("the link leaks %q in the clear", secret)
-		}
+		assert.NotContains(t, link.Link, secret, "the link leaks %q in the clear", secret)
 	}
 }
 
@@ -128,26 +115,16 @@ func TestLinkOfferWithoutAnExpiryIsPermanent(t *testing.T) {
 	offer.ExpiresAt = nil
 
 	link, err := p2p.LinkOffer(offer, "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
-	if link.ExpiresAt() != nil {
-		t.Fatalf("ExpiresAt = %v, want nil", link.ExpiresAt())
-	}
+	assert.Nil(t, link.ExpiresAt(), "ExpiresAt = %v, want nil", link.ExpiresAt())
 
-	if link.IsExpired(time.Now()) {
-		t.Fatal("a permanent link reported itself as expired")
-	}
+	assert.False(t, link.IsExpired(time.Now()), "a permanent link reported itself as expired")
 
 	opened, err := p2p.OpenOffer(link.Link)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	require.NoError(t, err, "open: %v", err)
 
-	if opened.Offer.ExpiresAt != nil {
-		t.Fatalf("the round trip invented an expiry: %v", opened.Offer.ExpiresAt)
-	}
+	assert.Nil(t, opened.Offer.ExpiresAt, "the round trip invented an expiry: %v", opened.Offer.ExpiresAt)
 }
 
 func TestLinkIsExpired(t *testing.T) {
@@ -158,47 +135,33 @@ func TestLinkIsExpired(t *testing.T) {
 	offer.ExpiresAt = &deadline
 
 	link, err := p2p.LinkOffer(offer, "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
-	if link.IsExpired(deadline.Add(-time.Second)) {
-		t.Fatal("the link expired a second early")
-	}
+	assert.False(t, link.IsExpired(deadline.Add(-time.Second)), "the link expired a second early")
 
-	if !link.IsExpired(deadline) {
-		t.Fatal("the link survived its own deadline")
-	}
+	assert.True(t, link.IsExpired(deadline), "the link survived its own deadline")
 
-	if !link.IsExpired(deadline.Add(time.Hour)) {
-		t.Fatal("the link survived an hour past its deadline")
-	}
+	assert.True(t, link.IsExpired(deadline.Add(time.Hour)), "the link survived an hour past its deadline")
 }
 
 func TestOpenOfferRefusesAnAnswer(t *testing.T) {
 	t.Parallel()
 
 	answer, err := p2p.LinkAnswer("offer-1", "v=0", secretFor(t), "medic")
-	if err != nil {
-		t.Fatalf("answer: %v", err)
-	}
+	require.NoError(t, err, "answer: %v", err)
 
-	if _, err := p2p.OpenOffer(answer.Link); err == nil {
-		t.Fatal("an answer link opened as an offer")
-	}
+	_, err = p2p.OpenOffer(answer.Link)
+	require.Error(t, err, "an answer link opened as an offer")
 }
 
 func TestOpenAnswerRefusesAnOffer(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
-	if _, err := p2p.OpenAnswer(link.Link); err == nil {
-		t.Fatal("an offer link opened as an answer")
-	}
+	_, err = p2p.OpenAnswer(link.Link)
+	require.Error(t, err, "an offer link opened as an answer")
 }
 
 func TestLinkAnswerRoundTrips(t *testing.T) {
@@ -207,42 +170,30 @@ func TestLinkAnswerRoundTrips(t *testing.T) {
 	secret := secretFor(t)
 
 	answer, err := p2p.LinkAnswer("offer-1", "v=0\r\n", secret, "medic")
-	if err != nil {
-		t.Fatalf("answer: %v", err)
-	}
+	require.NoError(t, err, "answer: %v", err)
 
-	if !p2p.IsAnswerLink(answer.Link) {
-		t.Fatalf("the link does not announce itself as an answer: %q", answer.Link)
-	}
+	assert.True(t, p2p.IsAnswerLink(answer.Link), "the link does not announce itself as an answer: %q", answer.Link)
 
-	if answer.OfferID != "offer-1" || answer.Secret != secret {
-		t.Fatalf("answer = %+v", answer)
-	}
+	assert.Equal(t, "offer-1", answer.OfferID, "answer = %+v", answer)
+	assert.Equal(t, secret, answer.Secret, "answer = %+v", answer)
 
 	opened, err := p2p.OpenAnswer(answer.Link)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	require.NoError(t, err, "open: %v", err)
 
-	if opened.OfferID != "offer-1" || opened.ReceiverName != "medic" {
-		t.Fatalf("payload = %+v", opened)
-	}
+	assert.Equal(t, "offer-1", opened.OfferID, "payload = %+v", opened)
+	assert.Equal(t, "medic", opened.ReceiverName, "payload = %+v", opened)
 
-	if opened.SDP != "v=0\r\n" {
-		t.Fatalf("sdp = %q", opened.SDP)
-	}
+	assert.Equal(t, "v=0\r\n", opened.SDP, "sdp = %q", opened.SDP)
 }
 
 func TestLinkAnswerNeedsAnOfferID(t *testing.T) {
 	t.Parallel()
 
-	if _, err := p2p.LinkAnswer("", "v=0", secretFor(t), "medic"); err == nil {
-		t.Fatal("an answer with no offer id was accepted")
-	}
+	_, err := p2p.LinkAnswer("", "v=0", secretFor(t), "medic")
+	require.Error(t, err, "an answer with no offer id was accepted")
 
-	if _, err := p2p.LinkAnswer("offer-1", "v=0", "", "medic"); err == nil {
-		t.Fatal("an answer with no secret was accepted")
-	}
+	_, err = p2p.LinkAnswer("offer-1", "v=0", "", "medic")
+	require.Error(t, err, "an answer with no secret was accepted")
 }
 
 // TestLinkOfferGeneratesAFreshSecret covers two links for one offer not being interchangeable.
@@ -252,22 +203,14 @@ func TestLinkOfferGeneratesAFreshSecret(t *testing.T) {
 	offer := sampleOffer()
 
 	first, err := p2p.LinkOffer(offer, "v=0")
-	if err != nil {
-		t.Fatalf("first: %v", err)
-	}
+	require.NoError(t, err, "first: %v", err)
 
 	second, err := p2p.LinkOffer(offer, "v=0")
-	if err != nil {
-		t.Fatalf("second: %v", err)
-	}
+	require.NoError(t, err, "second: %v", err)
 
-	if first.Secret == second.Secret {
-		t.Fatal("two links for one offer share a secret")
-	}
+	assert.NotEqual(t, first.Secret, second.Secret, "two links for one offer share a secret")
 
-	if first.Link == second.Link {
-		t.Fatal("two links for one offer are identical")
-	}
+	assert.NotEqual(t, first.Link, second.Link, "two links for one offer are identical")
 }
 
 func TestOpenOfferRefusesGarbage(t *testing.T) {
@@ -291,33 +234,27 @@ func TestOpenOfferRefusesGarbage(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := p2p.OpenOffer(tc.text); err == nil {
-				t.Fatalf("%q was accepted", tc.text)
-			}
+			_, err := p2p.OpenOffer(tc.text)
+			require.Error(t, err, "%q was accepted", tc.text)
 		})
 	}
 }
 
-// TestOpenOfferRefusesAWrongSecret covers another secret's payload failing rather than decrypting.
+// TestOpenOfferRefusesAWrongSecret covers another secret's payload failing, not decrypting.
 func TestOpenOfferRefusesAWrongSecret(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
 	other, err := crypto.GenerateSecret(8)
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	// Swap in a different secret segment, keeping the sealed token intact.
 	forged := p2p.OfferLinkPrefix + other + "/" + strings.SplitN(link.Link, "/", 6)[5]
 
-	if _, err := p2p.OpenOffer(forged); err == nil {
-		t.Fatal("a link sealed under another secret was accepted")
-	}
+	_, err = p2p.OpenOffer(forged)
+	require.Error(t, err, "a link sealed under another secret was accepted")
 }
 
 // TestOpenOfferRefusesATamperedPayload covers one flipped ciphertext bit being detected.
@@ -325,18 +262,15 @@ func TestOpenOfferRefusesATamperedPayload(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
 	token := []byte(strings.SplitN(link.Link, "/", 6)[5])
 	token[len(token)-1] ^= 0x01
 
 	forged := p2p.OfferLinkPrefix + link.Secret + "/" + string(token)
 
-	if _, err := p2p.OpenOffer(forged); err == nil {
-		t.Fatal("a tampered link was accepted")
-	}
+	_, err = p2p.OpenOffer(forged)
+	require.Error(t, err, "a tampered link was accepted")
 }
 
 func TestOpenOfferRefusesAnUnknownProtocolVersion(t *testing.T) {
@@ -350,13 +284,10 @@ func TestOpenOfferRefusesAnUnknownProtocolVersion(t *testing.T) {
 		"v": int(domain.P2PProtocolVersion) + 1,
 		"s": "v=0",
 	}, secret)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
+	require.NoError(t, err, "encode: %v", err)
 
-	if _, err := p2p.OpenOffer(p2p.OfferLinkPrefix + secret + "/" + sealed); err == nil {
-		t.Fatal("a link from a future protocol version was accepted")
-	}
+	_, err = p2p.OpenOffer(p2p.OfferLinkPrefix + secret + "/" + sealed)
+	require.Error(t, err, "a link from a future protocol version was accepted")
 }
 
 // TestOpenAnswerRefusesAnOfferPayload covers an offer payload sealed under the answer scheme.
@@ -371,13 +302,10 @@ func TestOpenAnswerRefusesAnOfferPayload(t *testing.T) {
 		"s": "v=0",
 		"o": map[string]any{"offer_id": "x", "game_id": "darktide"},
 	}, secret)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
+	require.NoError(t, err, "encode: %v", err)
 
-	if _, err := p2p.OpenAnswer(p2p.AnswerLinkPrefix + secret + "/" + sealed); err == nil {
-		t.Fatal("an offer payload opened as an answer")
-	}
+	_, err = p2p.OpenAnswer(p2p.AnswerLinkPrefix + secret + "/" + sealed)
+	require.Error(t, err, "an offer payload opened as an answer")
 }
 
 // TestSessionKeyIsNotTheEnvelopeKey covers opening an envelope without forging a handshake.
@@ -387,26 +315,16 @@ func TestSessionKeyIsNotTheEnvelopeKey(t *testing.T) {
 	secret := secretFor(t)
 
 	sessionKey, err := p2p.SessionKeyFor(secret)
-	if err != nil {
-		t.Fatalf("session key: %v", err)
-	}
+	require.NoError(t, err, "session key: %v", err)
 
-	if len(sessionKey) != 32 {
-		t.Fatalf("session key is %d bytes", len(sessionKey))
-	}
+	assert.Len(t, sessionKey, 32, "session key is %d bytes", len(sessionKey))
 
-	if string(sessionKey) == secret {
-		t.Fatal("the session key is the secret")
-	}
+	assert.NotEqual(t, secret, string(sessionKey), "the session key is the secret")
 
 	other, err := p2p.SessionKeyFor(secretFor(t))
-	if err != nil {
-		t.Fatalf("other session key: %v", err)
-	}
+	require.NoError(t, err, "other session key: %v", err)
 
-	if string(sessionKey) == string(other) {
-		t.Fatal("two secrets produced the same session key")
-	}
+	assert.NotEqual(t, string(other), string(sessionKey), "two secrets produced the same session key")
 }
 
 // TestIsOfferLinkIsCaseInsensitive covers the scheme alone changing case.
@@ -414,9 +332,7 @@ func TestIsOfferLinkIsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
 	shouted := strings.ToUpper(
 		p2p.OfferLinkPrefix,
@@ -425,13 +341,10 @@ func TestIsOfferLinkIsCaseInsensitive(t *testing.T) {
 		p2p.OfferLinkPrefix,
 	)
 
-	if !p2p.IsOfferLink(shouted) {
-		t.Fatal("a link with an upper-cased scheme was not recognised")
-	}
+	assert.True(t, p2p.IsOfferLink(shouted), "a link with an upper-cased scheme was not recognised")
 
-	if _, err := p2p.OpenOffer(shouted); err != nil {
-		t.Fatalf("open shouted: %v", err)
-	}
+	_, err = p2p.OpenOffer(shouted)
+	require.NoError(t, err, "open shouted: %v", err)
 }
 
 // TestOpenOfferRefusesAnUpperCasedPayload covers base64url staying case-sensitive.
@@ -439,13 +352,10 @@ func TestOpenOfferRefusesAnUpperCasedPayload(t *testing.T) {
 	t.Parallel()
 
 	link, err := p2p.LinkOffer(sampleOffer(), "v=0")
-	if err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	require.NoError(t, err, "link: %v", err)
 
-	if _, err := p2p.OpenOffer(strings.ToUpper(link.Link)); err == nil {
-		t.Fatal("an upper-cased payload was accepted")
-	}
+	_, err = p2p.OpenOffer(strings.ToUpper(link.Link))
+	require.Error(t, err, "an upper-cased payload was accepted")
 }
 
 // TestOpenOfferRefusesAnOversizedLink covers the ceiling on what a paste may allocate.
@@ -454,7 +364,6 @@ func TestOpenOfferRefusesAnOversizedLink(t *testing.T) {
 
 	huge := p2p.OfferLinkPrefix + secretFor(t) + "/" + strings.Repeat("A", 2<<20)
 
-	if _, err := p2p.OpenOffer(huge); err == nil {
-		t.Fatal("an oversized link was accepted")
-	}
+	_, err := p2p.OpenOffer(huge)
+	require.Error(t, err, "an oversized link was accepted")
 }
