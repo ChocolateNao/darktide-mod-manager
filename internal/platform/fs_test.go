@@ -181,16 +181,13 @@ func TestAtomicWriteFile(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "nested", "deep", "config.json")
 
-	if err := AtomicWriteFile(target, []byte(`{"a":1}`), 0o600); err != nil {
-		require.FailNow(t, "AtomicWriteFile: %v", err)
-	}
+	err := AtomicWriteFile(target, []byte(`{"a":1}`), 0o600)
+	require.NoError(t, err, "AtomicWriteFile")
 
 	got, err := os.ReadFile(target)
 	require.NoError(t, err, "ReadFile")
 
-	if string(got) != `{"a":1}` {
-		assert.Fail(t, "content = %q, want %q", got, `{"a":1}`)
-	}
+	assert.Equal(t, `{"a":1}`, string(got), "content = %q", got)
 
 	info, err := os.Stat(target)
 	require.NoError(t, err)
@@ -199,14 +196,10 @@ func TestAtomicWriteFile(t *testing.T) {
 	assert.Equal(t, fs.FileMode(0o600), runtime, "mode = %v, want 0600", runtime)
 
 	// Overwriting must replace the file without leaving temporaries behind.
-	if err := AtomicWriteFile(target, []byte(`{"a":2}`), 0o644); err != nil {
-		require.FailNow(t, "AtomicWriteFile overwrite: %v", err)
-	}
+	require.NoError(t, AtomicWriteFile(target, []byte(`{"a":2}`), 0o644), "AtomicWriteFile overwrite")
 
 	got, _ = os.ReadFile(target)
-	if string(got) != `{"a":2}` {
-		assert.Fail(t, "content after overwrite = %q", got)
-	}
+	assert.Equal(t, `{"a":2}`, string(got), "content after overwrite = %q", got)
 
 	assertNoTempFiles(t, filepath.Dir(target))
 
@@ -364,9 +357,7 @@ func TestCopyTree(t *testing.T) {
 	err := os.MkdirAll(filepath.Join(src, "textures", "hud"), 0o755)
 	require.NoError(t, err)
 
-	if err := os.WriteFile(filepath.Join(src, "mod.json"), []byte("{}"), 0o644); err != nil {
-		require.FailNow(t, err.Error())
-	}
+	require.NoError(t, os.WriteFile(filepath.Join(src, "mod.json"), []byte("{}"), 0o644))
 
 	err = os.WriteFile(filepath.Join(src, "textures", "hud", "a.dds"), []byte("A"), 0o644)
 	require.NoError(t, err)
@@ -573,9 +564,7 @@ func TestMkdirAll(t *testing.T) {
 	err := MkdirAll(target)
 	require.NoError(t, err, "MkdirAll: %v", err)
 
-	if !IsDir(OSFS{}, target) {
-		assert.Fail(t, "directory not created")
-	}
+	assert.True(t, IsDir(OSFS{}, target), "directory not created")
 	// Idempotent.
 	err = MkdirAll(target)
 	require.NoError(t, err, "MkdirAll twice: %v", err)
@@ -601,9 +590,7 @@ func TestRemoveEmptyDir(t *testing.T) {
 	err = RemoveEmptyDir(empty)
 	require.NoError(t, err, "RemoveEmptyDir: %v", err)
 
-	if IsDir(OSFS{}, empty) {
-		assert.Fail(t, "empty directory still exists")
-	}
+	assert.False(t, IsDir(OSFS{}, empty), "empty directory still exists")
 
 	full := filepath.Join(dir, "full")
 	err = os.MkdirAll(full, 0o755)
@@ -615,9 +602,7 @@ func TestRemoveEmptyDir(t *testing.T) {
 	err = RemoveEmptyDir(full)
 	require.NoError(t, err, "RemoveEmptyDir on a non-empty dir: %v", err)
 
-	if !IsDir(OSFS{}, full) {
-		assert.Fail(t, "non-empty directory was removed")
-	}
+	assert.True(t, IsDir(OSFS{}, full), "non-empty directory was removed")
 
 	err = RemoveEmptyDir(filepath.Join(dir, "missing"))
 	assert.Error(t, err, "RemoveEmptyDir on a missing dir succeeded, want error")

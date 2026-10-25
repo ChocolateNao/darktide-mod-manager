@@ -7,6 +7,8 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCoerceArgsMaterialisesEveryDeclaredOption(t *testing.T) {
@@ -19,20 +21,10 @@ func TestCoerceArgsMaterialisesEveryDeclaredOption(t *testing.T) {
 	}
 
 	got, err := coerceArgs(declared, nil)
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
 	want := map[string]any{"query": "", "deep": true, "count": 0, "mode": "", "root": ""}
-	for key, expected := range want {
-		if got[key] != expected {
-			t.Fatalf("%s = %#v, want %#v", key, got[key], expected)
-		}
-	}
-
-	if len(got) != len(want) {
-		t.Fatalf("args = %v, want exactly the declared options", got)
-	}
+	assert.Equal(t, want, got, "args = %v, want exactly the declared options", got)
 }
 
 func TestCoerceArgsDropsUndeclaredOptions(t *testing.T) {
@@ -41,17 +33,11 @@ func TestCoerceArgsDropsUndeclaredOptions(t *testing.T) {
 	}
 
 	got, err := coerceArgs(declared, map[string]any{"query": "kept", "extra": "dropped"})
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
-	if _, ok := got["extra"]; ok {
-		t.Fatal("an undeclared option reached the handler")
-	}
+	assert.NotContains(t, got, "extra", "an undeclared option reached the handler")
 
-	if got["query"] != "kept" {
-		t.Fatalf("query = %#v", got["query"])
-	}
+	assert.Equal(t, "kept", got["query"], "query = %#v", got["query"])
 }
 
 // The CLI's flag name is idiomatic on a shell, the handler's key a Go
@@ -62,13 +48,9 @@ func TestCoerceArgsAcceptsTheFlagSpelling(t *testing.T) {
 	}
 
 	got, err := coerceArgs(declared, map[string]any{"load-order-file": "/mods/mod_load_order.txt"})
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
-	if got["load_order_file"] != "/mods/mod_load_order.txt" {
-		t.Fatalf("args = %v", got)
-	}
+	assert.Equal(t, "/mods/mod_load_order.txt", got["load_order_file"], "args = %v", got)
 }
 
 func TestCoerceArgsRequiresTheRequiredOption(t *testing.T) {
@@ -76,16 +58,12 @@ func TestCoerceArgsRequiresTheRequiredOption(t *testing.T) {
 		{Name: "query", Type: domain.ActionOptionString, Label: "Query", Required: true},
 	}
 
-	if _, err := coerceArgs(declared, nil); !appErrors.IsAppError(
-		err,
-		appErrors.ErrCodeInvalidArgument,
-	) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	_, err := coerceArgs(declared, nil)
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 
-	if _, err := coerceArgs(declared, map[string]any{"query": ""}); err != nil {
-		t.Fatalf("an explicit empty value should satisfy a required option: %v", err)
-	}
+	_, err = coerceArgs(declared, map[string]any{"query": ""})
+	assert.NoError(t, err, "an explicit empty value should satisfy a required option: %v", err)
 }
 
 func TestCoerceBoolAcceptsTheUsualSpellings(t *testing.T) {
@@ -99,13 +77,9 @@ func TestCoerceBoolAcceptsTheUsualSpellings(t *testing.T) {
 			[]domain.ActionOption{{Name: "flag", Type: domain.ActionOptionBool, Label: "Flag"}},
 			map[string]any{"flag": text},
 		)
-		if err != nil {
-			t.Fatalf("%q: %v", text, err)
-		}
+		require.NoError(t, err, "%q: %v", text, err)
 
-		if got["flag"] != want {
-			t.Fatalf("%q = %#v, want %#v", text, got["flag"], want)
-		}
+		assert.Equal(t, want, got["flag"], "%q = %#v, want %#v", text, got["flag"], want)
 	}
 }
 
@@ -115,9 +89,8 @@ func TestCoerceBoolRefusesUnrecognisedText(t *testing.T) {
 		map[string]any{"flag": "maybe"},
 	)
 
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestCoerceNumberSplitsIntegralFromFractional(t *testing.T) {
@@ -142,13 +115,9 @@ func TestCoerceNumberSplitsIntegralFromFractional(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := coerceArgs(declared, map[string]any{"count": tc.value})
-			if err != nil {
-				t.Fatalf("coerce: %v", err)
-			}
+			require.NoError(t, err, "coerce")
 
-			if got["count"] != tc.want {
-				t.Fatalf("count = %#v, want %#v", got["count"], tc.want)
-			}
+			assert.Equal(t, tc.want, got["count"], "count = %#v, want %#v", got["count"], tc.want)
 		})
 	}
 }
@@ -160,15 +129,13 @@ func TestCoerceNumberRefusesValuesWithoutMeaning(t *testing.T) {
 	}
 
 	for _, value := range []string{"NaN", "Inf", "-Inf", "lots", ""} {
-		if _, err := coerceArgs(declared, map[string]any{"count": value}); err == nil {
-			t.Fatalf("%q was accepted", value)
-		}
+		_, err := coerceArgs(declared, map[string]any{"count": value})
+		assert.Error(t, err, "%q was accepted", value)
 	}
 
 	for _, value := range []any{math.NaN(), math.Inf(1)} {
-		if _, err := coerceArgs(declared, map[string]any{"count": value}); err == nil {
-			t.Fatalf("%v was accepted", value)
-		}
+		_, err := coerceArgs(declared, map[string]any{"count": value})
+		assert.Error(t, err, "%v was accepted", value)
 	}
 }
 
@@ -178,9 +145,8 @@ func TestCoerceNumberRefusesValuesOutOfRange(t *testing.T) {
 	}
 
 	huge := "99999999999999999999999999"
-	if _, err := coerceArgs(declared, map[string]any{"count": huge}); err == nil {
-		t.Fatal("an out-of-range number was accepted")
-	}
+	_, err := coerceArgs(declared, map[string]any{"count": huge})
+	assert.Error(t, err, "an out-of-range number was accepted")
 }
 
 func TestCoerceSelectAcceptsOnlyDeclaredChoices(t *testing.T) {
@@ -190,17 +156,12 @@ func TestCoerceSelectAcceptsOnlyDeclaredChoices(t *testing.T) {
 	}}
 
 	got, err := coerceArgs(declared, map[string]any{"mode": "lenient"})
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
-	if got["mode"] != "lenient" {
-		t.Fatalf("mode = %#v", got["mode"])
-	}
+	assert.Equal(t, "lenient", got["mode"], "mode = %#v", got["mode"])
 
-	if _, err := coerceArgs(declared, map[string]any{"mode": "whatever"}); err == nil {
-		t.Fatal("an undeclared choice was accepted")
-	}
+	_, err = coerceArgs(declared, map[string]any{"mode": "whatever"})
+	assert.Error(t, err, "an undeclared choice was accepted")
 }
 
 // An empty selection means "use the default"; only a required select must have
@@ -212,19 +173,14 @@ func TestCoerceSelectAllowsAnEmptyOptionalAnswer(t *testing.T) {
 	}}
 
 	got, err := coerceArgs(declared, map[string]any{"mode": ""})
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
-	if got["mode"] != "" {
-		t.Fatalf("mode = %#v", got["mode"])
-	}
+	assert.Equal(t, "", got["mode"], "mode = %#v", got["mode"])
 
 	declared[0].Required = true
 
-	if _, err := coerceArgs(declared, map[string]any{"mode": ""}); err == nil {
-		t.Fatal("an empty required select was accepted")
-	}
+	_, err = coerceArgs(declared, map[string]any{"mode": ""})
+	assert.Error(t, err, "an empty required select was accepted")
 }
 
 // A nested object handed to a text option would need an invented rendering.
@@ -234,9 +190,8 @@ func TestCoerceTextRefusesContainers(t *testing.T) {
 	}
 
 	for _, value := range []any{map[string]any{"a": 1}, []any{1, 2}, struct{}{}} {
-		if _, err := coerceArgs(declared, map[string]any{"query": value}); err == nil {
-			t.Fatalf("%T was accepted", value)
-		}
+		_, err := coerceArgs(declared, map[string]any{"query": value})
+		assert.Error(t, err, "%T was accepted", value)
 	}
 }
 
@@ -248,13 +203,9 @@ func TestCoerceTextRendersScalars(t *testing.T) {
 	}
 
 	got, err := coerceArgs(declared, map[string]any{"query": 12})
-	if err != nil {
-		t.Fatalf("coerce: %v", err)
-	}
+	require.NoError(t, err, "coerce")
 
-	if got["query"] != "12" {
-		t.Fatalf("query = %#v", got["query"])
-	}
+	assert.Equal(t, "12", got["query"], "query = %#v", got["query"])
 }
 
 func TestCoerceArgsRejectsUnknownType(t *testing.T) {
@@ -263,9 +214,8 @@ func TestCoerceArgsRejectsUnknownType(t *testing.T) {
 		map[string]any{"query": "x"},
 	)
 
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestCoerceArgsReportsTheOffendingOption(t *testing.T) {
@@ -278,11 +228,7 @@ func TestCoerceArgsReportsTheOffendingOption(t *testing.T) {
 		_, err := coerceArgs(declared, map[string]any{"query": "fine", "count": "nope"})
 		return err
 	}()
-	if err == nil {
-		t.Fatal("expected an error")
-	}
+	require.Error(t, err, "expected an error")
 
-	if got := appErrors.Message(err); got == "" {
-		t.Fatal("the error carries no message for the user")
-	}
+	assert.NotEqual(t, "", appErrors.Message(err), "the error carries no message for the user")
 }

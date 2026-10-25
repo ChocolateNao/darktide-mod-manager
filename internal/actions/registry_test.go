@@ -27,26 +27,18 @@ func okAction(gameID, id string) domain.GameAction {
 func TestRegistryRegisterAndGet(t *testing.T) {
 	reg := NewRegistry()
 
-	if err := reg.Register(okAction("test", "test:do")); err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	require.NoError(t, reg.Register(okAction("test", "test:do")), "register")
 
 	got, ok := reg.Get("test:do")
-	if !ok {
-		t.Fatal("action not found after registration")
-	}
+	require.True(t, ok, "action not found after registration")
 
-	if got.ID != "test:do" || got.GameID != "test" {
-		t.Fatalf("unexpected action %+v", got)
-	}
+	assert.Equal(t, domain.ActionID("test:do"), got.ID, "unexpected action %+v", got)
+	assert.Equal(t, "test", got.GameID, "unexpected action %+v", got)
 
-	if !reg.Has("test:do") || reg.Has("test:missing") {
-		t.Fatal("Has disagrees with Get")
-	}
+	assert.True(t, reg.Has("test:do"), "Has disagrees with Get")
+	assert.False(t, reg.Has("test:missing"), "Has disagrees with Get")
 
-	if reg.Len() != 1 {
-		t.Fatalf("Len = %d, want 1", reg.Len())
-	}
+	assert.Equal(t, 1, reg.Len(), "Len = %d, want 1", reg.Len())
 }
 
 // Registration replaces, so a suite that registers a fixture repeatedly need
@@ -54,59 +46,40 @@ func TestRegistryRegisterAndGet(t *testing.T) {
 func TestRegistryRegisterReplaces(t *testing.T) {
 	reg := NewRegistry()
 
-	if err := reg.Register(okAction("test", "test:do")); err != nil {
-		t.Fatalf("first register: %v", err)
-	}
+	require.NoError(t, reg.Register(okAction("test", "test:do")), "first register")
 
 	updated := okAction("test", "test:do")
 	updated.DisplayName = "second"
 
-	if err := reg.Register(updated); err != nil {
-		t.Fatalf("second register: %v", err)
-	}
+	require.NoError(t, reg.Register(updated), "second register")
 
-	if reg.Len() != 1 {
-		t.Fatalf("Len = %d, want 1 after replacement", reg.Len())
-	}
+	assert.Equal(t, 1, reg.Len(), "Len = %d, want 1 after replacement", reg.Len())
 
 	got, _ := reg.Get("test:do")
-	if got.DisplayName != "second" {
-		t.Fatalf("DisplayName = %q, want second", got.DisplayName)
-	}
+	assert.Equal(t, "second", got.DisplayName, "DisplayName = %q, want second", got.DisplayName)
 }
 
 // A game publishes its own actions, so a game that publishes none costs nothing.
 func TestRegistryRegisterGame(t *testing.T) {
 	reg := NewRegistry()
 
-	if err := reg.RegisterGame(&fakeGame{id: "alpha", actions: 2}); err != nil {
-		t.Fatalf("register game: %v", err)
-	}
+	require.NoError(t, reg.RegisterGame(&fakeGame{id: "alpha", actions: 2}), "register game")
 
-	if reg.Len() != 2 {
-		t.Fatalf("Len = %d, want 2", reg.Len())
-	}
+	assert.Equal(t, 2, reg.Len(), "Len = %d, want 2", reg.Len())
 
-	if err := reg.RegisterGame(&fakeGame{id: "beta"}); err != nil {
-		t.Fatalf("register game without actions: %v", err)
-	}
+	require.NoError(t, reg.RegisterGame(&fakeGame{id: "beta"}), "register game without actions")
 
-	if reg.Len() != 2 {
-		t.Fatalf("Len = %d, want 2", reg.Len())
-	}
+	assert.Equal(t, 2, reg.Len(), "Len = %d, want 2", reg.Len())
 }
 
 func TestRegistryRegisterNilGame(t *testing.T) {
 	reg := NewRegistry()
 
 	err := reg.RegisterGame(nil)
-	if err == nil {
-		t.Fatal("expected an error for a nil game")
-	}
+	require.Error(t, err, "expected an error for a nil game")
 
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error %v does not carry INVALID_ARGUMENT", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error %v does not carry INVALID_ARGUMENT", err)
 }
 
 func TestRegistryRegisterRejectsInvalidActions(t *testing.T) {
@@ -169,17 +142,12 @@ func TestRegistryRegisterRejectsInvalidActions(t *testing.T) {
 			reg := NewRegistry()
 
 			err := reg.Register(tc.action)
-			if err == nil {
-				t.Fatal("expected registration to be refused")
-			}
+			require.Error(t, err, "expected registration to be refused")
 
-			if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-				t.Fatalf("error %v does not carry INVALID_ARGUMENT", err)
-			}
+			assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+				"error %v does not carry INVALID_ARGUMENT", err)
 
-			if reg.Len() != 0 {
-				t.Fatal("a refused action was stored anyway")
-			}
+			assert.Equal(t, 0, reg.Len(), "a refused action was stored anyway")
 		})
 	}
 }
@@ -187,67 +155,52 @@ func TestRegistryRegisterRejectsInvalidActions(t *testing.T) {
 func TestRegistryNilReceiverIsSafe(t *testing.T) {
 	var reg *Registry
 
-	if err := reg.Register(okAction("test", "test:do")); err == nil {
-		t.Fatal("expected an error from a nil registry")
-	}
+	require.Error(t, reg.Register(okAction("test", "test:do")),
+		"expected an error from a nil registry")
 
-	if err := reg.RegisterGame(&fakeGame{id: "test"}); err == nil {
-		t.Fatal("expected an error from a nil registry")
-	}
+	require.Error(t, reg.RegisterGame(&fakeGame{id: "test"}),
+		"expected an error from a nil registry")
 
-	if _, ok := reg.Get("test:do"); ok {
-		t.Fatal("a nil registry reported an action")
-	}
+	_, ok := reg.Get("test:do")
+	assert.False(t, ok, "a nil registry reported an action")
 
-	if reg.Has("test:do") || reg.Len() != 0 {
-		t.Fatal("a nil registry reported state")
-	}
+	assert.False(t, reg.Has("test:do"), "a nil registry reported state")
+	assert.Equal(t, 0, reg.Len(), "a nil registry reported state")
 
-	if reg.ListAll() != nil || reg.ListByGame("test") != nil ||
-		reg.ListAvailable("test", domain.PlatformLinux) != nil {
-		t.Fatal("a nil registry listed actions")
-	}
+	assert.Nil(t, reg.ListAll(), "a nil registry listed actions")
+	assert.Nil(t, reg.ListByGame("test"), "a nil registry listed actions")
+	assert.Nil(t, reg.ListAvailable("test", domain.PlatformLinux), "a nil registry listed actions")
 }
 
 func TestRegistryListsAreStableAndFiltered(t *testing.T) {
 	reg := NewRegistry()
 
 	for _, id := range []string{"b:two", "a:two", "a:one"} {
-		if err := reg.Register(okAction(id[:1], id)); err != nil {
-			t.Fatalf("register %s: %v", id, err)
-		}
+		require.NoError(t, reg.Register(okAction(id[:1], id)), "register %s", id)
 	}
 
 	linuxOnly := okAction("a", "a:linux_only")
 	linuxOnly.Platform = domain.ActionPlatformLinux
 
-	if err := reg.Register(linuxOnly); err != nil {
-		t.Fatalf("register linux-only: %v", err)
-	}
+	require.NoError(t, reg.Register(linuxOnly), "register linux-only")
 
 	all := idsOf(reg.ListAll())
-	if len(all) != 4 || all[0] != "a:linux_only" || all[3] != "b:two" {
-		t.Fatalf("ListAll = %v, want id order", all)
-	}
+	assert.Len(t, all, 4, "ListAll = %v, want id order", all)
+	assert.Equal(t, domain.ActionID("a:linux_only"), all[0], "ListAll = %v, want id order", all)
+	assert.Equal(t, domain.ActionID("b:two"), all[3], "ListAll = %v, want id order", all)
 
-	if got := idsOf(reg.ListByGame("a")); len(got) != 3 || got[0] != "a:linux_only" ||
-		got[2] != "a:two" {
-		t.Fatalf("ListByGame(a) = %v", got)
-	}
+	got := idsOf(reg.ListByGame("a"))
+	assert.Len(t, got, 3, "ListByGame(a) = %v", got)
+	assert.Equal(t, domain.ActionID("a:linux_only"), got[0], "ListByGame(a) = %v", got)
+	assert.Equal(t, domain.ActionID("a:two"), got[2], "ListByGame(a) = %v", got)
 
 	avail := idsOf(reg.ListAvailable("a", domain.PlatformLinux))
-	if len(avail) != 3 {
-		t.Fatalf("ListAvailable(linux) = %v, want the three universal actions", avail)
-	}
+	assert.Len(t, avail, 3, "ListAvailable(linux) = %v, want the three universal actions", avail)
 
 	avail = idsOf(reg.ListAvailable("a", domain.PlatformWindows))
-	if len(avail) != 2 {
-		t.Fatalf("ListAvailable(windows) = %v, want two", avail)
-	}
+	assert.Len(t, avail, 2, "ListAvailable(windows) = %v, want two", avail)
 
-	if got := reg.ListByGame("nobody"); len(got) != 0 {
-		t.Fatalf("ListByGame(nobody) = %v, want empty", got)
-	}
+	assert.Empty(t, reg.ListByGame("nobody"), "ListByGame(nobody) = %v, want empty")
 }
 
 func idsOf(actions []domain.GameAction) []domain.ActionID {

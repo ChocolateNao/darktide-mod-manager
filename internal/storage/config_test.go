@@ -521,7 +521,7 @@ func TestOneShotConfigHelpers(t *testing.T) {
 
 	cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.AutoDetect = false })
 
-	cfg.Advanced.LogLevel = "debug"
+	cfg.UI.Theme = "dark"
 	err = SaveConfig(path, cfg)
 	require.NoError(t, err, "save config: %v", err)
 
@@ -530,13 +530,7 @@ func TestOneShotConfigHelpers(t *testing.T) {
 
 	assert.False(t, reloaded.ActiveSettings().AutoDetect, "expected auto detect to stay off")
 
-	assert.Equal(
-		t,
-		"debug",
-		reloaded.Advanced.LogLevel,
-		"expected the log level to round-trip, got %q",
-		reloaded.Advanced.LogLevel,
-	)
+	assert.Equal(t, "dark", reloaded.UI.Theme, "expected the theme to round-trip")
 }
 
 func TestDecodeConfig(t *testing.T) {
@@ -622,7 +616,7 @@ func TestConfigStoreIsSafeForConcurrentUse(t *testing.T) {
 
 			local := domain.DefaultConfig()
 
-			local.Advanced.LogLevel = string(rune('a' + n))
+			local.UI.Language = string(rune('a' + n))
 			err := store.Save(&local)
 			assert.NoError(t, err, "concurrent save: %v", err)
 		}(i)

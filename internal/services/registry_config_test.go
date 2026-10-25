@@ -139,7 +139,7 @@ func TestWithConfigFallsBackToTheStore(t *testing.T) {
 }
 
 // TestWithConfigToleratesANilRegistry: a chainable setter must survive being
-// called on nothing rather than panicking inside the wiring.
+// called on nothing.
 func TestWithConfigToleratesANilRegistry(t *testing.T) {
 	var r *SourceRegistry
 	{

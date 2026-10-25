@@ -73,7 +73,7 @@ func TestNormalizeCacheKeyRejectsEverythingThatIsNotADigest(t *testing.T) {
 		{"empty", ""},
 		{"whitespace only", "   "},
 		// A key becomes a filename. Accepting "../.." would let a caller write
-		// outside the cache directory, so it is rejected rather than sanitised.
+		// outside the cache directory, so it is rejected.
 		{"path traversal", "../../etc/passwd"},
 		{"separator", "aa/bb"},
 		{"backslash", `aa\bb`},
@@ -84,26 +84,19 @@ func TestNormalizeCacheKeyRejectsEverythingThatIsNotADigest(t *testing.T) {
 		{"embedded space", strings.Repeat("a", 63) + " "},
 	}
 	for _, tc := range cases {
-		if _, err := NormalizeCacheKey(tc.in); err == nil {
-			assert.Fail(t, "%s: NormalizeCacheKey(%q) succeeded, want an error", tc.name, tc.in)
-		} else if code := appErrors.CodeOf(err); code != appErrors.ErrCodeInvalidArgument {
-			assert.Fail(
-				t,
-				"%s: code = %s, want %s",
-				tc.name,
-				code,
-				appErrors.ErrCodeInvalidArgument,
-			)
-		}
+		_, err := NormalizeCacheKey(tc.in)
+		assert.Error(t, err, "%s: NormalizeCacheKey(%q) succeeded, want an error", tc.name, tc.in)
+		assert.Equal(t, appErrors.ErrCodeInvalidArgument, appErrors.CodeOf(err),
+			"%s: code = %s, want %s", tc.name, appErrors.CodeOf(err), appErrors.ErrCodeInvalidArgument)
 	}
 }
 
 func TestNewCacheRejectsEmptyRoot(t *testing.T) {
-	if _, err := NewCache("   "); err == nil {
-		require.FailNow(t, "NewCache with a blank root should fail")
-	} else if code := appErrors.CodeOf(err); code != appErrors.ErrCodeNoStoragePath {
-		assert.Fail(t, "code = %s, want %s", code, appErrors.ErrCodeNoStoragePath)
-	}
+	_, err := NewCache("   ")
+	require.Error(t, err, "NewCache with a blank root should fail")
+
+	assert.Equal(t, appErrors.ErrCodeNoStoragePath, appErrors.CodeOf(err),
+		"code = %s, want %s", appErrors.CodeOf(err), appErrors.ErrCodeNoStoragePath)
 }
 
 func TestNewCacheResolvesRootToAbsolute(t *testing.T) {
@@ -216,11 +209,10 @@ func TestCacheWriteLeavesNoPartialFileWhenTheSourceFails(t *testing.T) {
 	k := key("fail")
 
 	failure := errors.New("network died")
-	if _, err := c.Write(ctx, k, iotest_errReader{err: failure}); err == nil {
-		require.FailNow(t, "Write should fail when the source fails")
-	} else if !errors.Is(err, failure) {
-		assert.Fail(t, "error = %v, want it to wrap %v", err, failure)
-	}
+	_, err := c.Write(ctx, k, iotest_errReader{err: failure})
+	require.Error(t, err, "Write should fail when the source fails")
+
+	assert.ErrorIs(t, err, failure, "error = %v, want it to wrap %v", err, failure)
 
 	// A .partial-* file left behind would be indistinguishable from a cache
 	// entry to any later directory scan and would never be cleaned up.
@@ -228,16 +220,12 @@ func TestCacheWriteLeavesNoPartialFileWhenTheSourceFails(t *testing.T) {
 
 	names, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return // nothing was created at all, which is also fine
-		}
-
-		require.FailNow(t, "read blob directory: %v", err)
+		// nothing was created at all, which is also fine
+		assert.True(t, os.IsNotExist(err), "read blob directory: %v", err)
+		return
 	}
 
-	for _, name := range names {
-		assert.Fail(t, "partial file %q was left behind", name.Name())
-	}
+	assert.Empty(t, names, "partial files were left behind: %v", names)
 
 	_, err = c.index.Get(ctx, k)
 	assert.True(
@@ -398,9 +386,7 @@ func TestCacheIndexAcquireAndReleaseTrackReferences(t *testing.T) {
 	ctx := context.Background()
 	k := key("ref")
 
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x", SizeBytes: 3}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x", SizeBytes: 3}), "Put")
 
 	first, err := idx.Acquire(ctx, k, fixedTime)
 	require.NoError(t, err, "Acquire")
@@ -431,9 +417,7 @@ func TestCacheIndexReleaseNeverGoesNegative(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("neg")
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x"}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x"}), "Put")
 
 	for i := 0; i < 3; i++ {
 		entry, err := idx.Release(ctx, k)
@@ -449,9 +433,7 @@ func TestCacheIndexReleaseDoesNotRefreshLastAccess(t *testing.T) {
 	k := key("touch")
 
 	stamp := fixedTime.Add(-72 * time.Hour)
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x", LastAccess: stamp}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x", LastAccess: stamp}), "Put")
 
 	released, err := idx.Release(ctx, k)
 	require.NoError(t, err, "Release")
@@ -492,12 +474,11 @@ func TestCacheIndexPutClampsNonsenseValues(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("clamp")
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: k, Path: "/tmp/x", SizeBytes: -1, Refs: -5},
-	); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(
+		t,
+		idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/x", SizeBytes: -1, Refs: -5}),
+		"Put",
+	)
 
 	entry, err := idx.Get(ctx, k)
 	require.NoError(t, err, "Get")
@@ -519,19 +500,10 @@ func TestCacheIndexPutReplacesAnExistingRow(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("put")
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: k, Path: "/tmp/a", SizeBytes: 1, Refs: 3},
-	); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/a", SizeBytes: 1, Refs: 3}), "Put")
 
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: k, Path: "/tmp/b", SizeBytes: 2, Refs: 1},
-	); err != nil {
-		require.FailNow(t, "second Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/b", SizeBytes: 2, Refs: 1}),
+		"second Put")
 
 	entry, err := idx.Get(ctx, k)
 	require.NoError(t, err, "Get")
@@ -551,9 +523,8 @@ func TestCacheIndexPutRejectsNilAndBadKeys(t *testing.T) {
 	err := idx.Put(ctx, nil)
 	assert.Error(t, err, "Put(nil) should fail")
 
-	if err := idx.Put(ctx, &CacheEntry{Hash: "nope"}); err == nil {
-		assert.Fail(t, "Put should reject a non-digest key")
-	}
+	err = idx.Put(ctx, &CacheEntry{Hash: "nope"})
+	assert.Error(t, err, "Put should reject a non-digest key")
 }
 
 func TestCacheIndexListIsOrderedByLastAccessThenHash(t *testing.T) {
@@ -561,26 +532,15 @@ func TestCacheIndexListIsOrderedByLastAccessThenHash(t *testing.T) {
 	ctx := context.Background()
 
 	older, sameTime, newer := key("o"), key("s"), key("n")
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: newer, Path: "/n", LastAccess: fixedTime.Add(2 * time.Hour)},
-	); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(
+		t,
+		idx.Put(ctx, &CacheEntry{Hash: newer, Path: "/n", LastAccess: fixedTime.Add(2 * time.Hour)}),
+		"Put",
+	)
 
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: older, Path: "/o", LastAccess: fixedTime},
-	); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: older, Path: "/o", LastAccess: fixedTime}), "Put")
 
-	if err := idx.Put(
-		ctx,
-		&CacheEntry{Hash: sameTime, Path: "/s", LastAccess: fixedTime},
-	); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: sameTime, Path: "/s", LastAccess: fixedTime}), "Put")
 
 	entries, err := idx.List(ctx)
 	require.NoError(t, err, "List")
@@ -617,9 +577,7 @@ func TestCacheIndexDeleteAndClearAreIdempotent(t *testing.T) {
 	err := idx.Delete(ctx, k)
 	assert.NoError(t, err, "Delete on an unknown key = %v, want nil", err)
 
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}), "Put")
 
 	err = idx.Delete(ctx, k)
 	require.NoError(t, err, "Delete: %v", err)
@@ -645,9 +603,7 @@ func TestCacheIndexTouchUpdatesStampAndRequiresARow(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("t")
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x", Refs: 2}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x", Refs: 2}), "Put")
 
 	err := idx.Touch(ctx, k, fixedTime)
 	require.NoError(t, err, "Touch: %v", err)
@@ -679,15 +635,11 @@ func TestCacheIndexTouchWithZeroStampUsesNow(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("z")
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}), "Put")
 
 	before := time.Now().UTC().Add(-time.Second)
 
-	if err := idx.Touch(ctx, k, time.Time{}); err != nil {
-		require.FailNow(t, "Touch: %v", err)
-	}
+	require.NoError(t, idx.Touch(ctx, k, time.Time{}), "Touch")
 
 	entry, err := idx.Get(ctx, k)
 	require.NoError(t, err, "Get")
@@ -717,9 +669,7 @@ func TestCacheIndexConcurrentAcquireDoesNotLoseUpdates(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("race")
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x"}), "Put")
 
 	const n = 16
 
@@ -762,7 +712,7 @@ func TestCacheIndexMethodsOnAClosedIndexReportAnError(t *testing.T) {
 	_, err = idx.List(ctx)
 	assert.Error(t, err, "List on a closed index should fail")
 	// Close twice is what happens when both a caller and a deferred cleanup call
-	// it; it must be silent rather than a spurious failure.
+	// it; it must be silent, not a spurious failure.
 	err = idx.Close()
 	assert.NoError(t, err, "second Close = %v, want nil", err)
 }
@@ -773,9 +723,7 @@ func TestCacheIndexRoundTripsTimestampPrecision(t *testing.T) {
 	k := key("ts")
 
 	stamp := time.Date(2024, 5, 17, 8, 30, 15, 123000000, time.UTC)
-	if err := idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x", LastAccess: stamp}); err != nil {
-		require.FailNow(t, "Put: %v", err)
-	}
+	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/x", LastAccess: stamp}), "Put")
 
 	entry, err := idx.Get(ctx, k)
 	require.NoError(t, err, "Get")

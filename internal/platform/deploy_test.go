@@ -195,9 +195,7 @@ func TestDeploySymlinks(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(f.gameMods, "mod.json"))
 	require.NoError(t, err, "reading through the link")
 
-	if string(data) != `{"id":"better_ui"}` {
-		assert.Fail(t, "content through the link = %q", data)
-	}
+	assert.Equal(t, `{"id":"better_ui"}`, string(data), "content through the link = %q", data)
 }
 
 func TestDeployIsIdempotent(t *testing.T) {
@@ -227,9 +225,8 @@ func TestDeployReplacesDanglingLink(t *testing.T) {
 	err = d.Deploy(f.storage, f.gameMods)
 	require.NoError(t, err, "Deploy over a dangling link: %v", err)
 
-	if got := LinkStatus(OSFS{}, stale, ""); got != LinkOK {
-		assert.Fail(t, "link state = %v, want %v", got, LinkOK)
-	}
+	got := LinkStatus(OSFS{}, stale, "")
+	assert.Equal(t, LinkOK, got, "link state = %v, want %v", got, LinkOK)
 }
 
 func TestDeployCopyMode(t *testing.T) {
@@ -244,9 +241,7 @@ func TestDeployCopyMode(t *testing.T) {
 
 	assert.Equal(t, os.FileMode(0), info.Mode()&os.ModeSymlink, "copy mode created a symlink")
 
-	if !IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")) {
-		assert.Fail(t, "nested directory not copied")
-	}
+	assert.True(t, IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")), "nested directory not copied")
 
 	data, err := os.ReadFile(filepath.Join(f.gameMods, "textures", "hud.dds"))
 	assert.False(t, err != nil || string(data) != "DDS", "nested file content = %q, %v", data, err)
@@ -258,9 +253,9 @@ func TestDeployCopyMode(t *testing.T) {
 	require.NoError(t, err)
 
 	original, err := os.ReadFile(filepath.Join(f.storage, "mod.json"))
-	if err != nil || string(original) != `{"id":"better_ui"}` {
-		assert.Fail(t, "storage payload was modified through the copy: %q, %v", original, err)
-	}
+	assert.NoError(t, err, "storage payload was modified through the copy: %q, %v", original, err)
+	assert.Equal(t, `{"id":"better_ui"}`, string(original),
+		"storage payload was modified through the copy: %q, %v", original, err)
 }
 
 func TestDeployValidation(t *testing.T) {
@@ -302,9 +297,7 @@ func TestDeployEmptySource(t *testing.T) {
 	err = d.Deploy(empty, f.gameMods)
 	require.NoError(t, err, "Deploy of an empty mod: %v", err)
 
-	if !IsDir(OSFS{}, f.gameMods) {
-		assert.Fail(t, "destination folder was not created")
-	}
+	assert.True(t, IsDir(OSFS{}, f.gameMods), "destination folder was not created")
 
 	entries, err := os.ReadDir(f.gameMods)
 	require.NoError(t, err)
@@ -356,13 +349,9 @@ func TestUndeployEntries(t *testing.T) {
 
 	assert.Equal(t, 2, removed, "removed = %d, want 2", removed)
 
-	if IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")) {
-		assert.Fail(t, "textures still present")
-	}
+	assert.False(t, IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")), "textures still present")
 	// The manager's own payload must survive.
-	if !IsFile(OSFS{}, filepath.Join(f.storage, "mod.json")) {
-		assert.Fail(t, "storage payload was deleted")
-	}
+	assert.True(t, IsFile(OSFS{}, filepath.Join(f.storage, "mod.json")), "storage payload was deleted")
 }
 
 func TestUndeployEntriesRejectsTraversal(t *testing.T) {
@@ -385,13 +374,9 @@ func TestUndeployEntriesRejectsTraversal(t *testing.T) {
 
 	assert.Equal(t, 0, removed, "removed = %d, want 0", removed)
 
-	if !IsFile(OSFS{}, outside) {
-		assert.Fail(t, "a file outside the mods folder was removed")
-	}
+	assert.True(t, IsFile(OSFS{}, outside), "a file outside the mods folder was removed")
 
-	if !IsFile(OSFS{}, filepath.Join(f.gameMods, "keep.txt")) {
-		assert.Fail(t, "keep.txt was removed")
-	}
+	assert.True(t, IsFile(OSFS{}, filepath.Join(f.gameMods, "keep.txt")), "keep.txt was removed")
 }
 
 func TestUndeployEntriesEmptyDestination(t *testing.T) {
@@ -444,9 +429,8 @@ func TestLinkStatus(t *testing.T) {
 		"empty path":          {"", "", LinkMissing},
 	}
 	for name, tc := range cases {
-		if got := LinkStatus(OSFS{}, tc.path, tc.target); got != tc.want {
-			assert.Fail(t, "%s: LinkStatus = %v, want %v", name, got, tc.want)
-		}
+		got := LinkStatus(OSFS{}, tc.path, tc.target)
+		assert.Equal(t, tc.want, got, "%s: LinkStatus = %v, want %v", name, got, tc.want)
 	}
 
 	got := LinkStatus(nil, link, "")
@@ -569,13 +553,11 @@ func TestRepair(t *testing.T) {
 
 	assert.Len(t, fixed, 2, "fixed = %v, want both entries", fixed)
 
-	if got := LinkStatus(OSFS{}, filepath.Join(f.gameMods, "mod.json"), ""); got != LinkOK {
-		assert.Fail(t, "mod.json after repair = %v, want %v", got, LinkOK)
-	}
+	got := LinkStatus(OSFS{}, filepath.Join(f.gameMods, "mod.json"), "")
+	assert.Equal(t, LinkOK, got, "mod.json after repair = %v, want %v", got, LinkOK)
 
-	if got := LinkStatus(OSFS{}, filepath.Join(f.gameMods, "textures"), ""); got != LinkOK {
-		assert.Fail(t, "textures after repair = %v, want %v", got, LinkOK)
-	}
+	got = LinkStatus(OSFS{}, filepath.Join(f.gameMods, "textures"), "")
+	assert.Equal(t, LinkOK, got, "textures after repair = %v, want %v", got, LinkOK)
 }
 
 func TestRepairLeavesDanglingLinkWhenSourceIsGone(t *testing.T) {
@@ -600,9 +582,8 @@ func TestRepairLeavesDanglingLinkWhenSourceIsGone(t *testing.T) {
 		fixed,
 	)
 
-	if got := LinkStatus(OSFS{}, filepath.Join(f.gameMods, "mod.json"), ""); got != LinkBroken {
-		assert.Fail(t, "link state = %v, want %v", got, LinkBroken)
-	}
+	got := LinkStatus(OSFS{}, filepath.Join(f.gameMods, "mod.json"), "")
+	assert.Equal(t, LinkBroken, got, "link state = %v, want %v", got, LinkBroken)
 }
 
 func TestRepairMissingPaths(t *testing.T) {
@@ -680,9 +661,8 @@ func TestDeployOverExistingRealFile(t *testing.T) {
 	require.NoError(t, err, "Deploy over an existing file: %v", err)
 
 	data, err := os.ReadFile(filepath.Join(f.gameMods, "mod.json"))
-	if err != nil || string(data) != `{"id":"better_ui"}` {
-		assert.Fail(t, "content = %q, %v; want the payload", data, err)
-	}
+	assert.NoError(t, err, "content = %q, %v; want the payload", data, err)
+	assert.Equal(t, `{"id":"better_ui"}`, string(data), "content = %q, %v; want the payload", data, err)
 }
 
 func TestCanCreateSymlinks(t *testing.T) {

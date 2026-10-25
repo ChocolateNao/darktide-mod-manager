@@ -413,18 +413,14 @@ func TestExtractFallsBackToExtensionWhenMagicIsUnknown(t *testing.T) {
 	err := os.WriteFile(archive, []byte("JUNKJUNKpayload"), 0o600)
 	require.NoError(t, err)
 
-	if _, err := NewArchiveExtractor().Extract(
+	_, err = NewArchiveExtractor().Extract(
 		context.Background(),
 		archive,
 		filepath.Join(dir, "out"),
-	); err == nil {
-		require.FailNow(t, "expected an unreadable-archive error")
-	} else if !strings.Contains(
-		err.Error(),
-		"zip archive",
-	) {
-		assert.Fail(t, "error should name the container, got %v", err)
-	}
+	)
+	require.Error(t, err, "expected an unreadable-archive error")
+
+	assert.Contains(t, err.Error(), "zip archive", "error should name the container, got %v", err)
 }
 
 func TestExtractRejectsPathTraversalEntries(t *testing.T) {

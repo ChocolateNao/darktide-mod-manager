@@ -251,17 +251,15 @@ func TestSourceConfigFromRejectsUnusableValues(t *testing.T) {
 	}
 	for name, cfg := range cases {
 		_, _, err := sourceConfigFrom("s", cfg)
-		if err == nil {
-			assert.Fail(t, "sourceConfigFrom accepted %s", name)
-		} else {
-			assert.True(
-				t,
-				IsAppError(err, ErrCodeInvalidArgument),
-				"sourceConfigFor %s returned %v, want an invalid-argument error",
-				name,
-				err,
-			)
-		}
+		require.Error(t, err, "sourceConfigFrom accepted %s", name)
+
+		assert.True(
+			t,
+			IsAppError(err, ErrCodeInvalidArgument),
+			"sourceConfigFor %s returned %v, want an invalid-argument error",
+			name,
+			err,
+		)
 	}
 }
 

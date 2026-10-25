@@ -7,6 +7,8 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // newTestRunner wires a runner over fakes so a test only states the part it cares
@@ -15,10 +17,7 @@ func newTestRunner(t *testing.T, action domain.GameAction, opts ...func(*RunnerD
 	t.Helper()
 
 	reg := NewRegistry()
-
-	if err := reg.Register(action); err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	require.NoError(t, reg.Register(action), "register")
 
 	game := &fakeGame{id: action.GameID}
 	deps := RunnerDeps{
@@ -37,37 +36,36 @@ func newTestRunner(t *testing.T, action domain.GameAction, opts ...func(*RunnerD
 	}
 
 	runner, err := NewRunner(deps)
-	if err != nil {
-		t.Fatalf("new runner: %v", err)
-	}
+	require.NoError(t, err, "new runner")
 
 	return runner
 }
 
 func TestNewRunnerRequiresARegistry(t *testing.T) {
-	if _, err := NewRunner(RunnerDeps{}); err == nil {
-		t.Fatal("expected an error without a registry")
-	}
+	_, err := NewRunner(RunnerDeps{})
+	require.Error(t, err, "expected an error without a registry")
 }
 
 func TestNewRunnerDefaultsThePlatform(t *testing.T) {
 	runner, err := NewRunner(RunnerDeps{Registry: NewRegistry()})
-	if err != nil {
-		t.Fatalf("new runner: %v", err)
-	}
+	require.NoError(t, err, "new runner")
 
-	if runner.Platform() != domain.CurrentPlatform() {
-		t.Fatalf("Platform = %q, want %q", runner.Platform(), domain.CurrentPlatform())
-	}
+	assert.Equal(
+		t,
+		domain.CurrentPlatform(),
+		runner.Platform(),
+		"Platform = %q, want %q",
+		runner.Platform(),
+		domain.CurrentPlatform(),
+	)
 }
 
 func TestRunRejectsUnknownAction(t *testing.T) {
 	runner := newTestRunner(t, okAction("test", "test:do"))
 
 	_, err := runner.Run(context.Background(), "test:missing", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionNotFound) {
-		t.Fatalf("error = %v, want ACTION_NOT_FOUND", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionNotFound),
+		"error = %v, want ACTION_NOT_FOUND", err)
 }
 
 // The platform gate keeps a Linux box from running a Windows batch file, and its
@@ -77,9 +75,8 @@ func TestRunRejectsActionOffPlatform(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable) {
-		t.Fatalf("error = %v, want ACTION_UNAVAILABLE", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable),
+		"error = %v, want ACTION_UNAVAILABLE", err)
 }
 
 func TestRunRejectsCancelledContext(t *testing.T) {
@@ -89,9 +86,8 @@ func TestRunRejectsCancelledContext(t *testing.T) {
 	cancel()
 
 	_, err := runner.Run(ctx, "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled) {
-		t.Fatalf("error = %v, want OPERATION_CANCELED", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled),
+		"error = %v, want OPERATION_CANCELED", err)
 }
 
 func TestRunPassesCoercedArgumentsToTheHandler(t *testing.T) {
@@ -116,25 +112,18 @@ func TestRunPassesCoercedArgumentsToTheHandler(t *testing.T) {
 	// The CLI sends the kebab-case flag name; the frontend sends the declared
 	// name. Both must land in the same argument.
 	result, err := runner.Run(context.Background(), "test:do", map[string]any{"deep": "yes"})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if !result.Success {
-		t.Fatal("result was not successful")
-	}
+	require.True(t, result.Success, "result was not successful")
 
-	if seen.Args["query"] != "" || seen.Args["deep"] != true {
-		t.Fatalf("args = %v", seen.Args)
-	}
+	require.Truef(t, seen.Args["query"] == "" && seen.Args["deep"] == true,
+		"args = %v", seen.Args)
 
-	if seen.GameID != "test" || seen.Platform != domain.PlatformLinux {
-		t.Fatalf("context = %+v", seen)
-	}
+	require.Truef(t, seen.GameID == "test" && seen.Platform == domain.PlatformLinux,
+		"context = %+v", seen)
 
-	if seen.ModsPath != "/games/test/mods" || seen.InstallPath != "/games/test" {
-		t.Fatalf("paths = %q / %q", seen.InstallPath, seen.ModsPath)
-	}
+	require.Truef(t, seen.ModsPath == "/games/test/mods" && seen.InstallPath == "/games/test",
+		"paths = %q / %q", seen.InstallPath, seen.ModsPath)
 }
 
 func TestRunRejectsUnknownArgumentType(t *testing.T) {
@@ -144,9 +133,8 @@ func TestRunRejectsUnknownArgumentType(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", map[string]any{"count": "many"})
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 }
 
 // A handler that forgets to return a result is a bug in the handler; the run
@@ -162,17 +150,11 @@ func TestRunSynthesisesResultWhenHandlerReturnsNil(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	result, err := runner.Run(context.Background(), "test:do", nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if !result.Success {
-		t.Fatal("result was not successful")
-	}
+	require.True(t, result.Success, "result was not successful")
 
-	if result.Output != "working\n" {
-		t.Fatalf("Output = %q, want the captured log", result.Output)
-	}
+	require.Equalf(t, "working\n", result.Output, "Output = %q, want the captured log", result.Output)
 }
 
 func TestRunCapturesOutputAndEchoesIt(t *testing.T) {
@@ -188,17 +170,11 @@ func TestRunCapturesOutputAndEchoesIt(t *testing.T) {
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Echo = echo })
 
 	result, err := runner.Run(context.Background(), "test:do", nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if result.Output != "step one\n" {
-		t.Fatalf("Output = %q", result.Output)
-	}
+	require.Equalf(t, "step one\n", result.Output, "Output = %q", result.Output)
 
-	if echo.text() != "step one\n" {
-		t.Fatalf("echo = %q", echo.text())
-	}
+	require.Equalf(t, "step one\n", echo.text(), "echo = %q", echo.text())
 }
 
 func TestRunBoundsTheCapturedOutput(t *testing.T) {
@@ -214,13 +190,10 @@ func TestRunBoundsTheCapturedOutput(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	result, err := runner.Run(context.Background(), "test:do", nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if len(result.Output) > captureLogLimit+64 {
-		t.Fatalf("captured %d bytes, want it bounded", len(result.Output))
-	}
+	require.LessOrEqualf(t, len(result.Output), captureLogLimit+64,
+		"captured %d bytes, want it bounded", len(result.Output))
 }
 
 // An action needing the game cannot run when the locator is absent; "unavailable"
@@ -234,9 +207,8 @@ func TestRunRequiresTheGameToBeInstalled(t *testing.T) {
 	})
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound) {
-		t.Fatalf("error = %v, want GAME_NOT_FOUND", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeGameNotFound),
+		"error = %v, want GAME_NOT_FOUND", err)
 }
 
 // An action whose game is not the active one cannot borrow the active game's
@@ -250,9 +222,8 @@ func TestRunRejectsActionFromAnotherGame(t *testing.T) {
 	})
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable) {
-		t.Fatalf("error = %v, want ACTION_UNAVAILABLE", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable),
+		"error = %v, want ACTION_UNAVAILABLE", err)
 }
 
 // An action that does not need the game must not touch the filesystem looking
@@ -265,13 +236,11 @@ func TestRunSkipsTheLocatorWhenTheGameIsNotRequired(t *testing.T) {
 		func(d *RunnerDeps) { d.Games = resolver },
 	)
 
-	if _, err := runner.Run(context.Background(), "test:do", nil); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	_, err := runner.Run(context.Background(), "test:do", nil)
+	require.NoError(t, err, "run")
 
-	if resolver.currentCall != 0 {
-		t.Fatal("the locator was consulted for an action that needs no game")
-	}
+	require.Zero(t, resolver.currentCall,
+		"the locator was consulted for an action that needs no game")
 }
 
 func TestRunKeepsTheHandlerErrorCode(t *testing.T) {
@@ -283,9 +252,8 @@ func TestRunKeepsTheHandlerErrorCode(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeModNotInstalled) {
-		t.Fatalf("error = %v, want the handler's code preserved", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeModNotInstalled),
+		"error = %v, want the handler's code preserved", err)
 }
 
 func TestRunLabelsAPlainError(t *testing.T) {
@@ -297,9 +265,8 @@ func TestRunLabelsAPlainError(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionFailed) {
-		t.Fatalf("error = %v, want ACTION_FAILED", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionFailed),
+		"error = %v, want ACTION_FAILED", err)
 }
 
 func TestRunRejectsUnknownDefinition(t *testing.T) {
@@ -308,9 +275,8 @@ func TestRunRejectsUnknownDefinition(t *testing.T) {
 	})
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeGameNotRegistered) {
-		t.Fatalf("error = %v, want GAME_NOT_REGISTERED", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeGameNotRegistered),
+		"error = %v, want GAME_NOT_REGISTERED", err)
 }
 
 func scriptAction(commands ...domain.ActionCommand) domain.GameAction {
@@ -334,21 +300,14 @@ func TestRunExecutesTheMatchingScript(t *testing.T) {
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
 
 	result, err := runner.Run(context.Background(), "test:do", nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if len(commands.specs) != 1 {
-		t.Fatalf("ran %d commands, want the universal one only", len(commands.specs))
-	}
+	require.Lenf(t, commands.specs, 1,
+		"ran %d commands, want the universal one only", len(commands.specs))
 
-	if commands.specs[0].Path != "run.sh" {
-		t.Fatalf("ran %q", commands.specs[0].Path)
-	}
+	require.Equalf(t, "run.sh", commands.specs[0].Path, "ran %q", commands.specs[0].Path)
 
-	if result.Output != "done" {
-		t.Fatalf("Output = %q", result.Output)
-	}
+	require.Equalf(t, "done", result.Output, "Output = %q", result.Output)
 }
 
 func TestRunPrefersThePlatformSpecificCommand(t *testing.T) {
@@ -360,13 +319,11 @@ func TestRunPrefersThePlatformSpecificCommand(t *testing.T) {
 
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
 
-	if _, err := runner.Run(context.Background(), "test:do", nil); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	_, err := runner.Run(context.Background(), "test:do", nil)
+	require.NoError(t, err, "run")
 
-	if commands.specs[0].Path != "specific" {
-		t.Fatalf("ran %q, want the linux command", commands.specs[0].Path)
-	}
+	require.Equalf(t, "specific", commands.specs[0].Path,
+		"ran %q, want the linux command", commands.specs[0].Path)
 }
 
 func TestRunSubstitutesOptionsIntoScriptArguments(t *testing.T) {
@@ -378,18 +335,19 @@ func TestRunSubstitutesOptionsIntoScriptArguments(t *testing.T) {
 
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
 
-	if _, err := runner.Run(
+	_, err := runner.Run(
 		context.Background(),
 		"test:do",
 		map[string]any{"query": "hello world"},
-	); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	)
+	require.NoError(t, err, "run")
 
 	args := commands.specs[0].Args
-	if len(args) != 2 || args[0] != "hello world" || args[1] != "--flag" {
-		t.Fatalf("args = %q", args)
-	}
+	require.Lenf(t, args, 2, "args = %q", args)
+
+	require.Equalf(t, "hello world", args[0], "args = %q", args)
+
+	require.Equalf(t, "--flag", args[1], "args = %q", args)
 }
 
 // An unterminated placeholder is a typo in the action definition; the literal
@@ -400,9 +358,8 @@ func TestRunRejectsUnterminatedPlaceholder(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestRunRejectsUndeclaredPlaceholder(t *testing.T) {
@@ -411,9 +368,8 @@ func TestRunRejectsUndeclaredPlaceholder(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestRunUsesTheInterpreter(t *testing.T) {
@@ -423,14 +379,15 @@ func TestRunUsesTheInterpreter(t *testing.T) {
 
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
 
-	if _, err := runner.Run(context.Background(), "test:do", nil); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	_, err := runner.Run(context.Background(), "test:do", nil)
+	require.NoError(t, err, "run")
 
 	spec := commands.specs[0]
-	if spec.Path != "node" || len(spec.Args) != 1 || spec.Args[0] != "script.js" {
-		t.Fatalf("spec = %+v", spec)
-	}
+	require.Equalf(t, "node", spec.Path, "spec = %+v", spec)
+
+	require.Lenf(t, spec.Args, 1, "spec = %+v", spec)
+
+	require.Equalf(t, "script.js", spec.Args[0], "spec = %+v", spec)
 }
 
 func TestRunUsesTheScriptWorkingDirectory(t *testing.T) {
@@ -442,13 +399,11 @@ func TestRunUsesTheScriptWorkingDirectory(t *testing.T) {
 
 	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
 
-	if _, err := runner.Run(context.Background(), "test:do", nil); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	_, err := runner.Run(context.Background(), "test:do", nil)
+	require.NoError(t, err, "run")
 
-	if commands.specs[0].Dir != "/games/test/bin" {
-		t.Fatalf("dir = %q", commands.specs[0].Dir)
-	}
+	require.Equalf(t, "/games/test/bin", commands.specs[0].Dir,
+		"dir = %q", commands.specs[0].Dir)
 }
 
 func TestRunWithoutAMatchingCommand(t *testing.T) {
@@ -459,9 +414,8 @@ func TestRunWithoutAMatchingCommand(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable) {
-		t.Fatalf("error = %v, want ACTION_UNAVAILABLE", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionUnavailable),
+		"error = %v, want ACTION_UNAVAILABLE", err)
 }
 
 // Some actions are informational on platforms they cannot act on; the script
@@ -475,13 +429,9 @@ func TestRunSucceedsWhenNoCommandIsExpected(t *testing.T) {
 	runner := newTestRunner(t, action)
 
 	result, err := runner.Run(context.Background(), "test:do", nil)
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run")
 
-	if !result.Success {
-		t.Fatal("result was not successful")
-	}
+	require.True(t, result.Success, "result was not successful")
 }
 
 func TestRunFailsOnNonZeroExit(t *testing.T) {
@@ -497,9 +447,8 @@ func TestRunFailsOnNonZeroExit(t *testing.T) {
 	)
 
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionFailed) {
-		t.Fatalf("error = %v, want ACTION_FAILED", err)
-	}
+	require.Truef(t, appErrors.IsAppError(err, appErrors.ErrCodeActionFailed),
+		"error = %v, want ACTION_FAILED", err)
 }
 
 func TestRunReportsAMissingInterpreter(t *testing.T) {
@@ -507,7 +456,5 @@ func TestRunReportsAMissingInterpreter(t *testing.T) {
 
 	// No command runner was injected, so the default refuses.
 	_, err := runner.Run(context.Background(), "test:do", nil)
-	if !errors.Is(err, ErrNoCommandRunner) {
-		t.Fatalf("error = %v, want ErrNoCommandRunner", err)
-	}
+	require.ErrorIs(t, err, ErrNoCommandRunner, "error = %v, want ErrNoCommandRunner", err)
 }

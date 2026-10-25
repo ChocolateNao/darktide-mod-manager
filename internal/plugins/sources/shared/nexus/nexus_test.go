@@ -23,7 +23,7 @@ import (
 )
 
 // The error codes this file asserts on, named once so a rename in pkg/errors
-// fails here rather than as a silently passing comparison.
+// fails here.
 const (
 	appCodeAuthFailed        = appErrors.ErrCodeAuthFailed
 	appCodeAuthRequired      = appErrors.ErrCodeAuthRequired
@@ -111,7 +111,7 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 
 	s.mu.Lock()
-	// The separator is written out rather than assumed: a request log that
+	// The separator is written out: a request log that
 	// concatenates path and query cannot tell a query string from a path suffix.
 	target := r.URL.Path
 	if r.URL.RawQuery != "" {
@@ -187,7 +187,7 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(s.assetBody)
 	default:
 		// Anything unrouted is a 404 in the API's own problem shape, so a request the
-		// plugin should not have made is reported rather than quietly answered.
+		// plugin should not have made is reported.
 		s.writeJSON(
 			w,
 			http.StatusNotFound,
@@ -198,7 +198,7 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 
 // fileIDOfDownloadLink pulls the file id out of a legacy download_link path:
 // /v1/games/{domain}/mods/{mod}/files/{id}/download_link, so the id is read from
-// the end rather than counted from the front.
+// the end, not counted from the front.
 func fileIDOfDownloadLink(path string) string {
 	_, rest, found := strings.Cut(path, "/files/")
 	if !found {
@@ -575,8 +575,7 @@ func TestNewRefusesAnUnusableAPIBase(t *testing.T) {
 }
 
 func TestNewReadsTheKeyFromTheOptionsBlock(t *testing.T) {
-	// A configuration written by hand often puts the key in the options map
-	// rather than in the dedicated field.
+	// A configuration written by hand often puts the key in the options map.
 	src, err := New(domain.SourceConfig{Options: map[string]string{"api_key": "from-options"}})
 	require.NoError(t, err, "New")
 
@@ -601,7 +600,7 @@ func TestValidGameDomain(t *testing.T) {
 		assert.True(t, validGameDomain(ok), "validGameDomain(%q) = false, want true", ok)
 	}
 	// A domain is interpolated into a request path, so anything that could change
-	// which request is made has to be refused rather than escaped.
+	// which request is made has to be refused.
 	for _, bad := range []string{
 		"", " ", "dark/tide", "dark tide", "dark.tide", "dark;tide",
 		"dark?x=1", "dark#frag", "../darktide", "darktide/../other", "dark\\tide",
@@ -619,7 +618,7 @@ func TestOptionsIgnoreBlankInput(t *testing.T) {
 	WithTimeout(-time.Second)(base)
 
 	if base.apiBase == "" || base.gameDomain == "" {
-		assert.Fail(t, "a blank option must leave the value alone rather than blanking it")
+		assert.Fail(t, "a blank option must leave the value alone")
 	}
 
 	if base.client == nil {
@@ -628,8 +627,7 @@ func TestOptionsIgnoreBlankInput(t *testing.T) {
 }
 
 func TestValidateCredentialsWithoutAKeyMakesNoRequest(t *testing.T) {
-	// The trending feed is public, so a user with no credential is browsing
-	// rather than broken. Collecting a 401 to say so would be wrong.
+	// The trending feed is public, so a user with no credential is browsing.
 	s := armedStub(t)
 	src := newSource(t, s, WithGameDomain("darktide"))
 
@@ -706,7 +704,7 @@ func TestValidateCredentialsProbesWithTheKey(t *testing.T) {
 		)
 	}
 	// The probe body must be the documented object — an id that does not exist, so a
-	// good key answers with an empty list rather than a 404 that could mean a hidden key.
+	// good key answers with an empty list, not a 404 that could mean a hidden key.
 	bodies := s.bodyLog()
 	require.NotEmpty(t, bodies, "probe sent no body; it made %v", s.callLog())
 
@@ -745,7 +743,7 @@ func TestValidateCredentialsReportsARejectedKey(t *testing.T) {
 	if err == nil {
 		require.FailNow(t, "ValidateCredentials accepted a key the API refused")
 	}
-	// A key was supplied and was refused, so it is wrong rather than missing.
+	// A key was supplied and was refused, so it is wrong, not missing.
 	assert.True(
 		t,
 		isCode(err, appCodeAuthFailed),
@@ -878,7 +876,7 @@ func TestGetModReadsTheDependencyResponse(t *testing.T) {
 	mod, err := src.GetMod(t.Context(), ModID("900", "7001"))
 	require.NoError(t, err, "GetMod")
 	// The dependency endpoint has no "data" wrapper, so decoding it into the
-	// wrong shape yields nothing rather than an error.
+	// wrong shape yields nothing.
 	want := []string{"nexus-950-8001"}
 	if len(mod.Dependencies) != 1 || mod.Dependencies[0] != want[0] {
 		assert.Fail(t,
@@ -1123,7 +1121,7 @@ const fileAggregateBare = `{"id":"7001","name":"Better UI Main","is_active":true
 
 func TestGetModFailsWhenTheModRecordIsThin(t *testing.T) {
 	// The mod record is where the name comes from, and the file and version responses
-	// carry none, so a mod with no name has to fall back rather than present as empty.
+	// carry none, so a mod with no name has to fall back.
 	s := armedStub(t)
 	s.modBody = `{"data":{"id":"1234567890123","game_scoped_id":"900","game_id":"3834","name":null}}`
 	src := newSource(t, s)
@@ -1237,7 +1235,7 @@ func TestSearchExpandsTheTrendingFeed(t *testing.T) {
 
 func TestSearchReportsAMissingKeyRatherThanNothingMatching(t *testing.T) {
 	// Every entry needs expanding before it can be listed, and that needs a key; an
-	// empty list would read as "nothing trending matched" rather than "no key".
+	// empty list would read as "nothing trending matched", not "no key".
 	s := armedStub(t)
 	src := newSource(t, s)
 	src.apiKey = ""
@@ -1831,7 +1829,7 @@ func TestDownloadLeavesAPartialGrantToThePremiumEndpoint(t *testing.T) {
 	s.dlBody = downloadFixtureJSON(s.url + "/asset")
 
 	// A link carrying only some of the three parts is not a grant. Sending it
-	// anyway would draw a 403 that blames the account rather than the link.
+	// anyway would draw a 403 that blames the account.
 	mod := &domain.Mod{ID: ModID("900", "7001"), SourceID: SourceID}
 	mod.SourceData = map[string]any{
 		"version_id":    "8001",
@@ -2313,8 +2311,7 @@ func TestForgetCredentialsStopsSendingTheHeader(t *testing.T) {
 	if _, err := src.Search(t.Context(), domain.SearchQuery{}); !isCode(err, appCodeAuthRequired) {
 		assert.Fail(t, "Search after forgetting = %v, want ErrCodeAuthRequired", err)
 	} else if !strings.Contains(err.Error(), "requires an API key") {
-		// The message is read in a dialog, not a terminal, so it must name the
-		// requirement rather than a command the frontend cannot run.
+		// The message is read in a dialog, not a terminal, so it must name the requirement.
 		assert.Fail(t, "error %q does not say what is missing", err)
 	}
 

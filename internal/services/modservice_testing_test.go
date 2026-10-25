@@ -21,10 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Test doubles for ModService. Everything here is deliberately in-memory: the
-// service is the unit under test, so its collaborators are recorded rather than
-// re-implemented.
-
+// Test doubles for ModService.
 // modNow pins every timestamp the service writes, so assertions can compare
 // exact values instead of ranges.
 var modNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
@@ -551,7 +548,7 @@ func (p *fakeSourceProvider) requested() []string {
 }
 
 // fakeCache returns a pre-written archive for each mod it knows. The archive is a
-// real zip so the real extractor is exercised rather than a stub.
+// real zip so the real extractor is exercised, not a stub.
 type fakeCache struct {
 	getErr   error
 	archives map[string]string
@@ -699,7 +696,7 @@ func (h *fakeHooks) countOf(phase domain.HookPhase) int {
 
 // fakeLocator stands in for GameLocator. modsPath == "" models "a game is
 // configured but has no mods folder yet", which the service must treat as "no
-// game" rather than as an error.
+// game", not as an error.
 type fakeLocator struct {
 	err               error
 	install           *domain.GameInstallation
@@ -707,6 +704,7 @@ type fakeLocator struct {
 	gameID            string
 	installMethod     string
 	gameInstallMethod string
+	loadOrderFile     string
 	calls             int
 	mu                sync.Mutex
 }
@@ -718,9 +716,13 @@ type fakeGameDef struct {
 	gamestest.Def
 	id            string
 	installMethod string
+	loadOrderFile string
 }
 
 func (d fakeGameDef) ID() string { return d.id }
+
+// LoadOrderFile reports the file the test asked for, defaulting to no file.
+func (d fakeGameDef) LoadOrderFile() string { return d.loadOrderFile }
 
 // ModInstallMethod reports the preference the test asked for, falling back to
 // the gamestest default when it asked for nothing.
@@ -782,6 +784,17 @@ func (l *fakeLocator) withGameInstallMethod(method string) *fakeLocator {
 	return l
 }
 
+// withLoadOrderFile makes Active report a game that switches mods through a
+// load order file, which is what enables external mod detection.
+func (l *fakeLocator) withLoadOrderFile(name string) *fakeLocator {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.loadOrderFile = name
+
+	return l
+}
+
 // Active implements ModLocator. It reports the configured game id (the empty
 // string by default) independently of installation errors: a missing
 // installation is not a missing registry entry.
@@ -792,7 +805,11 @@ func (l *fakeLocator) Active() (domain.GameDefinition, domain.GameSettings, erro
 	settings := domain.DefaultGameSettings()
 	settings.InstallMethod = l.installMethod
 
-	def := fakeGameDef{id: l.gameID, installMethod: l.gameInstallMethod}
+	def := fakeGameDef{
+		id:            l.gameID,
+		installMethod: l.gameInstallMethod,
+		loadOrderFile: l.loadOrderFile,
+	}
 
 	return def, settings, nil
 }
@@ -824,6 +841,24 @@ func (l *fakeLocator) GetModsPath(*domain.GameInstallation) (string, error) {
 	}
 
 	return l.modsPath, nil
+}
+
+func (l *fakeLocator) Installations(context.Context) ([]domain.GameInstallation, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.err != nil {
+		return nil, l.err
+	}
+
+	if l.install == nil {
+		return nil, nil
+	}
+
+	install := *l.install
+	install.GameID = l.gameID
+
+	return []domain.GameInstallation{install}, nil
 }
 
 func (l *fakeLocator) currentCalls() int {
@@ -876,7 +911,7 @@ func (d *recordingDeployer) DeployAs(src, _ string, mode platform.DeployMode) er
 		return d.deployErr
 	}
 	// The real deployer exposes one game-folder entry per top-level payload
-	// entry, so read the folder rather than inventing a scheme.
+	// entry, so read the folder, not inventing a scheme.
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err

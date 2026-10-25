@@ -234,12 +234,12 @@ func TestModRepositoryRoundTripsMinimalMod(t *testing.T) {
 	assert.NotNil(
 		t,
 		got.Dependencies,
-		"expected an empty slice rather than nil, so callers need no nil check",
+		"expected an empty slice, so callers need no nil check",
 	)
 
 	assert.Empty(t, got.SourceData, "expected an empty source map, got %v", got.SourceData)
 
-	assert.NotNil(t, got.SourceData, "expected an empty map rather than nil")
+	assert.NotNil(t, got.SourceData, "expected an empty map")
 
 	assert.True(t, got.Hooks.Empty(), "expected an absent hook set to stay empty")
 
@@ -1764,7 +1764,7 @@ func TestEncodeDecodeHooks(t *testing.T) {
 	phase := emptyPhase.For(domain.PhasePostEnable)
 	assert.Nil(t, phase, "expected an empty phase list to read back as nil, got %v", phase)
 
-	// Unknown keys are dropped rather than fatal, so a newer manifest still
+	// Unknown keys are dropped, so a newer manifest still
 	// loads on an older build.
 	withUnknown, err := decodeHooks(`{"future_phase":[{"type":"inline","content":"x"}]}`)
 	require.NoError(t, err, "decode with an unknown phase")

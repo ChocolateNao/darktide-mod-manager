@@ -14,6 +14,8 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/p2p"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // loopbackConfig is a peer configuration that works without touching the network:
@@ -31,9 +33,8 @@ func loopbackConfig(t *testing.T) p2p.Config {
 		ChunkSize:           16 * 1024,
 	}
 
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("loopback config is invalid: %v", err)
-	}
+	err := cfg.Validate()
+	require.NoError(t, err, "loopback config is invalid: %v", err)
 
 	return cfg
 }
@@ -47,9 +48,8 @@ func writeArchive(t *testing.T, dir, name string, size int) domain.P2PSharedFile
 	}
 
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, body, 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
+	err := os.WriteFile(path, body, 0o600)
+	require.NoError(t, err, "write %s: %v", path, err)
 
 	sum := sha256.Sum256(body)
 
@@ -68,28 +68,19 @@ func connectPeers(t *testing.T, ctx context.Context) (*p2p.Peer, *p2p.Peer) {
 	cfg := loopbackConfig(t)
 
 	sender, err := p2p.NewSenderPeer(cfg)
-	if err != nil {
-		t.Fatalf("NewSenderPeer: %v", err)
-	}
+	require.NoError(t, err, "NewSenderPeer: %v", err)
 
 	offer, err := sender.CreateOffer(ctx)
-	if err != nil {
-		t.Fatalf("CreateOffer: %v", err)
-	}
+	require.NoError(t, err, "CreateOffer: %v", err)
 
 	receiver, err := p2p.NewReceiverPeer(cfg)
-	if err != nil {
-		t.Fatalf("NewReceiverPeer: %v", err)
-	}
+	require.NoError(t, err, "NewReceiverPeer: %v", err)
 
 	answer, err := receiver.CreateAnswer(ctx, offer)
-	if err != nil {
-		t.Fatalf("CreateAnswer: %v", err)
-	}
+	require.NoError(t, err, "CreateAnswer: %v", err)
 
-	if err := sender.AcceptAnswer(answer); err != nil {
-		t.Fatalf("AcceptAnswer: %v", err)
-	}
+	err = sender.AcceptAnswer(answer)
+	require.NoError(t, err, "AcceptAnswer: %v", err)
 
 	var wg sync.WaitGroup
 
@@ -111,7 +102,7 @@ func connectPeers(t *testing.T, ctx context.Context) (*p2p.Peer, *p2p.Peer) {
 	close(openErrs)
 
 	for err := range openErrs {
-		t.Fatalf("WaitOpen: %v", err)
+		require.NoError(t, err, "WaitOpen: %v", err)
 	}
 
 	return sender, receiver
@@ -138,9 +129,7 @@ func TestTransferRoundTrip(t *testing.T) {
 	}
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	senderPeer, receiverPeer := connectPeers(t, ctx)
 
@@ -187,24 +176,13 @@ func TestTransferRoundTrip(t *testing.T) {
 	reported := len(progress)
 	progressMu.Unlock()
 
-	if reported == 0 {
-		t.Error("no progress was reported for a transfer that moved bytes")
-	}
+	assert.NotZero(t, reported, "no progress was reported for a transfer that moved bytes")
 
 	for _, file := range offer.Files {
 		got, err := hashFile(filepath.Join(dest, file.Name))
-		if err != nil {
-			t.Fatalf("hash received %s: %v", file.Name, err)
-		}
+		require.NoError(t, err, "hash received %s: %v", file.Name, err)
 
-		if got != file.HashSHA256 {
-			t.Errorf(
-				"received %s hashes %s, the offer published %s",
-				file.Name,
-				got,
-				file.HashSHA256,
-			)
-		}
+		assert.Equal(t, file.HashSHA256, got, "received %s hashes %s, the offer published %s", file.Name, got, file.HashSHA256)
 	}
 
 	// The sender streams the files in offer order; anything else would mean the
@@ -214,24 +192,12 @@ func TestTransferRoundTrip(t *testing.T) {
 		got := filepath.Join(dest, file.Name)
 
 		wantInfo, err := os.Stat(want)
-		if err != nil {
-			t.Fatalf("stat %s: %v", want, err)
-		}
+		require.NoError(t, err, "stat %s: %v", want, err)
 
 		gotInfo, err := os.Stat(got)
-		if err != nil {
-			t.Fatalf("stat %s: %v", got, err)
-		}
+		require.NoError(t, err, "stat %s: %v", got, err)
 
-		if wantInfo.Size() != gotInfo.Size() {
-			t.Errorf(
-				"file %d (%s) arrived %d bytes, expected %d",
-				i,
-				file.Name,
-				gotInfo.Size(),
-				wantInfo.Size(),
-			)
-		}
+		assert.Equal(t, wantInfo.Size(), gotInfo.Size(), "file %d (%s) arrived %d bytes, expected %d", i, file.Name, gotInfo.Size(), wantInfo.Size())
 	}
 }
 
@@ -252,9 +218,7 @@ func TestReceiveRejectsWrongSecret(t *testing.T) {
 	}
 
 	realSecret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	attackerSecret := realSecret + "x"
 
@@ -274,24 +238,16 @@ func TestReceiveRejectsWrongSecret(t *testing.T) {
 	sendResult := <-sendErr
 
 	receiveResult := <-receiveErr
-	if receiveResult == nil {
-		t.Fatal("Receive accepted a peer holding the wrong secret")
-	}
+	require.Error(t, receiveResult, "Receive accepted a peer holding the wrong secret")
 
 	// Whichever side failed first is a matter of timing, so both errors are
 	// accepted as long as the transfer did not succeed.
-	if sendResult == nil {
-		t.Fatal("Send completed against a receiver that rejected the handshake")
-	}
+	require.Error(t, sendResult, "Send completed against a receiver that rejected the handshake")
 
 	entries, err := os.ReadDir(dest)
-	if err != nil {
-		t.Fatalf("read destination: %v", err)
-	}
+	require.NoError(t, err, "read destination: %v", err)
 
-	if len(entries) != 0 {
-		t.Errorf("an unauthenticated peer left %d files on disk", len(entries))
-	}
+	assert.Empty(t, entries, "an unauthenticated peer left %d files on disk", len(entries))
 }
 
 func TestReceiveDetectsCorruptedFile(t *testing.T) {
@@ -316,20 +272,15 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	staged := filepath.Join(stage, file.Name)
 
 	body, err := os.ReadFile(staged)
-	if err != nil {
-		t.Fatalf("read staged archive: %v", err)
-	}
+	require.NoError(t, err, "read staged archive: %v", err)
 
 	body[0] ^= 0xff
 
-	if err := os.WriteFile(staged, body, 0o600); err != nil {
-		t.Fatalf("rewrite staged archive: %v", err)
-	}
+	err = os.WriteFile(staged, body, 0o600)
+	require.NoError(t, err, "rewrite staged archive: %v", err)
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	senderPeer, receiverPeer := connectPeers(t, ctx)
 
@@ -344,9 +295,7 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	}()
 
 	err = <-receiveErr
-	if err == nil {
-		t.Fatal("Receive accepted an archive whose bytes did not match the offer")
-	}
+	require.Error(t, err, "Receive accepted an archive whose bytes did not match the offer")
 
 	// Either the length check or the digest check is a correct rejection; the file
 	// must not be left behind.
@@ -356,13 +305,9 @@ func TestReceiveDetectsCorruptedFile(t *testing.T) {
 	}
 
 	entries, err := os.ReadDir(dest)
-	if err != nil {
-		t.Fatalf("read destination: %v", err)
-	}
+	require.NoError(t, err, "read destination: %v", err)
 
-	if len(entries) != 0 {
-		t.Errorf("a file that failed its hash check was left in %s", dest)
-	}
+	assert.Empty(t, entries, "a file that failed its hash check was left in %s", dest)
 }
 
 func TestReceiveRejectsForeignManifest(t *testing.T) {
@@ -390,9 +335,7 @@ func TestReceiveRejectsForeignManifest(t *testing.T) {
 	senderOffer.Files = []domain.P2PSharedFile{file, other}
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	senderPeer, receiverPeer := connectPeers(t, ctx)
 
@@ -412,18 +355,12 @@ func TestReceiveRejectsForeignManifest(t *testing.T) {
 	}()
 
 	err = <-receiveErr
-	if !errors.Is(err, p2p.ErrIntegrity) {
-		t.Fatalf("Receive returned %v, want an integrity failure", err)
-	}
+	require.ErrorIs(t, err, p2p.ErrIntegrity, "Receive returned %v, want an integrity failure", err)
 
 	entries, err := os.ReadDir(dest)
-	if err != nil {
-		t.Fatalf("read destination: %v", err)
-	}
+	require.NoError(t, err, "read destination: %v", err)
 
-	if len(entries) != 0 {
-		t.Errorf("a rejected manifest still left %d files on disk", len(entries))
-	}
+	assert.Empty(t, entries, "a rejected manifest still left %d files on disk", len(entries))
 }
 
 func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
@@ -446,9 +383,7 @@ func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 	senderOffer.OfferID = "offer-theirs"
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	senderPeer, receiverPeer := connectPeers(t, ctx)
 
@@ -467,9 +402,8 @@ func TestReceiveRejectsMismatchedOfferID(t *testing.T) {
 		receiveErr <- p2p.Receive(ctx, p2p.Session{Peer: receiverPeer, Secret: secret, Offer: offer}, dest, nil)
 	}()
 
-	if err := <-receiveErr; !errors.Is(err, p2p.ErrIntegrity) {
-		t.Fatalf("Receive returned %v, want an integrity failure", err)
-	}
+	err = <-receiveErr
+	require.ErrorIs(t, err, p2p.ErrIntegrity, "Receive returned %v, want an integrity failure", err)
 }
 
 func TestSendHonoursContextCancellation(t *testing.T) {
@@ -485,9 +419,7 @@ func TestSendHonoursContextCancellation(t *testing.T) {
 	}
 
 	secret, err := linkSecret()
-	if err != nil {
-		t.Fatalf("generate secret: %v", err)
-	}
+	require.NoError(t, err, "generate secret: %v", err)
 
 	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancelConnect()
@@ -498,9 +430,7 @@ func TestSendHonoursContextCancellation(t *testing.T) {
 	cancel()
 
 	err = p2p.Send(ctx, p2p.Session{Peer: senderPeer, Secret: secret, Offer: offer}, stage, nil)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Send returned %v, want context.Canceled", err)
-	}
+	require.ErrorIs(t, err, context.Canceled, "Send returned %v, want context.Canceled", err)
 }
 
 // TestConfigValidation covers the guards that stop a mistyped STUN URL gathering nothing silently.
@@ -561,12 +491,12 @@ func TestConfigValidation(t *testing.T) {
 
 			err := testCase.cfg.Validate()
 
-			if testCase.ok && err != nil {
-				t.Errorf("Validate returned %v, want nil", err)
+			if testCase.ok {
+				assert.NoError(t, err, "Validate returned %v, want nil", err)
 			}
 
-			if !testCase.ok && err == nil {
-				t.Error("Validate accepted a configuration it should reject")
+			if !testCase.ok {
+				assert.Error(t, err, "Validate accepted a configuration it should reject")
 			}
 		})
 	}
@@ -579,9 +509,7 @@ func TestDefaultSTUNServers(t *testing.T) {
 
 	servers := p2p.DefaultSTUNServers()
 
-	if len(servers) != 1 || servers[0] != "stun:stun.l.google.com:19302" {
-		t.Fatalf("default STUN servers are %v, want [stun:stun.l.google.com:19302]", servers)
-	}
+	assert.Equal(t, []string{"stun:stun.l.google.com:19302"}, servers, "default STUN servers are %v, want [stun:stun.l.google.com:19302]", servers)
 }
 
 func hashFile(path string) (string, error) {

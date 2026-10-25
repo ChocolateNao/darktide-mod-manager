@@ -8,6 +8,8 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // installedMod is a mod as the database holds it: every field filled, including
@@ -62,37 +64,29 @@ func installedMod() *domain.Mod {
 func TestFromModCarriesEverythingTheManifestCanHold(t *testing.T) {
 	m := FromMod(installedMod())
 
-	if m.Mod.ID != "better_ui" || m.Mod.Name != "Better UI" || m.Mod.Version != "1.4.2" {
-		t.Fatalf("identity = %+v", m.Mod)
-	}
+	assert.Equal(t, "better_ui", m.Mod.ID, "identity = %+v", m.Mod)
+	assert.Equal(t, "Better UI", m.Mod.Name, "identity = %+v", m.Mod)
+	assert.Equal(t, "1.4.2", m.Mod.Version, "identity = %+v", m.Mod)
 
-	if m.Mod.Author != "someone" || m.Mod.Description != "moves the health bar" {
-		t.Fatalf("attribution = %+v", m.Mod)
-	}
+	assert.Equal(t, "someone", m.Mod.Author, "attribution = %+v", m.Mod)
+	assert.Equal(t, "moves the health bar", m.Mod.Description, "attribution = %+v", m.Mod)
 
-	if m.Mod.GameVersion != "1.0.3" {
-		t.Fatalf("game version = %q", m.Mod.GameVersion)
-	}
+	assert.Equal(t, "1.0.3", m.Mod.GameVersion, "game version = %q", m.Mod.GameVersion)
 
-	if len(m.Mod.Dependencies) != 1 || m.Mod.Dependencies[0] != "core_libs" {
-		t.Fatalf("dependencies = %v", m.Mod.Dependencies)
-	}
+	assert.Equal(t, []string{"core_libs"}, m.Mod.Dependencies, "dependencies = %v", m.Mod.Dependencies)
 
-	if len(m.Mod.ConflictsWith) != 1 || m.Mod.ConflictsWith[0] != "ugly_ui" {
-		t.Fatalf("conflicts = %v", m.Mod.ConflictsWith)
-	}
+	assert.Equal(t, []string{"ugly_ui"}, m.Mod.ConflictsWith, "conflicts = %v", m.Mod.ConflictsWith)
 
-	if len(m.Mod.Tags) != 2 {
-		t.Fatalf("tags = %v", m.Mod.Tags)
-	}
+	assert.Len(t, m.Mod.Tags, 2, "tags = %v", m.Mod.Tags)
 
-	if m.Mod.SourceURL != "https://www.nexusmods.com/darktide/mods/12" {
-		t.Fatalf("source url = %q", m.Mod.SourceURL)
-	}
+	assert.Equal(t,
+		"https://www.nexusmods.com/darktide/mods/12",
+		m.Mod.SourceURL,
+		"source url = %q",
+		m.Mod.SourceURL,
+	)
 
-	if m.Mod.UpdateURL == "" {
-		t.Fatal("the update link was dropped")
-	}
+	assert.NotEmpty(t, m.Mod.UpdateURL, "the update link was dropped")
 }
 
 // A manifest travels with the mod: recording this machine's enabled flag or
@@ -102,16 +96,12 @@ func TestFromModLeavesMachineLocalStateOut(t *testing.T) {
 	m := FromMod(installedMod())
 
 	data, err := Encode(m)
-	if err != nil {
-		t.Fatalf("encode: %v", err)
-	}
+	require.NoError(t, err, "encode: %v", err)
 
 	for _, leaked := range []string{
 		"deadbeef", "/games/darktide", "enabled", "priority", "game_root", "installed_at",
 	} {
-		if containsString(string(data), leaked) {
-			t.Fatalf("the manifest contains %q:\n%s", leaked, data)
-		}
+		assert.False(t, containsString(string(data), leaked), "the manifest contains %q:\n%s", leaked, data)
 	}
 }
 
@@ -119,47 +109,33 @@ func TestFromModHooksSurviveTheRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	_, err := Write(dir, FromMod(installedMod()))
-	if err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	require.NoError(t, err, "write: %v", err)
 
 	back, err := Read(dir)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
+	require.NoError(t, err, "read: %v", err)
 
 	hooks, err := back.DomainHooks()
-	if err != nil {
-		t.Fatalf("domain hooks: %v", err)
-	}
+	require.NoError(t, err, "domain hooks: %v", err)
 
 	original := installedMod().Hooks
 
-	if got, want := hooks.Count(), original.Count(); got != want {
-		t.Fatalf("hook count = %d, want %d", got, want)
-	}
+	assert.Equal(t, original.Count(), hooks.Count(), "hook count = %d, want %d", hooks.Count(), original.Count())
 
 	scripts := hooks.For(domain.PhasePostInstall)
-	if len(scripts) != 1 {
-		t.Fatalf("post-install scripts = %d", len(scripts))
-	}
+	require.Len(t, scripts, 1, "post-install scripts = %d", len(scripts))
 
-	if scripts[0].Content != "print('installed')" || scripts[0].WorkingDir != "{{install_path}}" {
-		t.Fatalf("post-install script = %+v", scripts[0])
-	}
+	assert.Equal(t, "print('installed')", scripts[0].Content, "post-install script = %+v", scripts[0])
+	assert.Equal(t, "{{install_path}}", scripts[0].WorkingDir, "post-install script = %+v", scripts[0])
 
-	if scripts[0].Timeout != 30 || len(scripts[0].Env) != 1 || scripts[0].Env[0] != "MODE=live" {
-		t.Fatalf("post-install script details = %+v", scripts[0])
-	}
+	assert.Equal(t, 30, scripts[0].Timeout, "post-install script details = %+v", scripts[0])
+	require.Len(t, scripts[0].Env, 1, "post-install script details = %+v", scripts[0])
+	assert.Equal(t, "MODE=live", scripts[0].Env[0], "post-install script details = %+v", scripts[0])
 
-	if scripts[0].Language != domain.LangLua {
-		t.Fatalf("language = %q", scripts[0].Language)
-	}
+	assert.Equal(t, domain.LangLua, scripts[0].Language, "language = %q", scripts[0].Language)
 
 	pre := hooks.For(domain.PhasePreEnable)
-	if len(pre) != 1 || pre[0].Language != domain.LangJS {
-		t.Fatalf("pre-enable scripts = %+v", pre)
-	}
+	require.Len(t, pre, 1, "pre-enable scripts = %+v", pre)
+	assert.Equal(t, domain.LangJS, pre[0].Language, "pre-enable scripts = %+v", pre)
 }
 
 // The point of the projection: the manifest a recipient reads tells them where
@@ -167,22 +143,17 @@ func TestFromModHooksSurviveTheRoundTrip(t *testing.T) {
 func TestFromModSourceLinksSurviveTheRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
-	if _, err := Write(dir, FromMod(installedMod())); err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	_, err := Write(dir, FromMod(installedMod()))
+	require.NoError(t, err, "write: %v", err)
 
 	back, err := Read(dir)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
+	require.NoError(t, err, "read: %v", err)
 
-	if back.Mod.SourceURL == "" || back.Mod.UpdateURL == "" {
-		t.Fatalf("source links = %+v", back.Mod)
-	}
+	assert.NotEmpty(t, back.Mod.SourceURL, "source links = %+v", back.Mod)
+	assert.NotEmpty(t, back.Mod.UpdateURL, "source links = %+v", back.Mod)
 
-	if back.Mod.SourceData["mod_id"] != "12" || back.Mod.SourceData["verified"] != "true" {
-		t.Fatalf("source data = %v", back.Mod.SourceData)
-	}
+	assert.Equal(t, "12", back.Mod.SourceData["mod_id"], "source data = %v", back.Mod.SourceData)
+	assert.Equal(t, "true", back.Mod.SourceData["verified"], "source data = %v", back.Mod.SourceData)
 }
 
 func TestWriteKeepsTheExistingManifestName(t *testing.T) {
@@ -190,69 +161,57 @@ func TestWriteKeepsTheExistingManifestName(t *testing.T) {
 
 	// A mod that already ships metadata.toml must not gain a competing mod.toml: Read
 	// takes the first name in priority order, so a second file is ignored forever.
-	if err := os.WriteFile(
+	err := os.WriteFile(
 		filepath.Join(dir, "metadata.toml"),
 		[]byte("[mod]\nid = \"x\"\n"),
 		0o600,
-	); err != nil {
-		t.Fatalf("seed manifest: %v", err)
-	}
+	)
+	require.NoError(t, err, "seed manifest: %v", err)
 
 	path, err := Write(dir, FromMod(installedMod()))
-	if err != nil {
-		t.Fatalf("write: %v", err)
-	}
+	require.NoError(t, err, "write: %v", err)
 
-	if filepath.Base(path) != "metadata.toml" {
-		t.Fatalf("wrote %s", path)
-	}
+	assert.Equal(t, "metadata.toml", filepath.Base(path), "wrote %s", path)
 
-	if _, err := os.Stat(filepath.Join(dir, Names[0])); !os.IsNotExist(err) {
-		t.Fatal("a second manifest was created")
-	}
+	_, err = os.Stat(filepath.Join(dir, Names[0]))
+	assert.True(t, os.IsNotExist(err), "a second manifest was created")
 }
 
 func TestWriteRefusesAFolderThatIsNotThere(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "nope")
 
-	if _, err := Write(missing, FromMod(installedMod())); err == nil {
-		t.Fatal("expected an error for a missing folder")
-	}
+	_, err := Write(missing, FromMod(installedMod()))
+	assert.Error(t, err, "expected an error for a missing folder")
 }
 
 func TestWriteRefusesAFileAsAFolder(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "not-a-folder")
 
-	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
+	err := os.WriteFile(file, []byte("x"), 0o600)
+	require.NoError(t, err, "write file: %v", err)
 
-	_, err := Write(file, FromMod(installedMod()))
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidMod) {
-		t.Fatalf("error = %v, want INVALID_MOD", err)
-	}
+	_, err = Write(file, FromMod(installedMod()))
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidMod), "error = %v, want INVALID_MOD", err)
 }
 
 func TestWriteRefusesABlankFolder(t *testing.T) {
-	if _, err := Write("  ", FromMod(installedMod())); !appErrors.IsAppError(
+	_, err := Write("  ", FromMod(installedMod()))
+	assert.True(t, appErrors.IsAppError(
 		err,
 		appErrors.ErrCodeInvalidArgument,
-	) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	), "error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestEncodeRefusesNothing(t *testing.T) {
-	if _, err := Encode(nil); !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	_, err := Encode(nil)
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument), "error = %v, want INVALID_ARGUMENT", err)
 }
 
 func TestFromModTolerantOfNothing(t *testing.T) {
-	if m := FromMod(nil); m == nil || m.Mod.ID != "" {
-		t.Fatal("a nil mod should project to an empty manifest")
-	}
+	m := FromMod(nil)
+	assert.NotNil(t, m, "a nil mod should project to an empty manifest")
+	assert.Empty(t, m.Mod.ID, "a nil mod should project to an empty manifest")
 }
 
 func TestSourceDataStringsRendersEveryShape(t *testing.T) {
@@ -274,9 +233,8 @@ func TestSourceDataStringsRendersEveryShape(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := SourceDataValue(tc.value); got != tc.want {
-				t.Fatalf("SourceDataValue(%v) = %q, want %q", tc.value, got, tc.want)
-			}
+			got := SourceDataValue(tc.value)
+			assert.Equal(t, tc.want, got, "SourceDataValue(%v) = %q, want %q", tc.value, got, tc.want)
 		})
 	}
 }
@@ -284,19 +242,14 @@ func TestSourceDataStringsRendersEveryShape(t *testing.T) {
 // A value with no sensible spelling must not fail the whole write: the rest of
 // the record is still worth having, and the placeholder says what happened.
 func TestSourceDataValueFallsBackForUnmarshalableValues(t *testing.T) {
-	if got := SourceDataValue(make(chan int)); got == "" {
-		t.Fatal("expected a placeholder")
-	}
+	got := SourceDataValue(make(chan int))
+	assert.NotEmpty(t, got, "expected a placeholder")
 }
 
 func TestSourceDataStringsDropsAnEmptyMap(t *testing.T) {
-	if got := SourceDataStrings(nil); got != nil {
-		t.Fatalf("SourceDataStrings(nil) = %v", got)
-	}
+	assert.Nil(t, SourceDataStrings(nil), "SourceDataStrings(nil) = %v", SourceDataStrings(nil))
 
-	if got := SourceDataStrings(map[string]any{}); got != nil {
-		t.Fatalf("SourceDataStrings(empty) = %v", got)
-	}
+	assert.Nil(t, SourceDataStrings(map[string]any{}), "SourceDataStrings(empty) = %v", SourceDataStrings(map[string]any{}))
 }
 
 // A hook with no language cannot be written; skipping it keeps Write from
@@ -308,13 +261,10 @@ func TestFromModSkipsUnnamedHookScripts(t *testing.T) {
 	}
 
 	m := FromMod(mod)
-	if len(m.Hooks.PostInstall) != 0 {
-		t.Fatalf("post install = %+v", m.Hooks.PostInstall)
-	}
+	assert.Empty(t, m.Hooks.PostInstall, "post install = %+v", m.Hooks.PostInstall)
 
-	if _, err := Encode(m); err != nil {
-		t.Fatalf("encode: %v", err)
-	}
+	_, err := Encode(m)
+	require.NoError(t, err, "encode: %v", err)
 }
 
 func containsString(haystack, needle string) bool {

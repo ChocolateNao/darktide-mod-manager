@@ -108,13 +108,9 @@ func TestShellHelpers(t *testing.T) {
 	got = bare.String()
 	assert.Equal(t, "sh", got, "String() with no args = %q", got)
 
-	if (Shell{}).Valid() {
-		assert.Fail(t, "empty shell reported valid")
-	}
+	assert.False(t, (Shell{}).Valid(), "empty shell reported valid")
 
-	if (Shell{Name: " "}).Valid() {
-		assert.Fail(t, "whitespace-only name reported valid")
-	}
+	assert.False(t, (Shell{Name: " "}).Valid(), "whitespace-only name reported valid")
 }
 
 func TestResolveScriptRunnerWindows(t *testing.T) {
@@ -188,9 +184,7 @@ func TestResolveScriptRunnerUnix(t *testing.T) {
 	got, err := ResolveScriptRunner(domain.PlatformLinux, shScript, lookPathSet())
 	require.NoError(t, err, "ResolveScriptRunner")
 
-	if want := (Shell{Name: "/bin/sh"}); !got.Equal(want) {
-		assert.Fail(t, "ResolveScriptRunner = %+v, want %+v", got, want)
-	}
+	assert.True(t, got.Equal(Shell{Name: "/bin/sh"}), "ResolveScriptRunner = %+v, want %+v", got, Shell{Name: "/bin/sh"})
 
 	envScript := filepath.Join(dir, "hook.py")
 	err = os.WriteFile(envScript, []byte("#!/usr/bin/env python3\nprint(1)\n"), 0o755)

@@ -83,8 +83,6 @@ func TestApplyDefaultsFillsZeroValues(t *testing.T) {
 	assert.Equal(t, "system", c.UI.Theme, "ui defaults not applied")
 	assert.Equal(t, "en", c.UI.Language, "ui defaults not applied")
 
-	assert.Equal(t, "info", c.Advanced.LogLevel, "advanced defaults not applied")
-
 	assert.Equal(t, 24, c.AutoUpdate.CheckIntervalHours, "auto update defaults not applied")
 }
 
@@ -126,7 +124,7 @@ func TestApplyDefaultsKeepsUserValues(t *testing.T) {
 		},
 		AutoUpdate: AutoUpdateConfig{Enabled: true, CheckIntervalHours: 1, NotifyOnUpdate: false},
 		UI:         UIConfig{Theme: "light", Language: "ru", CompactMode: true},
-		Advanced:   AdvancedConfig{EnableExperimental: true, LogLevel: "debug"},
+		Advanced:   AdvancedConfig{EnableExperimental: true},
 	}
 	before := c.Clone()
 	c.ApplyDefaults()
@@ -150,7 +148,6 @@ func TestApplyDefaultsKeepsUserValues(t *testing.T) {
 	assert.True(t, c.UI.CompactMode, "ui user values changed")
 
 	assert.True(t, c.Advanced.EnableExperimental, "advanced user values changed")
-	assert.Equal(t, "debug", c.Advanced.LogLevel, "advanced user values changed")
 }
 
 func TestApplyDefaultsForcesVerifyHashes(t *testing.T) {

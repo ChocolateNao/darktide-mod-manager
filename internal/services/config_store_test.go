@@ -136,7 +136,7 @@ func TestGameStoreSurfacesStoreFailures(t *testing.T) {
 
 	cfg, err := NewGameStore(inner).Load()
 	require.Error(t, err)
-	assert.Nil(t, cfg, "a failed load stays failed rather than handing back defaults")
+	assert.Nil(t, cfg, "a failed load stays failed")
 }
 
 func TestNewGameStorePassesThroughNil(t *testing.T) {

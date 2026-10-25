@@ -108,9 +108,8 @@ func TestHooksCoverEveryPhase(t *testing.T) {
 		scripts := hooks.For(phase)
 		require.Len(t, scripts, 1, "phase %s", phase)
 
-		if scripts[0].Timeout != 7 || scripts[0].Language != domain.LangLua {
-			assert.Fail(t, "phase %s script = %+v", phase, scripts[0])
-		}
+		assert.Equal(t, 7, scripts[0].Timeout, "phase %s script = %+v", phase, scripts[0])
+		assert.Equal(t, domain.LangLua, scripts[0].Language, "phase %s script = %+v", phase, scripts[0])
 	}
 }
 
@@ -150,9 +149,9 @@ func TestScriptAcceptsKnownLanguages(t *testing.T) {
 	}.Script()
 	require.NoError(t, err, "lua")
 
-	if lua.Language != domain.LangLua || lua.WorkingDir != "sub" || len(lua.Env) != 1 {
-		assert.Fail(t, "a valid entry must survive: %+v", lua)
-	}
+	assert.Equal(t, domain.LangLua, lua.Language, "a valid entry must survive: %+v", lua)
+	assert.Equal(t, "sub", lua.WorkingDir, "a valid entry must survive: %+v", lua)
+	assert.Len(t, lua.Env, 1, "a valid entry must survive: %+v", lua)
 
 	js, err := HookEntry{Type: "javascript", Content: "x"}.Script()
 	require.NoError(t, err, "javascript")

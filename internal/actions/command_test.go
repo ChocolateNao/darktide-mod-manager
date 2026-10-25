@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // execNames maps a platform-neutral intent onto a real command; the package
@@ -36,17 +38,12 @@ func TestExecRunnerRunsAProgram(t *testing.T) {
 		Args: []string{"hello"},
 		Dir:  t.TempDir(),
 	})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run: %v", err)
 
-	if !out.Succeeded() || out.ExitCode != 0 {
-		t.Fatalf("output = %+v", out)
-	}
+	assert.True(t, out.Succeeded(), "output = %+v", out)
+	assert.Equal(t, 0, out.ExitCode, "output = %+v", out)
 
-	if strings.TrimSpace(out.Stdout) != "hello" {
-		t.Fatalf("stdout = %q", out.Stdout)
-	}
+	assert.Equal(t, "hello", strings.TrimSpace(out.Stdout), "stdout = %q", out.Stdout)
 }
 
 func TestExecRunnerFeedsStandardInput(t *testing.T) {
@@ -60,13 +57,9 @@ func TestExecRunnerFeedsStandardInput(t *testing.T) {
 		Path:  "cat",
 		Stdin: "piped\n",
 	})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run: %v", err)
 
-	if out.Stdout != "piped\n" {
-		t.Fatalf("stdout = %q", out.Stdout)
-	}
+	assert.Equal(t, "piped\n", out.Stdout, "stdout = %q", out.Stdout)
 }
 
 func TestExecRunnerReportsANonZeroExit(t *testing.T) {
@@ -80,41 +73,29 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 		Path: "sh",
 		Args: []string{"-c", "echo oops 1>&2; exit 3"},
 	})
-	if err == nil {
-		t.Fatal("a failing command reported success")
-	}
+	require.Error(t, err, "a failing command reported success")
 
-	if !appErrors.IsAppError(err, appErrors.ErrCodeActionFailed) {
-		t.Fatalf("error = %v, want ACTION_FAILED", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeActionFailed), "error = %v, want ACTION_FAILED", err)
 
 	// The exit code has to survive: a missing file and a bad flag are different
 	// problems.
-	if out.ExitCode != 3 {
-		t.Fatalf("exit code = %d, want 3", out.ExitCode)
-	}
+	assert.Equal(t, 3, out.ExitCode, "exit code = %d, want 3", out.ExitCode)
 
-	if strings.TrimSpace(out.Stderr) != "oops" {
-		t.Fatalf("stderr = %q", out.Stderr)
-	}
+	assert.Equal(t, "oops", strings.TrimSpace(out.Stderr), "stderr = %q", out.Stderr)
 }
 
 func TestExecRunnerReportsAMissingProgram(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(context.Background(), CommandSpec{Path: "dmm-does-not-exist-anywhere"})
-	if !appErrors.IsAppError(err, appErrors.ErrCodeRunnerNotFound) {
-		t.Fatalf("error = %v, want RUNNER_NOT_FOUND", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeRunnerNotFound), "error = %v, want RUNNER_NOT_FOUND", err)
 }
 
 func TestExecRunnerRefusesAnEmptyPath(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(context.Background(), CommandSpec{})
-	if !appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument) {
-		t.Fatalf("error = %v, want INVALID_ARGUMENT", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument), "error = %v, want INVALID_ARGUMENT", err)
 }
 
 // A UI handler has no request context; nil must behave like a background one.
@@ -126,9 +107,8 @@ func TestExecRunnerAcceptsANilContext(t *testing.T) {
 	runner := NewExecRunner()
 
 	//nolint:staticcheck // exercising the nil-context guard on purpose
-	if _, err := runner.Run(nil, CommandSpec{Path: "echo"}); err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	_, err := runner.Run(nil, CommandSpec{Path: "echo"})
+	assert.NoError(t, err, "run: %v", err)
 }
 
 func TestExecRunnerHonoursACancelledContext(t *testing.T) {
@@ -142,9 +122,7 @@ func TestExecRunnerHonoursACancelledContext(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(ctx, CommandSpec{Path: "sleep", Args: []string{"10"}})
-	if !appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled) {
-		t.Fatalf("error = %v, want OPERATION_CANCELED", err)
-	}
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled), "error = %v, want OPERATION_CANCELED", err)
 }
 
 func TestExecRunnerUsesTheInjectedLookup(t *testing.T) {
@@ -155,31 +133,24 @@ func TestExecRunnerUsesTheInjectedLookup(t *testing.T) {
 		binary += ".exe"
 	}
 
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatalf("write fake tool: %v", err)
-	}
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\nexit 0\n"), 0o700),
+		"write fake tool")
 
 	runner := &ExecRunner{LookPath: func(file string) (string, error) {
 		return binary, nil
 	}}
 
 	out, err := runner.Run(context.Background(), CommandSpec{Path: "dmm-fake-tool"})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
+	require.NoError(t, err, "run: %v", err)
 
-	if out.ExitCode != 0 {
-		t.Fatalf("output = %+v", out)
-	}
+	assert.Equal(t, 0, out.ExitCode, "output = %+v", out)
 }
 
 func TestDiscardCommandRunnerRefuses(t *testing.T) {
 	var runner CommandRunner = discardCommandRunner{}
 
 	_, err := runner.Run(context.Background(), CommandSpec{Path: "anything"})
-	if err == nil {
-		t.Fatal("expected an error")
-	}
+	assert.Error(t, err, "expected an error")
 }
 
 func TestCaptureLoggerBoundsTheBuffer(t *testing.T) {
@@ -191,17 +162,11 @@ func TestCaptureLoggerBoundsTheBuffer(t *testing.T) {
 	}
 
 	text := logger.Text()
-	if len(text) > captureLogLimit {
-		t.Fatalf("captured %d bytes, want at most %d", len(text), captureLogLimit)
-	}
+	assert.LessOrEqual(t, len(text), captureLogLimit, "captured %d bytes, want at most %d", len(text), captureLogLimit)
 
-	if !strings.Contains(text, "output truncated") {
-		t.Fatal("the truncation was not announced")
-	}
+	assert.Contains(t, text, "output truncated", "the truncation was not announced")
 
-	if !strings.Contains(echo.text(), strings.Repeat("x", 16)) {
-		t.Fatal("the echo stopped early")
-	}
+	assert.Contains(t, echo.text(), strings.Repeat("x", 16), "the echo stopped early")
 }
 
 // Repeating the truncation notice per line would be worse than the log it replaced.
@@ -212,9 +177,8 @@ func TestCaptureLoggerAnnouncesTruncationOnce(t *testing.T) {
 		logger.Logf("%s", strings.Repeat("y", 1024))
 	}
 
-	if got := strings.Count(logger.Text(), "output truncated"); got != 1 {
-		t.Fatalf("the notice appeared %d times", got)
-	}
+	got := strings.Count(logger.Text(), "output truncated")
+	assert.Equal(t, 1, got, "the notice appeared %d times", got)
 }
 
 func TestCaptureLoggerTrimsTrailingNewlines(t *testing.T) {
@@ -223,19 +187,13 @@ func TestCaptureLoggerTrimsTrailingNewlines(t *testing.T) {
 	logger.Logf("line\n")
 	logger.Logf("no newline")
 
-	if got := logger.Text(); got != "line\nno newline\n" {
-		t.Fatalf("text = %q", got)
-	}
+	assert.Equal(t, "line\nno newline\n", logger.Text(), "text = %q", logger.Text())
 }
 
 func TestCommandOutputCombined(t *testing.T) {
 	out := CommandOutput{Stdout: "out", Stderr: "err"}
 
-	if out.Combined() != "out\nerr" {
-		t.Fatalf("Combined = %q", out.Combined())
-	}
+	assert.Equal(t, "out\nerr", out.Combined(), "Combined = %q", out.Combined())
 
-	if (CommandOutput{ExitCode: 1}).Succeeded() {
-		t.Fatal("a failing command reported success")
-	}
+	assert.False(t, (CommandOutput{ExitCode: 1}).Succeeded(), "a failing command reported success")
 }

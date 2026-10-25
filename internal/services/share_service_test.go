@@ -332,6 +332,15 @@ func (s *memShareStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (s *memShareStore) DeleteAll(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.shares = map[string]*domain.ShareRecord{}
+
+	return nil
+}
+
 func (s *memShareStore) GetByLink(
 	_ context.Context,
 	link domain.ShareLink,
@@ -483,7 +492,7 @@ func shareServiceWith(
 }
 
 // testMods returns one mod with real files on disk: a share refuses a fixture
-// without a LocalPath rather than silently packing an empty archive.
+// without a LocalPath, not silently packing an empty archive.
 func testMods(t *testing.T, gameID string) []domain.Mod {
 	return []domain.Mod{{
 		ID:        "mod-a",
@@ -744,7 +753,7 @@ func TestResolveShareRejectsMalformedLink(t *testing.T) {
 
 // modOnDisk writes a mod with one file, shares it, and returns the recipient's
 // link. The real packer builds the archive and the fake provider stores those bytes,
-// so the round trip is genuine rather than a fixture echoing itself.
+// so the round trip is genuine, not a fixture echoing itself.
 func modOnDisk(t *testing.T, provider *fakeProvider) domain.ShareLink {
 	t.Helper()
 
@@ -899,8 +908,8 @@ func TestInstallShareStopsAtTheFirstFailure(t *testing.T) {
 }
 
 func TestInstallShareMapsAutoInstall(t *testing.T) {
-	// AutoInstall is the sharer's request, so it becomes an explicit enable
-	// rather than being left to the recipient's folder detection.
+	// AutoInstall is the sharer's request, so the recipient's folder detection
+	// is not asked to decide it.
 	provider := newFakeProvider("s3")
 	link := modOnDisk(t, provider)
 
