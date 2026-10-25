@@ -806,7 +806,7 @@ func TestOwnedEntriesNarrowsToWhatAModOwns(t *testing.T) {
 		got["textures"],
 	)
 
-	// A mod whose inventory cannot be read owns nothing, rather than everything.
+	// A mod whose inventory cannot be read owns nothing.
 	h.index.filesErr = errBoom
 	{
 		got := h.svc.ownedEntries(context.Background(), domain.Mod{ID: "m"}, all)

@@ -236,9 +236,6 @@ func (i *shareStubInstaller) InstallArchiveFromShare(
 }
 
 // shareClient builds a Client over a real ShareService with fake deps.
-//
-// The game registry is process-wide and EnsureBuiltins is idempotent, so the
-// tests share the built-in darktide game rather than registering their own.
 func shareClient(
 	t *testing.T,
 	provider *shareFakeProvider,
@@ -273,8 +270,7 @@ func shareClient(
 	return client, store, installer
 }
 
-// shareModOnDisk returns a mod with a real file on disk. A share packs its mods,
-// so a fixture with an empty LocalPath is refused rather than uploaded empty.
+// shareModOnDisk returns a mod with a real file on disk.
 func shareModOnDisk(t *testing.T) domain.Mod {
 	t.Helper()
 
@@ -296,8 +292,6 @@ func TestAPICreateShareReturnsLinkAndPersistsRecord(t *testing.T) {
 
 	mod := shareModOnDisk(t)
 
-	// Named rather than defaulted: the default provider is "s3" and only "fake"
-	// is registered, which is exactly what the unknown-provider test covers.
 	link, err := client.CreateShare(context.Background(), []Mod{mod}, []string{"fake"})
 	require.NoError(t, err, "CreateShare")
 

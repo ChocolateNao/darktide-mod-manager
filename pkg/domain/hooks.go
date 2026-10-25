@@ -37,9 +37,7 @@ func (l ScriptLanguage) Valid() bool {
 }
 
 // ParseScriptLanguage converts a manifest or user supplied string to a
-// ScriptLanguage. A blank or unknown language is an error: not a fallback:
-// a hook that silently runs in the wrong runtime is worse than a mod that
-// refuses to load. "js" is accepted as the common short spelling.
+// ScriptLanguage. A blank or unknown language is an error.
 func ParseScriptLanguage(s string) (ScriptLanguage, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "lua":

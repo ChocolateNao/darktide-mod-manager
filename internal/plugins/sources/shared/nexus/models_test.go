@@ -13,9 +13,7 @@ import (
 // The tests here exercise the conversions on their own, without a server; the transport
 // tests in nexus_test.go cover the shapes they are fed.
 
-// nexusContext is a fully populated mod context. Using one literal rather than a
-// zero value everywhere keeps the tests about the field under test rather than
-// about which other fields happened to be empty.
+// nexusContext is a fully populated mod context with mocked data.
 func nexusContext() modContext {
 	return modContext{
 		scopedID:     "900",
@@ -107,7 +105,7 @@ func TestParseModIDReversesModID(t *testing.T) {
 		{"nexus-900", "", "", false},
 		{"nexus-900-", "", "", false},
 		{"nexus--7001", "", "", false},
-		// A trailing segment is refused rather than truncated: ModID can never produce
+		// A trailing segment is refused, not truncated: ModID can never produce
 		// "nexus-900-7001-5", so accepting one would be a guess about what was meant.
 		{"nexus-900-7001-5", "", "", false},
 		{"nexus-900-7001.5", "", "", false},
@@ -301,7 +299,7 @@ func TestClassifyCategory(t *testing.T) {
 		)
 	}
 
-	// Anything else is unknown rather than refused: treating an unfamiliar category as
+	// Anything else is unknown, not refused: treating an unfamiliar category as
 	// "not installable" empties the candidate set the first time Nexus adds one.
 	for _, category := range []string{
 		"", "  ", "archived", "removed", "unknown",
@@ -451,7 +449,7 @@ func TestPickVersionSkipsSupersededVersions(t *testing.T) {
 }
 
 // Every version superseded means there is nothing to install, and that has to be
-// reported rather than papered over with an unknown category.
+// reported, not papered over with an unknown category.
 func TestPickVersionFindsNothingInASupersededOnlyList(t *testing.T) {
 	got, ok := pickVersion([]fileVersion{
 		{ID: "8001", Position: "1.0", Category: "old_version"},
@@ -461,7 +459,7 @@ func TestPickVersionFindsNothingInASupersededOnlyList(t *testing.T) {
 	assert.False(t, ok, "pickVersion chose %q from a list with nothing installable", got.ID)
 }
 
-// A category this build has never heard of is offered rather than skipped: refusing
+// A category this build has never heard of is offered, not skipped: refusing
 // everything unrecognised emptied the candidate set the first time Nexus introduced a
 // category, and the mod reported no downloadable version while a grant sat unused.
 func TestPickVersionOffersAnUnrecognisedCategory(t *testing.T) {
@@ -715,7 +713,7 @@ func TestModForOmitsWhatItDoesNotKnow(t *testing.T) {
 
 func TestModForRefusesWhatCannotBeInstalledLater(t *testing.T) {
 	// No version id means no download is possible, so the mod is not offered at
-	// all rather than offered and then failing on click.
+	// all, not offered and then failing on click.
 	version := nexusVersion()
 
 	version.ID = "   "

@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fetchSource records downloads and verifies rather than performing them.
+// fetchSource records downloads and verifies them.
 type fetchSource struct {
 	dlErr     error
 	verifyErr error
@@ -227,7 +227,7 @@ func TestRegistryDownloaderSurvivesNoRegistry(t *testing.T) {
 
 	mod := &domain.Mod{ID: "m", SourceID: "local"}
 
-	// A nil receiver must answer rather than panic: the cache manager is built
+	// A nil receiver must answer: the cache manager is built
 	// before the registry on one wiring path.
 	{
 		_, err := downloader.Download(
@@ -338,7 +338,7 @@ func TestRegistryDownloaderFetchesThroughTheRealCache(t *testing.T) {
 	require.NoError(t, err, "new cache manager")
 
 	// The scripted source writes no file, so the transfer must fail at the
-	// validation step rather than at the missing-downloader check.
+	// validation step.
 	mod := &domain.Mod{
 		ID: "better_ui", Version: "1.2.0", SourceID: "local",
 		SourceData: map[string]any{"local_path": filepath.Join(t.TempDir(), "better_ui")},

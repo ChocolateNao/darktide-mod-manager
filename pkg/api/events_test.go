@@ -158,7 +158,7 @@ func TestEventBusRefusesANilHandler(t *testing.T) {
 
 func TestEventBusSurvivesANilReceiver(t *testing.T) {
 	// A nil bus reaches a caller when a constructor's error was thrown away. Every
-	// method has to tolerate it rather than panic.
+	// method has to tolerate it.
 	var bus *EventBus
 
 	unsubscribe := bus.Subscribe(func(Event) {})
@@ -263,7 +263,7 @@ func TestEventBusAllowsSubscribingFromAHandler(t *testing.T) {
 
 func TestEventBusConvertsEveryServiceEventType(t *testing.T) {
 	// The string values are part of this package's contract, so a rename on the
-	// services side has to fail here rather than silently break a subscriber.
+	// services side has to fail here, not silently break a subscriber.
 	bus := newTestBus()
 	sub := &collector{}
 	bus.Subscribe(sub.handle)

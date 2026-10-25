@@ -226,12 +226,6 @@ func (g *GameLocator) detector() (
 
 // FindInstallations returns every selected game installation the locator knows about.
 //
-// The configured path always wins a collision: it carries the source and mods
-// folder the user chose, and a launcher probe of the same directory would
-// overwrite it with a guess. An invalid configured path is omitted rather than
-// fatal, so the UI can still show the installs detection did find; Current
-// reports the problem instead.
-//
 // Detection is skipped when the configuration disables auto-detect.
 func (g *GameLocator) FindInstallations(ctx context.Context) ([]domain.GameInstallation, error) {
 	if ctx == nil {
@@ -292,7 +286,7 @@ func (g *GameLocator) Installations(ctx context.Context) ([]domain.GameInstallat
 		installs, err := installsFor(ctx, g.factory(def, settings), def, settings)
 		if err != nil {
 			// installsFor only fails on a cancelled context, which stops the
-			// whole scan rather than skipping the game.
+			// whole scan.
 			return nil, err
 		}
 
@@ -443,12 +437,7 @@ func (g *GameLocator) ValidateInstallation(path string) (*domain.GameInstallatio
 	return &hinted, nil
 }
 
-// Current returns the installation the manager should operate on: the configured
-// one when set, otherwise the first one detection found. The configured path wins
-// explicitly rather than by sorting, because FindInstallations sorts by path for
-// stable rendering. It returns ErrGameNotFound rather than an empty slice so
-// callers can render the "point me at your game" prompt without inspecting the
-// error text.
+// Current returns the installation the manager should operate on.
 func (g *GameLocator) Current(ctx context.Context) (*domain.GameInstallation, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -468,8 +457,7 @@ func (g *GameLocator) Current(ctx context.Context) (*domain.GameInstallation, er
 	}
 
 	if configured := strings.TrimSpace(game.Path); configured != "" {
-		// A stale configured path is reported rather than swapped for another
-		// installation: the user asked for this one.
+		// A stale configured path is reported.
 		return g.ValidateInstallation(configured)
 	}
 
@@ -566,6 +554,7 @@ func (g *GameLocator) SetGamePath(ctx context.Context, path string) error {
 
 	g.logger().Info().
 		Str("op", "game-path").
+		Str("game", install.GameID).
 		Str("path", install.Path).
 		Msg("configured the Darktide installation")
 

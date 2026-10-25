@@ -91,8 +91,6 @@ func normalizeSourceID(id string) string {
 }
 
 // applyOptions runs the options in order and returns the accumulated settings.
-// A nil Option in the list is skipped rather than panicking, because a caller
-// assembling options from a slice with a conditional hole should not crash.
 func applyOptions(opts []Option) (*settings, error) {
 	s := &settings{
 		sourceConfigs:       make(map[string]domain.SourceConfig),
@@ -149,11 +147,7 @@ func WithGamePath(path string) Option {
 }
 
 // WithGame starts the client on a specific registered game, overriding active_game
-// from the file for this run. An id the registry does not know is a construction
-// failure rather than a silent fallback — a typo must not quietly start the game the
-// user was trying to avoid. The choice is not written back: wire() runs before
-// anything can persist, and a start-up failing afterwards must not have changed the
-// file. UseGame is how a running process switches and keeps the switch.
+// from the file for this run.
 func WithGame(id string) Option {
 	return func(s *settings) error {
 		trimmed := strings.TrimSpace(id)
@@ -272,9 +266,7 @@ func mergeSourceBlock(
 	if len(override.Paths) > 0 {
 		merged.Paths = append(append([]string(nil), existing.Paths...), override.Paths...)
 	}
-	// The options map is always rebuilt rather than written through: `existing` is a
-	// struct copy, so its map is the caller's, and writing into it would silently edit
-	// the block passed in — which, in the wiring, came straight out of the config file.
+
 	if len(existing.Options) > 0 || len(override.Options) > 0 {
 		merged.Options = make(map[string]string, len(existing.Options)+len(override.Options))
 		for k, v := range existing.Options {
@@ -364,7 +356,7 @@ func sourceConfigFrom(id string, cfg map[string]any) (domain.SourceConfig, bool,
 			if block.Options == nil {
 				block.Options = make(map[string]string)
 			}
-			// Stored verbatim rather than folded: providers read their own option names
+			// Stored verbatim, not folded: providers read their own option names
 			// — api_base, game_domain, timeout_seconds, repositories — and folding
 			// separators away would rename every one of them.
 			block.Options[strings.TrimSpace(key)] = s
@@ -551,10 +543,7 @@ func stringList(value any) ([]string, error) {
 	return []string{s}, nil
 }
 
-// WithEventHandler subscribes a handler to the client's event bus. Handlers are
-// subscribed before anything is wired, so the very first event of a client's life — a
-// source being registered, a mod install starting — is delivered. A nil handler is
-// dropped rather than refused, so a caller can pass one unconditionally.
+// WithEventHandler subscribes a handler to the client's event bus.
 func WithEventHandler(handler EventHandler) Option {
 	return func(s *settings) error {
 		if handler == nil {

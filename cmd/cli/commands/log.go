@@ -95,9 +95,7 @@ func newLogTailCommand(s *session) *cobra.Command {
 		Short: "Print the most recent log records",
 		Long: "Print the last records of the current log file.\n\n" +
 			"With --follow, keep printing as new records arrive. The follow survives\n" +
-			"rotation: when the file rolls over, the tail reopens the new one and\n" +
-			"carries on rather than exiting, which is the moment a long-running\n" +
-			"session is most likely to be watching.\n\n" +
+			"rotation.\n\n" +
 			"Ctrl-c stops it. --level filters what is printed without changing the\n" +
 			"level the manager itself writes at.",
 		Args: cobra.NoArgs,
@@ -426,7 +424,7 @@ func newLogDirCommand(s *session) *cobra.Command {
 		Use:   "dir",
 		Short: "Print the directory the logs are written to",
 		Long: "Print the resolved log directory.\n\n" +
-			"It is resolved rather than configured: --log-dir wins over the\n" +
+			"--log-dir wins over the\n" +
 			"DMM_LOG_DIR environment variable, which wins over logging.directory in\n" +
 			"the settings file, which wins over the platform default. Printing the\n" +
 			"answer is how a person finds out which of those actually applied.",

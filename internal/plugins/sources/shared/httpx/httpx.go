@@ -41,10 +41,13 @@ const (
 	// before the status code is even looked at.
 	MaxJSONBody = 16 << 20 // 16 MiB
 
-	// MaxDownloadBody caps a payload download. Mod archives are hundreds of
-	// megabytes at the very top end; 8 GiB leaves plenty of headroom while still
-	// bounding a runaway transfer.
-	MaxDownloadBody = 8 << 30 // 8 GiB
+	// MaxDownloadBody caps a payload download. Large mod packs run into tens of
+	// gigabytes, so the cap only exists to stop a runaway transfer.
+	MaxDownloadBody = 64 << 30 // 64 GiB
+
+	// downloadIdleTimeout is how long a download may receive no bytes before it
+	// is treated as dead. A total timeout would kill large archives on a slow link.
+	downloadIdleTimeout = 2 * time.Minute
 
 	// snippetLimit bounds how much of an error body is quoted back to the user.
 	// Enough to identify the problem, not enough to flood the log.
@@ -165,7 +168,7 @@ type Request struct {
 //
 // httpx owns JSON encoding, so handing it bytes would double-encode the value and
 // draw a 422 naming a request shape the caller never wrote. It refuses the two
-// types json.Marshal would quote rather than render, and exempts json.RawMessage,
+// types json.Marshal would quote, not render, and exempts json.RawMessage,
 // which exists precisely to say "these bytes are already JSON".
 func encodeBody(kind Kind, body any) ([]byte, error) {
 	if alreadyEncoded(body) {
@@ -233,7 +236,7 @@ func (r *Response) OK() bool {
 
 // Do executes req and returns the response for any status the status-to-code rules
 // do not claim as an error. The body is read into memory and capped; a body over
-// the cap is an error rather than a truncated success, since a half-read JSON
+// the cap is an error, not a truncated success, since a half-read JSON
 // document cannot be decoded and the fragment would turn a clear failure into a
 // confusing one.
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
@@ -524,10 +527,27 @@ func (c *Client) Download(
 		}
 	}
 
-	resp, err := c.http.Do(httpReq)
+	// A total request timeout cannot tell a dead connection from a 25 GB file
+	// arriving slowly, so downloads use an idle watchdog instead.
+	downloadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	watchdog := time.AfterFunc(downloadIdleTimeout, cancel)
+	defer watchdog.Stop()
+
+	httpReq = httpReq.WithContext(downloadCtx)
+	client := *c.http
+	client.Timeout = 0
+
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return 0, ctxError(ctxErr)
+		}
+
+		if downloadCtx.Err() != nil {
+			return 0, appErrors.New(appErrors.ErrCodeDownloadFailed,
+				"download %s stalled for %s", rawURL, downloadIdleTimeout)
 		}
 
 		return 0, appErrors.Wrap(err, appErrors.ErrCodeDownloadFailed, "download %s", rawURL)
@@ -535,6 +555,7 @@ func (c *Client) Download(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		watchdog.Stop()
 		// Drain a bounded amount so the connection can be reused, but do not let
 		// a huge error body be buffered.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, snippetLimit))
@@ -576,7 +597,10 @@ func (c *Client) Download(
 	digest := sha256.New()
 	// LimitReader one byte past the cap so "exactly at the cap" is allowed and
 	// "one over" is detectable.
-	limited := io.LimitReader(resp.Body, MaxDownloadBody+1)
+	limited := io.LimitReader(
+		&idleResetReader{r: resp.Body, timer: watchdog, idle: downloadIdleTimeout},
+		MaxDownloadBody+1,
+	)
 
 	written, err := io.Copy(io.MultiWriter(tmp, digest), limited)
 	if err != nil {
@@ -584,8 +608,15 @@ func (c *Client) Download(
 			return 0, ctxError(ctxErr)
 		}
 
+		if downloadCtx.Err() != nil {
+			return 0, appErrors.New(appErrors.ErrCodeDownloadFailed,
+				"download %s stalled for %s", rawURL, downloadIdleTimeout)
+		}
+
 		return 0, appErrors.Wrap(err, appErrors.ErrCodeDownloadFailed, "download %s", rawURL)
 	}
+
+	watchdog.Stop()
 
 	if written == 0 {
 		return 0, appErrors.New(
@@ -630,6 +661,22 @@ func (c *Client) Download(
 	committed = true
 
 	return written, nil
+}
+
+// idleResetReader postpones the download watchdog while bytes keep arriving.
+type idleResetReader struct {
+	r     io.Reader
+	timer *time.Timer
+	idle  time.Duration
+}
+
+func (r *idleResetReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.timer.Reset(r.idle)
+	}
+
+	return n, err
 }
 
 // verifyDigest compares the streamed digest against what the source promised. A blank

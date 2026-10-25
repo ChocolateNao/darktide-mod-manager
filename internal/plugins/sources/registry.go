@@ -29,8 +29,7 @@ var (
 )
 
 // IDs lists the bundled source ids, in the order a user is most likely to meet
-// them. It is derived from the registry rather than hard-coded, so a plugin
-// added later does not need a second edit here.
+// them. It is derived from the registry.
 func IDs() []string { return services.RegisteredFactoryIDs() }
 
 // RegisterAll builds every registered source whose configuration block enables
@@ -154,8 +153,8 @@ func Enabled(cfg map[string]domain.SourceConfig, id string) bool {
 
 // normalizeBlocks re-keys a configuration map so every key is lower-cased and
 // trimmed, matching how source ids are normalised everywhere else. The keys come
-// from a file the user is free to edit, so a config naming "GitHub" rather than
-// "github" must not be silently ignored by a lookup on the registry's own key.
+// from a file the user is free to edit, so a config naming "GitHub", not "github"
+// must not be silently ignored by a lookup on the registry's own key.
 //
 // Keys are visited in sorted order and the first spelling of an id wins, so a
 // file naming the same source twice gives the same answer on every start.

@@ -34,7 +34,7 @@ type asset struct {
 }
 
 // archiveExtensions are the release asset suffixes treated as a mod payload;
-// everything else in a release is metadata rather than something to install.
+// everything else in a release is metadata, not something to install.
 var archiveExtensions = []string{".zip", ".tar.gz", ".tgz", ".tar.bz2", ".rar", ".7z"}
 
 // validRepoRef reports whether ref looks like "owner/repo": exactly one slash, with
@@ -56,7 +56,7 @@ func validRepoRef(ref string) bool {
 
 // splitRef returns the owner and repository of a reference, or a pair of empty
 // strings when the reference is not "owner/repo". The value can come straight out
-// of a mod id in the database, so this returns empties rather than indexing past
+// of a mod id in the database, so this returns empties, not indexing past
 // the end of the split.
 func splitRef(ref string) (owner, repo string) {
 	parts := strings.Split(strings.TrimSpace(ref), "/")
@@ -137,7 +137,7 @@ func normalizeVersion(tag string) string {
 }
 
 // payloadAsset picks the release asset that holds the mod. When several assets
-// look installable the largest wins, which is the mod archive rather than an
+// look installable the largest wins, which is the mod archive, not an
 // accompanying patch or a debug build.
 func payloadAsset(assets []asset) (asset, bool) {
 	var best asset
@@ -207,7 +207,7 @@ func modFor(ref string, r release) (domain.Mod, bool) {
 		SourceData:  map[string]any{},
 	}
 	// A release named after its own repository adds nothing over the id, so an
-	// empty body stays empty rather than becoming placeholder text.
+	// empty body stays empty, not becoming placeholder text.
 	if asset, ok := payloadAsset(r.Assets); ok {
 		m.SourceData["download_url"] = asset.BrowserDownloadURL
 		if asset.Digest != "" {

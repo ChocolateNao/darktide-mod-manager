@@ -145,7 +145,7 @@ func newSourceSearchCommand(s *session) *cobra.Command {
 		Short: "Search one source, or every enabled source",
 		Long: "Search for mods.\n\n" +
 			"Without --source the search fans out to every enabled source that can\n" +
-			"search, and a source that fails is skipped rather than failing the\n" +
+			"search, and a source that fails is skipped, not failing the\n" +
 			"whole command: a user asking \"what is out there\" wants an answer\n" +
 			"from the sources that are working.",
 		Args: cobra.MaximumNArgs(1),
@@ -305,7 +305,7 @@ func newSourceAuthCommand(s *session) *cobra.Command {
 			"script is never made to answer one and can set the environment\n" +
 			"variable named below instead.\n\n" +
 			"The key is checked against the source before it is stored, so a typo\n" +
-			"fails here rather than at the first download. Pass --no-verify to store\n" +
+			"fails here, not at the first download. Pass --no-verify to store\n" +
 			"it anyway, which is what you want on a machine that cannot reach the\n" +
 			"source yet.\n\n" +
 			"--forget removes the stored key instead of setting one.",
@@ -493,7 +493,7 @@ func newSourceTestCommand(s *session) *cobra.Command {
 			"Every source is checked when none is named, so one broken source\n" +
 			"does not hide the state of the rest.\n\n" +
 			"A source with no credential stored is reported as `not configured`\n" +
-			"rather than as working. Both Nexus and Vortex can be browsed without\n" +
+			", not as working. Both Nexus and Vortex can be browsed without\n" +
 			"one, so a check that never contacted anything must not claim a\n" +
 			"success it did not observe.",
 		Args: cobra.MaximumNArgs(1),

@@ -183,11 +183,7 @@ func (e entry) mod() (*domain.Mod, error) {
 	return m, nil
 }
 
-// Search implements domain.ModSource. Discovery walks each configured path looking
-// for mod folders — directories holding a recognised manifest, or archives that
-// could be unpacked — then filters in memory on the mod metadata rather than on
-// folder names, so a manifest that names itself something other than its folder
-// is still findable.
+// Search implements domain.ModSource.
 func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain.Mod, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -396,9 +392,7 @@ func modFromEntry(e entry) (*domain.Mod, bool, error) {
 }
 
 // Download implements domain.ModSource. It copies the mod folder or archive to
-// destPath and returns the copied path. Copying rather than returning the configured
-// path is deliberate: the cache manager may later delete or verify it, and that must
-// not happen to a folder the user still cares about.
+// destPath and returns the copied path.
 func (s *Source) Download(ctx context.Context, mod *domain.Mod, destPath string) (string, error) {
 	if mod == nil {
 		return "", appErrors.New(appErrors.ErrCodeInvalidMod, "cannot download a nil mod")
@@ -581,7 +575,7 @@ func scanDir(ctx context.Context, root string, depth int) ([]entry, error) {
 			if path != root && manifestpkg.Has(path) {
 				m, err := manifestpkg.Read(path)
 				if err != nil {
-					// A malformed manifest is skipped rather than failing the scan:
+					// A malformed manifest is skipped and not failing the scan:
 					// one broken mod should not make the others invisible.
 					return fs.SkipDir
 				}

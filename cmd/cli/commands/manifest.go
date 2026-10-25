@@ -39,9 +39,7 @@ func newManifestInitCommand(s *session) *cobra.Command {
 		Use:   "init <path>",
 		Short: "Write a blank manifest into a mod folder",
 		Long: "Write a blank " + manifestpkg.Names[0] + " into the mod folder at <path>, creating the\n" +
-			"folder if it is missing. Every field in the file is empty and commented,\n" +
-			"so it is a starting point to edit rather than a claim about your mod.\n" +
-			"\n" +
+			"folder if it is missing. Every field in the file is empty and commented.\n\n" +
 			"An existing manifest is never overwritten: point this at the folder of a\n" +
 			"new mod, or edit the file it already wrote.",
 		Example: "  dmm manifest init mods/better-ui",

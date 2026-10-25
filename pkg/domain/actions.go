@@ -42,8 +42,7 @@ func (a ActionID) Suffix() string {
 }
 
 // Validate reports whether the id is exactly "<gameID>:<name>" with a non-empty name on
-// both sides. Strict rather than a prefix test, so "darktide:delete:everything" cannot
-// be a valid id for the game "darktide:delete".
+// both sides.
 func (a ActionID) Validate(gameID string) error {
 	game := strings.TrimSpace(gameID)
 	whole := strings.TrimSpace(string(a))
@@ -111,18 +110,19 @@ func (t ActionOptionType) IsValid() bool {
 	}
 }
 
-// ActionOption describes one argument an action takes. Options belong to the action's
-// definition rather than to the caller: a frontend renders the form from them, the CLI
-// parses flags from them, and the runner coerces them.
+// ActionOption describes one argument an action takes.
 type ActionOption struct {
-	Default     any
-	Name        string
-	Type        ActionOptionType
-	Label       string
-	Description string
-	Placeholder string
-	Choices     []string
-	Required    bool
+	Default        any
+	Name           string
+	Type           ActionOptionType
+	Label          string
+	LabelKey       string
+	Description    string
+	DescriptionKey string
+	Placeholder    string
+	PlaceholderKey string
+	Choices        []string
+	Required       bool
 }
 
 // Validate reports whether the option is well-formed on its own.
@@ -214,28 +214,19 @@ func (p ActionPlatform) Matches(target Platform) bool {
 }
 
 // ActionLogger is the slice of logging a handler needs — the same shape as api.Logger,
-// redeclared so pkg/domain need not import pkg/api. A handler gets this rather than a
+// redeclared so pkg/domain need not import pkg/api. A handler gets this, not a
 // *zerolog.Logger because its output belongs to whoever ran it.
 type ActionLogger interface {
 	Logf(format string, args ...any)
 }
 
-// ActionOpener lets a handler ask the operating system to open a folder or a URL. It is
-// injected rather than imported so a handler stays testable without opening anything on
-// the developer's desktop, and so the decision about which
-// schemes may be opened lives in one place — the platform package — rather than
-// being repeated by every handler.
+// ActionOpener lets a handler ask the operating system to open a folder or a URL.
 type ActionOpener interface {
 	OpenDirectory(ctx context.Context, dir string) error
 	OpenURL(ctx context.Context, rawURL string) error
 }
 
 // ActionContext is everything a handler is allowed to depend on.
-//
-// The fields are values rather than lookups so that running an action is
-// reproducible: the context is captured when the action is invoked, not
-// re-read while it runs, and a game switch mid-run cannot change what an action
-// is allowed to touch.
 type ActionContext struct {
 	Game         GameDefinition
 	Opener       ActionOpener
@@ -250,8 +241,7 @@ type ActionContext struct {
 }
 
 // ArgString reads a string option, falling back to the empty string. A missing
-// or wrongly typed option reads as empty rather than panicking: the runner has
-// already validated the types, so this is a convenience for the common case.
+// or wrongly typed option reads as empty.
 func (a ActionContext) ArgString(name string) string {
 	value, _ := a.Args[name].(string)
 
@@ -289,18 +279,21 @@ type GameAction struct {
 	// `json:"-"` because `encoding/json` refuses a func type outright, and an
 	// action list crosses the Wails bridge — an untagged Handler took the app
 	// down. Behaviour is reached via ExecuteGameAction by ID.
-	Handler      GameActionHandler `json:"-"`
-	Script       *ActionScript
-	ID           ActionID
-	GameID       string
-	DisplayName  string
-	Description  string
-	Category     string
-	Icon         string
-	Platform     ActionPlatform
-	Options      []ActionOption
-	RequiresGame bool
-	Dangerous    bool
+	Handler        GameActionHandler `json:"-"`
+	Script         *ActionScript
+	ID             ActionID
+	GameID         string
+	DisplayName    string
+	DisplayNameKey string
+	Description    string
+	DescriptionKey string
+	Category       string
+	CategoryKey    string
+	Icon           string
+	Platform       ActionPlatform
+	Options        []ActionOption
+	RequiresGame   bool
+	Dangerous      bool
 }
 
 // AvailableOn reports whether the action may run on the given platform.
@@ -323,10 +316,21 @@ type GameActionHandler func(ctx context.Context, actx ActionContext) (*GameActio
 // (an out-of-date load order, a missing mod) without the frontend having to
 // parse prose.
 type GameActionResult struct {
-	Data    any
-	Message string
-	Output  string
-	Success bool
+	Data        any
+	Message     string
+	MessageKey  string
+	MessageArgs map[string]any
+	Details     []ActionDetail
+	Output      string
+	Success     bool
+}
+
+// ActionDetail is one labelled fact a result wants to show, such as the exact
+// launch command. LabelKey is translated when present; Label is the fallback.
+type ActionDetail struct {
+	LabelKey string
+	Label    string
+	Value    string
 }
 
 // ActionScript runs an action as an external program.
@@ -405,7 +409,7 @@ func ValidateActionID(actionID ActionID, gameID string) error {
 
 // FormatActionArg is how an action option is named on a command line.
 //
-// It is one function rather than a convention so the CLI's flag name, the
+// It is one function, not a convention so the CLI's flag name, the
 // frontend's form field and the handler's Args key are the same string by
 // construction: an option named "load_order_file" is always --load-order-file
 // on the command line.
@@ -426,7 +430,7 @@ func FormatActionArg(name string) string {
 			}
 		default:
 			// A non-identifier character has no sensible flag form; dropping it
-			// keeps the CLI usable rather than failing at parse time.
+			// keeps the CLI usable, not failing at parse time.
 		}
 	}
 

@@ -187,8 +187,7 @@ func newActionsRunCommand(s *session) *cobra.Command {
 			"  dmm actions run darktide:open_workshop --set workshop_id=123456\n\n" +
 			"Values are converted to the type the action declared, so a checkbox\n" +
 			"takes yes/no and a count takes a number. An option the action does not\n" +
-			"declare is refused rather than ignored: on a command line a typo is a\n" +
-			"mistake worth reporting.",
+			"declare is refused.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := s.client(cmd.Context())

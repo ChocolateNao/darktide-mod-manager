@@ -22,7 +22,7 @@ import (
 
 // stubServer serves the three endpoints the source touches plus a file host for
 // release assets. Handlers may be nil, in which case the endpoint 404s — the
-// source must treat that as an ordinary failure rather than a crash.
+// source must not crash.
 type stubServer struct {
 	*httptest.Server
 
@@ -587,7 +587,7 @@ func TestGetMod(t *testing.T) {
 
 func TestGetModWithoutReleases(t *testing.T) {
 	// "exists but has no releases" answers with an empty array and "no such
-	// repository" with 404; both read as MOD_NOT_FOUND rather than a raw code.
+	// repository" with 404; both read as MOD_NOT_FOUND, not a raw code.
 	st := newStubServer(t)
 
 	st.releases = func(w http.ResponseWriter, r *http.Request) { writeJSON(t, w, []release{}) }

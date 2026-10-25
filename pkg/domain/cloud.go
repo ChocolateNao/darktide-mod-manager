@@ -108,11 +108,7 @@ type SharedFile struct {
 // provider accepts as a single opaque object.
 const ArchiveFormatZip = "zip"
 
-// PackedMod describes a mod transmitted as one archive rather than as its
-// individual files. One archive per mod is what makes a share resumable and
-// verifiable: the recipient checks a single hash instead of one per file, and a
-// partial upload cannot leave a provider holding half a mod. The archive is
-// named after the mod id, so two mods shipping a shared.zip cannot collide.
+// PackedMod describes a mod transmitted as one archive.
 type PackedMod struct {
 	FileID string `json:"id"`
 	Hash   string `json:"h"`
@@ -192,7 +188,7 @@ func ShareLinkFormat(providerID string) string {
 
 // ShareURLScheme is the custom URL scheme that opens the app straight into a
 // share preview. It bypasses the browser entirely, so a link pasted into a
-// chat client launches the manager rather than a web page that redirects.
+// chat client launches the manager, not a web page that redirects.
 const ShareURLScheme = "dmm://"
 
 // DeepLinkFormat builds the deep link for a share payload.

@@ -16,7 +16,7 @@ import (
 )
 
 // folderDownloader writes a folder instead of a file, as the local source does
-// when a mod's path names a directory rather than an archive.
+// when a mod's path names a directory.
 type folderDownloader struct {
 	files map[string]string
 	path  string

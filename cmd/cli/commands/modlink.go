@@ -23,7 +23,7 @@ func newModShareCommand(s *session) *cobra.Command {
 			"A Nexus or Vortex mod gives its launcher's own link, and a GitHub mod\n" +
 			"gives its release page. A mod from a local folder has nothing to share\n" +
 			"with — it only exists on this machine — and the command says so\n" +
-			"rather than printing something that cannot be opened.",
+			", not printing something that cannot be opened.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := s.client(cmd.Context())

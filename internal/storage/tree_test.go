@@ -151,7 +151,7 @@ func TestCollectTreeRefusesANonDirectoryRoot(t *testing.T) {
 	_, err := CollectTree(path)
 	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument), "got %v", err)
 
-	// A missing folder is an IO problem rather than a bad argument, and the two
+	// A missing folder is an IO problem, not a bad argument, and the two
 	// lead the user to different fixes.
 	_, err = CollectTree(filepath.Join(root, "nope"))
 	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeConfigIO), "got %v", err)

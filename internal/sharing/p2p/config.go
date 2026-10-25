@@ -25,9 +25,7 @@ func DefaultSTUNServers() []string {
 }
 
 // DefaultPortRange is the UDP range ICE is allowed to allocate host candidates
-// from. Fixed rather than ephemeral because a share host usually also has a game
-// or a launcher bound, and a range a user can open in their firewall beats one
-// they could only find in a log.
+// from.
 const (
 	DefaultPortMin = 40000
 	DefaultPortMax = 40999
@@ -45,10 +43,7 @@ const DefaultChunkSize = 256 << 10
 // not asked to hold a whole mod.
 const defaultFlowControlThreshold = 2 * DefaultChunkSize
 
-// Config describes how a peer connection is built. It is a value rather than a
-// set of constructor options because the same configuration is needed twice per
-// share — once for the offer, once for the answer — and threading eight
-// arguments through both call sites is how they drift apart.
+// Config describes how a peer connection is built.
 type Config struct {
 	PionLogger          logging.LeveledLogger
 	STUNServers         []string
@@ -72,10 +67,7 @@ const DefaultGatherTimeout = 2 * time.Minute
 // VPN may need a while; failing here only fails the session, not the process.
 const DefaultConnectionTimeout = 3 * time.Minute
 
-// withDefaults returns a copy of c with every unset field filled in. A copy
-// rather than mutation, because a share service holds one Config for the life of
-// the process and hands it to several peers, so filling defaults in place would
-// let one peer's connection attempt reshape the next one's settings.
+// withDefaults returns a copy of c with every unset field filled in.
 func (c Config) withDefaults() Config {
 	out := c
 
@@ -111,9 +103,6 @@ func (c Config) withDefaults() Config {
 }
 
 // Validate reports the first problem with the configuration, if there is one.
-// It runs once per share rather than per peer, so a bad STUN URL is reported
-// before any link exists instead of as an opaque ICE failure ten seconds after
-// the user clicked share.
 func (c Config) Validate() error {
 	for _, raw := range c.STUNServers {
 		if err := validateICEURL(raw, "stun", "stuns"); err != nil {
@@ -136,7 +125,7 @@ func (c Config) Validate() error {
 
 	if c.ChunkSize > maxChunkBytes {
 		return fmt.Errorf(
-			"%w: chunk size %d exceeds the %d-byte frame ceiling; SCTP fragments anything larger, so a bigger frame costs throughput rather than saving overhead",
+			"%w: chunk size %d exceeds the %d-byte frame ceiling",
 			ErrInvalidConfig,
 			c.ChunkSize,
 			maxChunkBytes,
@@ -156,9 +145,6 @@ var ErrInvalidConfig = errors.New("p2p: invalid configuration")
 // url.Parse. The scheme is checked by hand, because url.Parse is happy with
 // "http://example.com" and ICE is not, and pion would then fail much later with a
 // message naming neither the setting the user changed nor the value they typed.
-// The host is read from Opaque rather than Host, because ICE URLs are
-// scheme-colon-authority with no "//" and checking Host would reject every URL
-// that actually works.
 func validateICEURL(raw string, schemes ...string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -189,7 +175,7 @@ func validateICEURL(raw string, schemes ...string) error {
 // iceHost extracts the authority from an ICE URL, whichever field url.Parse put
 // it in. Both forms are accepted: a user who writes "stuns://stun.example.test"
 // out of habit from https produces a perfectly valid ICE URL that lands in Host
-// instead of Opaque, and rejecting it would be pedantry rather than safety.
+// instead of Opaque.
 func iceHost(parsed *url.URL) string {
 	if parsed.Host != "" {
 		return parsed.Host

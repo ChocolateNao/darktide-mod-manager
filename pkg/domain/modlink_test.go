@@ -376,8 +376,7 @@ func TestParseModLinkCarriesAKeyedGrantThrough(t *testing.T) {
 	require.Equal(t, "k", grant["nxm_key"], "the grant reached the caller as %v", grant)
 	require.Equal(t, "1", grant["nxm_expires"], "the grant reached the caller as %v", grant)
 	require.Equal(t, "2", grant["nxm_user_id"], "the grant reached the caller as %v", grant)
-	// A plain link yields nothing rather than an empty map, so the caller's
-	// install options are unchanged by a link that carried no authorization.
+	// A plain link yields nothing.
 	_, _, _, plain, err := ParseModLink("nxm://warhammer40kdarktide/mods/1419/files/8847")
 	require.NoError(t, err, "ParseModLink")
 

@@ -65,8 +65,8 @@ func ValidInstallMethod(m string) bool {
 // live, how mods reach the game folder, and which icon represents it in the
 // rail. The map key in Config.Games is the game's registry id.
 type GameSettings struct {
-	// Icon names a lucide icon for the rail. Here rather than on
-	// GameDefinition because it is one user's choice on one machine.
+	// Icon names a built-in rail icon or holds a data URL for a custom image.
+	// Here, not on GameDefinition because it is one user's choice on one machine.
 	Icon               string     `json:"icon,omitempty"`
 	Path               string     `json:"path,omitempty"`
 	Source             GameSource `json:"source,omitempty"`
@@ -80,7 +80,7 @@ type GameSettings struct {
 // InstallMethodOrDefault reports the install method to prefer: the configured
 // override when it is one of the known methods, otherwise the definition's own.
 //
-// An unrecognised stored value falls through rather than failing, so a config
+// An unrecognised stored value falls through, not failing, so a config
 // written by a newer version still deploys.
 func (s GameSettings) InstallMethodOrDefault(def GameDefinition) string {
 	if ValidInstallMethod(s.InstallMethod) {

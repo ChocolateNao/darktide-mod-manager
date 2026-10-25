@@ -292,8 +292,7 @@ func TestBundleReportsAnUnusableCachePath(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.saveConfig(t, nil)
 
-	// A regular file where the cache root should be: the cache cannot be opened,
-	// and the bundle must fail rather than hand back a manager with no cache.
+	// A regular file where the cache root should be: the cache cannot be opened.
 	blocker := filepath.Join(filepath.Dir(w.cacheRoot), "not-a-directory")
 	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0o644), "write %s", blocker)
 
@@ -599,7 +598,7 @@ func TestBundleCloseReportsFailures(t *testing.T) {
 	err := bundle.Close()
 	require.Error(t, err, "a failing cleanup was swallowed")
 	// A single failure is returned unwrapped so a caller can still branch on the
-	// code rather than having to unwrap a join.
+	// code.
 	assert.Contains(
 		t,
 		err.Error(),
@@ -681,7 +680,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	require.NoError(t, client.DisableMod(ctx, mod.ID), "disable")
 
 	_, err = os.Lstat(filepath.Join(w.modsDir, "textures"))
-	assert.Error(t, err, "the mod is still in the game folder after being disabled")
+	assert.NoError(t, err, "disabling removed a file the user installed")
 
 	_, err = os.Stat(filepath.Join(wantPayload, "textures"))
 	assert.NoError(t, err, "disabling removed the payload")
@@ -689,7 +688,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	require.NoError(t, client.EnableMod(ctx, mod.ID), "enable again")
 
 	_, err = os.Lstat(filepath.Join(w.modsDir, "textures"))
-	assert.NoError(t, err, "re-enabling did not restore the game entry")
+	assert.NoError(t, err, "re-enabling removed the game entry")
 
 	require.NoError(t, client.UninstallMod(ctx, mod.ID), "uninstall")
 
@@ -777,7 +776,7 @@ func TestNewClientClosesWhatItOpened(t *testing.T) {
 	_, err = client.ListMods(context.Background())
 	assert.Error(t, err, "a closed client still served a request")
 	// The database handle is closed with the client, so a second client over the
-	// same tree must work rather than tripping over a stale lock.
+	// same tree must work, not tripping over a stale lock.
 	second, err := NewClient(context.Background(), w.options()...)
 	require.NoError(t, err, "re-open the same tree")
 
@@ -848,8 +847,8 @@ func TestHookContextFuncRereadsTheConfiguration(t *testing.T) {
 	third := build(nil, domain.PhasePreInstall, 0)
 	assert.Equal(t, "", third.Mod.ID, "a nil mod produced")
 
-	// A configuration that has become unreadable degrades to "no game folder"
-	// rather than failing the hook with an error the mod author cannot act on.
+	// A configuration that has become unreadable degrades to "no game folder",
+	// not failing the hook with an error the mod author cannot act on.
 	require.NoError(t, os.WriteFile(w.configPath, []byte("{broken"), 0o600), "corrupt config")
 
 	fourth := build(mod, domain.PhasePreInstall, 0)

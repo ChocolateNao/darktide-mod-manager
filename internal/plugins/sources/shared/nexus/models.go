@@ -17,7 +17,7 @@ import (
 //
 // Two payload conventions shape every struct below: almost every endpoint nests
 // its payload under "data" (the dependency and download-repacked responses do
-// not, and a mismatch decodes to a zero value rather than an error), and ids are
+// not, and a mismatch decodes to a zero value), and ids are
 // strings even when plainly numeric — kept unparsed so a widened id cannot make a
 // mod uninstallable.
 
@@ -221,14 +221,14 @@ type downloadResponse struct {
 
 // modsBatchRequest is the body of POST /mods/batch, used to check a credential.
 // An id that does not exist contributes no row, so a working key gets a 200 and an
-// empty list rather than a 404 that could also mean "hidden key".
+// empty list, not a 404 that could also mean "hidden key".
 type modsBatchRequest struct {
 	ModIDs []string `json:"mod_ids"`
 }
 
 // modContext carries what a mod's identity and presentation need. File and
 // version responses name no mod, so the name comes from the mod fetch and is
-// threaded through rather than rediscovered.
+// threaded through, not rediscovered.
 type modContext struct {
 	scopedID     string // game-scoped id: the number in a mod page URL and an nxm link
 	uid          string // composite Mod.id
@@ -255,7 +255,7 @@ func (c modContext) pageURL() string {
 //
 // The cache hashes a download location plus a version, so something
 // location-shaped must exist before anything is downloaded, and v3 has no such URL
-// until a POST mints one. This names the minting endpoint rather than pretending
+// until a POST mints one. This names the minting endpoint, not pretending
 // to be the archive's address, and changes exactly when the version does.
 func (c modContext) locationURL(versionID string) string {
 	if strings.TrimSpace(versionID) == "" {
@@ -336,8 +336,8 @@ func describeCategories(versions []fileVersion) string {
 
 // positionValue parses the decimal position the API publishes.
 //
-// An unparseable position reports false and callers read that as "no opinion"
-// rather than zero, so a file with odd positions falls back to upload order.
+// An unparseable position reports false and callers read that as "no opinion",
+// not zero, so a file with odd positions falls back to upload order.
 //
 // Non-finite values are refused too: ParseFloat accepts "NaN", every comparison
 // against it is false, and pickVersion would then keep the first candidate seen —
@@ -513,7 +513,7 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 //
 // The trending feed is the only public discovery endpoint and carries no id, so
 // this is the only way to make one of its entries installable. A URL of an
-// unexpected shape yields nothing rather than a guess.
+// unexpected shape yields nothing, not a guess.
 func scopedIDFromPageURL(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {

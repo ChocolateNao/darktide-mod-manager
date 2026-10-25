@@ -222,10 +222,6 @@ func (p *Provider) Download(ctx context.Context, ref domain.FileReference, destP
 }
 
 // lookupID searches the share folder for the archive a name refers to.
-//
-// Drive names are unique per folder rather than per account, so the search is
-// scoped to the share folder; two archives of one name there have already made
-// the share ambiguous, and the first match is as good as any.
 func (p *Provider) lookupID(ctx context.Context, name string) (string, error) {
 	clause := fmt.Sprintf(
 		"name = '%s' and '%s' in parents and trashed = false",

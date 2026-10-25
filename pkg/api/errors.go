@@ -6,8 +6,7 @@ import (
 
 // AppError is the concrete error type every operation in this package returns.
 // The codes and helpers live in pkg/errors, re-exported here so a consumer needs
-// one import. Functions rather than `var` aliases so godoc renders documentation
-// next to each one.
+// one import.
 type AppError = appErrors.AppError
 
 // Code is the stable, machine-readable classification of a failure — for
@@ -19,8 +18,7 @@ type Code = appErrors.Code
 // way the operations are: configuration, mod lifecycle, game, sources, cache.
 const (
 	// CodeUnknown is what CodeOf reports for an error that did not come from this
-	// package at all. It is a value rather than a zero Code so a caller can never
-	// mistake "not our error" for one of our codes.
+	// package at all.
 	CodeUnknown Code = appErrors.CodeUnknown
 
 	// Configuration.
@@ -71,7 +69,7 @@ const (
 )
 
 // IsAppError reports whether err, or anything it wraps, carries the given code. Use
-// it rather than errors.Is against a sentinel: the message of a failure is written
+// it, not errors.Is against a sentinel: the message of a failure is written
 // for a person, while the code is the part with a stability guarantee.
 func IsAppError(err error, code Code) bool { return appErrors.IsAppError(err, code) }
 

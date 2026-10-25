@@ -163,9 +163,9 @@ func (s *ShareStore) scanShare(row shareScanner) (*domain.ShareRecord, error) {
 		return nil, fmt.Errorf("unmarshal links: %w", err)
 	}
 
-	// parseTime never reports an error: an unreadable timestamp yields the zero time
-	// an unreadable timestamp yields the zero time: not failing the whole read
-	// is still a share the user can look at and revoke.
+	// parseTime never reports an error: an unreadable timestamp yields the zero
+	// time, so not failing the whole read is still a share the user can look at
+	// and revoke.
 	createdAt := parseTime(createdAtStr)
 	updatedAt := parseTime(updatedAtStr)
 

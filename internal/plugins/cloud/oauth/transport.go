@@ -15,8 +15,7 @@ import (
 )
 
 // transport performs authenticated calls against one provider's API. The access
-// token is attached per request rather than on a shared client, because a client
-// outlives a token and would keep sending the old one.
+// token is attached per request.
 type transport struct {
 	session *Session
 	apiBase string
@@ -106,7 +105,7 @@ func (t transport) raw(
 	return raw, resp.Header, nil
 }
 
-// put streams a local file to rawURL. The file is streamed rather than buffered:
+// put streams a local file to rawURL. The file is streamed, not buffered:
 // a share archive is as large as the mods it holds, and buffering one is how a
 // manager exhausts the memory of a machine about to hand over a 4 GB mod.
 func (t transport) put(
@@ -329,7 +328,7 @@ func (t transport) getWithHeaders(
 }
 
 // putRange streams a local file into an open upload session in fragments. The
-// ranges are read from the file rather than a buffer: an archive is as large as
+// ranges are read from the file, not a buffer: an archive is as large as
 // the mods it holds, and a session exists so the service reassembles them.
 func (t transport) putRange(
 	ctx context.Context,

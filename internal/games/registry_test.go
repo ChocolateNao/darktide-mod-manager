@@ -43,7 +43,7 @@ func withCleanRegistry(t *testing.T) {
 	t.Cleanup(Reset)
 }
 
-// builtinIDs lives here rather than in the registry so a new built-in game makes
+// builtinIDs lives here so a new built-in game makes
 // these tests say what to add instead of silently passing.
 var builtinIDs = []string{darktide.ID}
 

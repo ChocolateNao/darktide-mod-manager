@@ -210,8 +210,7 @@ func TestRegisterAllIgnoresUnknownConfigurationBlocks(t *testing.T) {
 }
 
 func TestRegisterAllRejectsANilRegistry(t *testing.T) {
-	// A nil registry is a wiring bug in the caller, not a user error: failing here
-	// reports it at start-up rather than as a nil dereference in a later call.
+	// A nil registry is a wiring bug in the caller.
 	err := RegisterAll(nil, nil, nil)
 	require.True(
 		t,

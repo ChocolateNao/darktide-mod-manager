@@ -347,7 +347,7 @@ func TestRunnerBoundsCapturedLogLines(t *testing.T) {
 		got = append(got, lines...)
 		dropped += d
 	}, host.Providers{})
-	// More lines than the cap, so the excess must be counted rather than kept.
+	// More lines than the cap, so the excess must be counted.
 	script := `for (var i = 0; i < dmm.limits.maxLogLines + 25; i++) { console.log("line " + i); }`
 	if err := r.Run(
 		context.Background(),
@@ -633,7 +633,7 @@ func TestRunnerSurvivesAFailedHook(t *testing.T) {
 }
 
 // Scripts are real JavaScript, so ordinary language features must keep working;
-// the sandbox is about *host* access, not about crippling the language.
+// the sandbox restricts *host* access only and leaves the language alone.
 func TestRunnerSupportsOrdinaryJavaScript(t *testing.T) {
 	script := `
 		const items = [3, 1, 2].sort((a, b) => a - b);
@@ -684,4 +684,23 @@ func TestRunnerExposesWorkingDirThroughContextOnly(t *testing.T) {
 			appErrors.CodeOf(err),
 		)
 	}
+}
+
+func TestCheckRejectsASyntaxError(t *testing.T) {
+	err := NewRunner(host.Providers{}).Check(domain.HookScript{
+		Language: domain.LangJS,
+		Content:  "function (",
+	})
+
+	require.Error(t, err, "an unparseable script passed Check")
+	assert.Equal(t, appErrors.ErrCodeHookInvalid, appErrors.CodeOf(err))
+}
+
+func TestCheckAcceptsAValidScript(t *testing.T) {
+	err := NewRunner(host.Providers{}).Check(domain.HookScript{
+		Language: domain.LangJS,
+		Content:  "print('hi')",
+	})
+
+	require.NoError(t, err, "Check: %v", err)
 }

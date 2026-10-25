@@ -9,10 +9,7 @@ import (
 )
 
 // Aliases for the service-layer value types that appear in this package's
-// signatures. They are aliases rather than wrappers so a value returned here can be
-// passed straight back in, and because the underlying types live in an internal
-// package a consumer cannot import — which is exactly what an alias fixes: it gives
-// the type a name in the public API without moving it.
+// signatures.
 type (
 	// InstallOptions tunes InstallMod. The zero value enables the mod when a game
 	// mods folder resolves, refuses to overwrite an existing install, and keeps
@@ -54,8 +51,8 @@ const (
 )
 
 // ParseConflictResolution turns the textual form of a resolution back into the value,
-// reporting false for anything it does not recognise — including the zero value,
-// which is refused rather than guessed at. It is re-exported here because both entry
+// reporting false for anything it does not recognise — including the zero value. 
+// It is re-exported here because both entry
 // points that need it work in terms of this package: the GUI passes a resolution as a
 // JSON string over the Wails bridge and the CLI takes it as a flag argument. It
 // accepts the spellings ConflictResolution.String produces, with either a dash or an
@@ -149,6 +146,16 @@ func (c *Client) Uninstall(ctx context.Context, modID string, opts UninstallOpti
 	return svc.Uninstall(ctx, modID, opts)
 }
 
+// TrashAvailable reports whether this host has a desktop trash the manager can
+// move an external mod into.
+func (c *Client) TrashAvailable() bool {
+	if c == nil || c.deps.Mods == nil {
+		return false
+	}
+
+	return c.deps.Mods.TrashAvailable()
+}
+
 // EnableMod deploys a mod's files into the game folder. The mod's own
 // pre-enable hooks run first and are fatal: a mod that cannot prepare itself
 // should not be half enabled.
@@ -208,9 +215,7 @@ func (c *Client) CancelUpdate(ctx context.Context, modID string) error {
 }
 
 // CheckModUpdates reports what is known about available updates without changing
-// anything. A source that cannot be reached leaves that mod's remote version empty
-// rather than failing the whole scan: one unreachable provider is no reason to hide
-// the other six updates.
+// anything.
 func (c *Client) CheckModUpdates(ctx context.Context) ([]ModUpdateInfo, error) {
 	svc, err := c.mods()
 	if err != nil {
@@ -248,11 +253,7 @@ func (c *Client) DetectConflicts(ctx context.Context) ([]ConflictReport, error) 
 	return svc.DetectConflicts(ctx)
 }
 
-// ResolveConflict settles one reported conflict. The report is named by
-// ConflictReport.Identity() rather than passed whole, because the conflict is
-// re-detected first: a report the caller has held since the UI drew it may no longer
-// exist, and acting on a stale one — disabling a mod to fix a problem since fixed — is
-// worse than refusing. An unknown id reports ErrCodeNotFound.
+// ResolveConflict settles one reported conflict. An unknown id reports ErrCodeNotFound.
 //
 // how refers to the two mods in the report's sorted order. A report with only one mod
 // — a missing dependency has no second mod to blame — reports ErrCodeInvalidArgument.

@@ -430,7 +430,7 @@ func newShareP2PAcceptCommand(s *session) *cobra.Command {
 			"instead, then answers it and waits for the transfer.\n\n" +
 			"Every archive is checked against the hash the offer carried before this\n" +
 			"command reports success, so a transfer that was cut short or altered fails\n" +
-			"here rather than at install time.\n\n" +
+			"here, not at install time.\n\n" +
 			"Pass --reject to decline. The sender is told, and the source links above\n" +
 			"are how you get the mods without them.",
 		Args: cobra.ExactArgs(1),

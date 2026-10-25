@@ -9,8 +9,7 @@ import (
 )
 
 // ModSourceLink is the set of web locations a mod can be fetched from, as the
-// frontend sees it. Aliased rather than re-exported field by field so the type
-// a UI binds to is literally the type the domain uses.
+// frontend sees it.
 type ModSourceLink = domain.ModSourceLink
 
 // ModLinkTarget names which of a mod's links to act on.
@@ -20,17 +19,14 @@ type ModLinkTarget = domain.ModLinkTarget
 // cannot fetch the mod itself.
 type ModLinkFallback = domain.ModLinkFallback
 
-// URLOpener opens a web address in the user's browser. Declared as its own
-// interface because "open this link" is all the source-link and manifest surfaces
-// do, and a caller supplying a stub can assert on the URL rather than a real
-// browser.
+// URLOpener opens a web address in the default user's browser.
 type URLOpener interface {
 	OpenURL(ctx context.Context, rawURL string) error
 }
 
 // opener returns the URL opener, or the error to report. Opening a link is a desktop
 // concern, so a client wired without an opener — the CLI in a container, a test — says
-// so rather than silently doing nothing.
+// so, not silently doing nothing.
 func (c *Client) opener() (URLOpener, error) {
 	if err := c.ready(); err != nil {
 		return nil, err
@@ -45,9 +41,7 @@ func (c *Client) opener() (URLOpener, error) {
 }
 
 // ModSourceLink returns every web location an installed mod can be fetched from, and
-// what a user must do by hand. The URLs are kept rather than rebuilt from
-// source-specific data because "where did this come from" has to outlive the plugin
-// that knew it.
+// what a user must do by hand.
 func (c *Client) ModSourceLink(ctx context.Context, modID string) (*domain.ModSourceLink, error) {
 	mod, err := c.GetMod(ctx, modID)
 	if err != nil {

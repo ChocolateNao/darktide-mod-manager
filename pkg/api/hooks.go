@@ -9,9 +9,7 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Aliases for the hook vocabulary. A caller building a hook editor needs the script
-// and phase types without importing pkg/domain separately, and the phase names are
-// part of this package's contract rather than an implementation detail.
+// Aliases for the hook vocabulary.
 type (
 	// HookScript is one hook: what to run, how long it may run, and the
 	// environment it may see.
@@ -140,10 +138,7 @@ func (c *Client) HookPermissions(
 }
 
 // RunHookScripts executes scripts under the same containment rules the mod lifecycle
-// uses. A method on Client rather than a bare executor: a script's working
-// directory is resolved against the mod's and game's folders and refused if it
-// escapes both, its environment is filtered to an allowlist, and it is killed at
-// its timeout.
+// uses.
 func (c *Client) RunHookScripts(ctx context.Context, scripts []HookScript, mod *Mod) error {
 	if err := c.ready(); err != nil {
 		return err

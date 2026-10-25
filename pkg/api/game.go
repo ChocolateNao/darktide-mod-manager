@@ -103,8 +103,7 @@ type GameInfo struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
 	Description string `json:"description,omitempty"`
-	// DefaultInstallMethod is the method used when nothing else is chosen, so the
-	// form can preselect it rather than leave the user to guess which entry is default.
+	// DefaultInstallMethod is the method used when nothing else is chosen.
 	DefaultInstallMethod string `json:"default_install_method"`
 	// InstallModes are the deployment modes this game accepts. Without them a UI either
 	// offers a mode the game cannot deploy or hides one it needs, and cannot tell which
@@ -202,7 +201,7 @@ func (c *Client) UseGame(ctx context.Context, id string) error {
 		return nil
 	}
 
-	// The live configuration object rather than a fresh load: it carries the
+	// The live configuration object. It carries the
 	// per-source overrides a command line supplied, which are never written back —
 	// reloading would drop them.
 	cfg := c.deps.ActiveConfig

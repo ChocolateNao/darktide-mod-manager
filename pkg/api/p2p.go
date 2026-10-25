@@ -44,11 +44,7 @@ func (c *Client) p2pService() (*services.P2PShareService, error) {
 	return c.deps.P2PShares, nil
 }
 
-// CreateP2PShare packs the given mods and produces a link to hand out. The work
-// happens here rather than when the recipient accepts: the archives are packed and
-// hashed and the peer's connection details gathered, so the link the sender receives
-// is already a working offer. Expiry is optional — a share with no expiry is
-// permanent, and the recipient sees the expiry inside the link when one was set.
+// CreateP2PShare packs the given mods and produces a link to hand out.
 func (c *Client) CreateP2PShare(
 	ctx context.Context,
 	mods []domain.Mod,
@@ -62,10 +58,7 @@ func (c *Client) CreateP2PShare(
 	return service.CreateShare(ctx, mods, opts)
 }
 
-// PreviewP2PShare describes an offer without connecting to the sender. This is what
-// lets a recipient decide whether to trust the link: it opens the sealed link
-// locally, reports the mods, the sizes and the fallback download locations, and says
-// whether the link has already expired.
+// PreviewP2PShare describes an offer without connecting to the sender.
 func (c *Client) PreviewP2PShare(
 	ctx context.Context,
 	link string,
@@ -102,10 +95,6 @@ func (c *Client) AcceptP2PShare(
 // does not open without an answer. The call returns as soon as that link exists —
 // blocking would leave the caller with nothing to show the sender — and
 // AwaitRejectedP2PShare waits for the outcome.
-//
-// The fallback is the point: the preview already carried a Nexus or GitHub page for
-// every mod that has one, and a sender told "I would rather take it from there"
-// learns something a silent timeout never would.
 func (c *Client) RejectP2PShare(
 	ctx context.Context,
 	link string,

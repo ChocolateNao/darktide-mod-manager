@@ -144,8 +144,6 @@ func TestValidateCredentialsNeedsPaths(t *testing.T) {
 	}
 }
 
-// --- construction ----------------------------------------------------------
-
 func TestNewDropsBlankPaths(t *testing.T) {
 	dir := t.TempDir()
 	// A trailing comma or a stray space in a config value must not become a
@@ -168,8 +166,7 @@ func TestWithPathsReplacesTheConfiguredPaths(t *testing.T) {
 func TestWithMaxDepth(t *testing.T) {
 	s := New(nil, WithMaxDepth(2))
 	assert.Equal(t, 2, s.maxDepth, "maxDepth = %d, want 2", s.maxDepth)
-	// A non-positive depth falls back to the default inside discover rather than
-	// meaning "scan nothing".
+	// A non-positive depth falls back to the default inside discover.
 	if New(nil, WithMaxDepth(-1)).maxDepth != -1 {
 		assert.Fail(t, "WithMaxDepth should store the value verbatim and let discover normalise it")
 	}
@@ -301,7 +298,7 @@ func TestSearchAcceptsAFileAsAConfiguredPath(t *testing.T) {
 		joinIDs(modIDs(mods)),
 	)
 
-	// A file that is not an archive is ignored rather than reported.
+	// A file that is not an archive is ignored, not reported.
 	other := filepath.Join(root, "notes.txt")
 	writeFile(t, other, "x")
 
@@ -343,7 +340,7 @@ func TestSearchDeduplicatesOverlappingPaths(t *testing.T) {
 	root := t.TempDir()
 	writeModFolder(t, root, "better_ui", sampleManifest)
 	// The same folder configured twice, plus a nested sub-path, must yield one
-	// mod rather than three installs of it.
+	// mod, not three installs of it.
 	s := New([]string{root, root, filepath.Join(root, "better_ui")})
 
 	mods, err := s.Search(context.Background(), domain.SearchQuery{})
@@ -443,7 +440,7 @@ func TestMatchesQuery(t *testing.T) {
 	}
 
 	if !matchesQuery(m, domain.SearchQuery{Tags: []string{"", "  "}}) {
-		assert.Fail(t, "blank tags should be ignored rather than matching nothing")
+		assert.Fail(t, "blank tags should be ignored, not matching nothing")
 	}
 
 	if !matchesQuery(m, domain.SearchQuery{GameVersion: "1.5.0"}) {
@@ -879,7 +876,7 @@ func TestArchiveEntryStripsOnlyAVersionLikeSuffix(t *testing.T) {
 		assert.Fail(t, "got %q %v, want packbeta true", got.fallbackID, ok)
 	}
 	// A "v" prefix is not a dotted numeric run, so the suffix is kept as part of
-	// the name rather than mistaken for a version.
+	// the name, not mistaken for a version.
 	got, ok = archiveEntry("/mods/pack v1.2.zip")
 	if !ok || got.fallbackID != "packv1.2" {
 		assert.Fail(t, "got %q %v, want packv1.2 true", got.fallbackID, ok)
@@ -900,7 +897,7 @@ func TestSanitizeID(t *testing.T) {
 		"v1.2.0":        "v1.2.0",
 		"weird!@#$%^&*": "weird",
 		// Lower-casing makes case-only differences collide on every platform, so the
-		// clash is reported rather than found on a case-insensitive volume.
+		// clash is reported, not found on a case-insensitive volume.
 		"BetterUI": "betterui",
 	}
 	for in, want := range cases {

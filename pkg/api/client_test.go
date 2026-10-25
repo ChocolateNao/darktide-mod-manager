@@ -23,9 +23,7 @@ type clientOperation struct {
 	name string
 }
 
-// everyOperation lists each operation that has to notice a closed client. Written out
-// rather than discovered by reflection: not adding a method without adding it here
-// is visible in a diff; a method missing the guard would nil-panic in production.
+// everyOperation lists each operation that has to notice a closed client.
 func everyOperation() []clientOperation {
 	ctx := context.Background()
 
@@ -571,8 +569,8 @@ func TestAuthenticateSourceHandsOverEveryCredential(t *testing.T) {
 	require.NoError(t, registry.Register(source), "Register")
 
 	cfg := domain.DefaultConfig()
-	// Without a store a sign-in has nowhere to land, and AuthenticateSource says so
-	// rather than reporting a login: not a restart throws away.
+	// A sign-in has to land somewhere: without a store there is nowhere, and
+	// AuthenticateSource reports that instead of a login a restart would throw away.
 	client, err := NewClientFromServices(ClientDeps{
 		Sources: registry,
 		Config:  &configStoreStub{cfg: &cfg},

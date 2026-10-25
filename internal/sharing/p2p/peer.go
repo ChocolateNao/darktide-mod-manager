@@ -11,9 +11,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// DataChannelLabel is the only channel a share uses. One rather than one per
-// file: SCTP streams already give ordering and reliability per stream, and a share
-// is a sequential transfer, so a second channel is bookkeeping without throughput.
+// DataChannelLabel is the only channel a share uses.
 const DataChannelLabel = "dmm-share"
 
 // bufferSize is how many incoming messages a peer queues before the reader drains
@@ -102,7 +100,7 @@ func newPeer(cfg Config, answerer bool) (*Peer, error) {
 		settings.SetICEMulticastDNSMode(ice.MulticastDNSModeQueryAndGather)
 	}
 
-	// A bounded port range rather than the ephemeral one: ICE would otherwise take
+	// A bounded port range, not the ephemeral one: ICE would otherwise take
 	// whatever the OS hands it, and a user opening a firewall hole has no way to
 	// know which port to open.
 	settings.SetEphemeralUDPPortRange(resolved.PortMin, resolved.PortMax)
@@ -194,7 +192,7 @@ func (p *Peer) onConnectionStateChange(state webrtc.PeerConnectionState) {
 }
 
 // deliver queues an incoming message, failing the session if the queue is full.
-// Failing rather than dropping is deliberate: the protocol has no resynchronisation
+// Failing, not dropping is deliberate: the protocol has no resynchronisation
 // point inside a file, so a message that cannot be queued is one the receiver can
 // never account for, and continuing would produce an archive that fails its digest
 // check minutes later with no clue why.
@@ -295,7 +293,7 @@ func (p *Peer) localSDP() (string, error) {
 
 // gather waits for ICE to finish collecting candidates, once. The promise is
 // created on first use and reused, so a peer whose caller gathers twice waits on
-// the same closed channel the second time rather than hanging on a promise that
+// the same closed channel the second time, not hanging on a promise that
 // will never fire again.
 func (p *Peer) gather(ctx context.Context) error {
 	p.gatherOnce.Do(func() {
@@ -320,7 +318,7 @@ func (p *Peer) gather(ctx context.Context) error {
 
 // WaitOpen blocks until the data channel is usable. "Usable" means open, not
 // merely negotiated: pion opens the channel after the DTLS handshake completes,
-// and a message sent before that is dropped rather than queued, so a sender that
+// and a message sent before that is dropped, not queued, so a sender that
 // skipped this wait would lose the first frame of every transfer.
 func (p *Peer) WaitOpen(ctx context.Context) error {
 	timer := time.NewTimer(p.connectTimeout)
@@ -341,7 +339,7 @@ func (p *Peer) WaitOpen(ctx context.Context) error {
 }
 
 // Send writes one message, applying flow control first. The wait is why Send is a
-// method rather than a call straight to the channel: SCTP's own window is finite,
+// method, not a call straight to the channel: SCTP's own window is finite,
 // and a fast local disk produces chunks faster than a slow uplink drains them.
 // Without this the reads pile up in memory until the process dies mid-transfer.
 func (p *Peer) Send(ctx context.Context, data []byte, threshold int) error {
@@ -421,7 +419,7 @@ func (p *Peer) waitForDrain(ctx context.Context, threshold int) error {
 // association and returns without waiting for them to reach the wire, so a caller
 // that writes its last frame and immediately closes tears the association down
 // while the peer is still holding those bytes, and they are discarded — which
-// arrives at the other end as a truncated transfer rather than a closed connection.
+// arrives at the other end as a truncated transfer, not a closed connection.
 //
 // The wait is bounded by ctx and connectTimeout, so a peer that has stopped reading
 // cannot hold a close open; the cost of hitting that bound is one truncated frame,
@@ -493,7 +491,7 @@ func (p *Peer) State() webrtc.PeerConnectionState {
 }
 
 // ChunkSize is the payload size the sender should use for this session. It is
-// read back off the peer rather than passed alongside it because the peer is what
+// read back off the peer, not passed alongside it because the peer is what
 // applied the configuration: a caller that kept its own copy could disagree with
 // the peer about a value both ends have to agree on.
 func (p *Peer) ChunkSize() int {

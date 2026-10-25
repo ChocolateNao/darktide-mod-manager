@@ -370,9 +370,7 @@ func ids(mods []Mod) []string {
 	return out
 }
 
-// A paused hook must be skipped rather than reported as a failure: turning one
-// hook off to see whether the rest still work is a normal debugging move, and an
-// error here would make every later hook look broken too.
+// A paused hook must be skipped, not reported as a failure.
 func TestDisabledHookScriptsAreSkipped(t *testing.T) {
 	t.Parallel()
 

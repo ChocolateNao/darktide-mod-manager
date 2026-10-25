@@ -282,8 +282,7 @@ func GameCandidates(
 }
 
 // ExpandCandidates resolves glob candidates against the filesystem and returns a
-// deterministic, de-duplicated list with Glob cleared. A glob matching nothing is
-// dropped rather than reported: most launchers will not be installed at all.
+// deterministic, de-duplicated list with Glob cleared.
 func ExpandCandidates(candidates []Candidate) []Candidate {
 	var out []Candidate
 
@@ -314,7 +313,7 @@ func ExpandCandidates(candidates []Candidate) []Candidate {
 }
 
 // expandGlob returns the sorted matches for a pattern. A malformed pattern, for
-// instance one with an unbalanced bracket, yields no matches rather than an
+// instance one with an unbalanced bracket, yields no matches, not an
 // error: a broken candidate must not stop detection.
 func expandGlob(pattern string) []string {
 	if !strings.Contains(pattern, "*") {

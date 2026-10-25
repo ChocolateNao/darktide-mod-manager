@@ -75,8 +75,7 @@ var (
 	_ services.Downloader        = (*Source)(nil)
 )
 
-// Option customises a Source. Options let tests point the API base at an httptest
-// server and a user pin a repository list rather than rely on discovery.
+// Option customises a Source.
 type Option func(*Source)
 
 // WithAPIBase overrides the API root. A blank value is ignored, because an empty
@@ -91,13 +90,13 @@ func WithAPIBase(base string) Option {
 
 // WithToken sets the personal access token used for API calls. GitHub works
 // anonymously, so this is optional; supplying one raises the rate limit and
-// unlocks private repositories.
+// grants access to private repositories.
 func WithToken(token string) Option {
 	return func(s *Source) { s.token = strings.TrimSpace(token) }
 }
 
 // WithRepositories sets the repositories this source indexes. Entries must look
-// like "owner/repo"; malformed entries are dropped rather than carried into a
+// like "owner/repo"; malformed entries are dropped, not carried into a
 // URL that 404s for a reason the user cannot act on.
 func WithRepositories(repos ...string) Option {
 	return func(s *Source) {
@@ -128,7 +127,7 @@ func WithReleaseLimit(n int) Option {
 }
 
 // WithTimeout overrides the per-request HTTP timeout. A non-positive value is
-// ignored, so a zero in the config file means "unset" rather than "no timeout".
+// ignored, so a zero in the config file means "unset", not "no timeout".
 func WithTimeout(d time.Duration) Option {
 	return func(s *Source) {
 		if d > 0 {

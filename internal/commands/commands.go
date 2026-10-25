@@ -47,9 +47,7 @@ type Deps struct {
 }
 
 // base is the state every command set shares: the client, the logger, the
-// timeout and the cancellable scope. The scope is why this type exists — a
-// cancelled operation ends in ErrCodeOperationCanceled, which a frontend can
-// tell from a real failure.
+// timeout and the cancellable scope. A cancelled operation ends in ErrCodeOperationCanceled.
 type base struct {
 	logger  api.Logger
 	scope   context.Context
@@ -62,8 +60,7 @@ type base struct {
 }
 
 // newBase normalises the dependencies and creates the initial scope, parented
-// to context.Background() so a set built without a lifecycle context — a test,
-// or a headless caller — behaves like one that was given one.
+// to context.Background()
 func newBase(deps Deps) *base {
 	timeout := deps.timeout()
 	b := &base{client: deps.Client, logger: deps.Logger, logging: deps.Logging, timeout: timeout}

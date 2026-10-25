@@ -112,9 +112,7 @@ func (p *Provider) ForgetCredentials() {
 	p.session.Forget()
 }
 
-// objectPath is where an archive named by the payload lives. A name carrying a
-// directory is honoured rather than flattened, so two mods shipping the same
-// mod_info.lua do not collide inside one folder.
+// objectPath is where an archive named by the payload lives.
 func (p *Provider) objectPath(name string) string {
 	if name == "" {
 		return p.folder

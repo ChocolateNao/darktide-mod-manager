@@ -100,8 +100,7 @@ func TestAuthenticateRequiresAToken(t *testing.T) {
 
 	assert.Error(t, s.Authenticate(map[string]string{"refresh_token": "r"}))
 
-	// With nothing stored, a later call has to fail rather than send an empty
-	// bearer header and let the provider be the one to say no.
+	// With nothing stored, a later call has to fail.
 	_, err := s.Access(context.Background())
 	assert.Error(t, err)
 }

@@ -853,7 +853,7 @@ func TestOptionsMapOntoAPIOptions(t *testing.T) {
 	)
 
 	// Blank paths are no opinion at all, so they contribute nothing. The logging
-	// options are the exception: they are the defaults rather than an override,
+	// options are the exception: they are the defaults,
 	// and an unset option would leave pkg/api to guess what the config file says.
 	blank := Options{ConfigPath: "  ", CachePath: "\t"}
 

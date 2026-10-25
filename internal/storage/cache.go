@@ -112,7 +112,7 @@ func NewCacheWithFS(rootPath string, index CacheIndex) (*Cache, error) {
 
 // NewMemoryCache builds a cache whose index lives in memory. Nothing is written
 // to disk, which is what makes it usable for `--dry-run` flows and for tests that
-// care about ref-counting rather than layout.
+// care about ref-counting.
 func NewMemoryCache() (*Cache, error) {
 	db, err := Open(context.Background(), MemoryPath)
 	if err != nil {
@@ -309,12 +309,12 @@ func (c *Cache) Write(ctx context.Context, hash string, src io.Reader) (*CacheEn
 	entry := &CacheEntry{Hash: key, Path: dest, SizeBytes: written}
 	if err := c.index.Put(ctx, entry); err != nil {
 		// The metadata is what makes the blob findable, so a blob with no row is
-		// dead weight. Drop it rather than leaving an orphan nobody will prune.
+		// dead weight. Drop it, not leaving an orphan nobody will prune.
 		_ = os.Remove(dest)
 		return nil, err
 	}
 	// Put fills in and clamps fields the caller left unset, so re-read to hand back
-	// the stored entry rather than the one that was passed in.
+	// the stored entry, not the one that was passed in.
 	stored, err := c.index.Get(ctx, key)
 	if err != nil {
 		return nil, err
@@ -594,7 +594,7 @@ func (s *sqliteCacheIndex) Put(ctx context.Context, entry *CacheEntry) error {
 	refs := entry.Refs
 	if refs < 0 {
 		// A negative count would make every "is it referenced?" test wrong in a way
-		// that silently deletes a live archive, so it is clamped rather than stored.
+		// that silently deletes a live archive, so it is clamped, not stored.
 		refs = 0
 	}
 

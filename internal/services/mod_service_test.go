@@ -26,7 +26,7 @@ func TestNewModServiceRequiresIndex(t *testing.T) {
 		err,
 	)
 	// A nil index is a wiring bug, not a runtime condition, so it is caught at
-	// construction rather than on the first ListMods.
+	// construction, not on the first ListMods.
 	assert.False(
 		t,
 		err == nil || !strings.Contains(err.Error(), "index"),
@@ -2235,7 +2235,6 @@ func TestSyncLoadOrderFile(t *testing.T) {
 	h.withArchive(t, modFixture("mod_b", "1.0.0"), "mod_b/file.txt")
 	h.withArchive(t, modFixture("mod_c", "1.0.0"), "mod_c/file.txt")
 
-	// Install three mods
 	{
 		_, err := h.svc.Install(
 			context.Background(),
@@ -2266,7 +2265,6 @@ func TestSyncLoadOrderFile(t *testing.T) {
 		require.NoError(t, err, "install mod_c: %v", err)
 	}
 
-	// Enable them in different order
 	{
 		err := h.svc.EnableMod(context.Background(), "mod_b")
 		require.NoError(t, err, "enable mod_b: %v", err)
@@ -2288,14 +2286,12 @@ func TestSyncLoadOrderFile(t *testing.T) {
 		require.NoError(t, err, "reorder: %v", err)
 	}
 
-	// Check load order file
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, err := os.ReadFile(loadOrderPath)
 	require.NoError(t, err, "read load order file")
 
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-	// Expected: mod_c, mod_a (explicit), then mod_b (by priority)
 	assert.False(t, len(lines) < 2, "load order file has too few lines: %v", lines)
 
 	assert.Equal(t, "mod_c", lines[0], "first line = %q, want mod_c", lines[0])
@@ -2326,7 +2322,6 @@ func TestDisableModRemovesFromLoadOrder(t *testing.T) {
 		require.NoError(t, err, "enable: %v", err)
 	}
 
-	// Mod should be in load order file
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, _ := os.ReadFile(loadOrderPath)
@@ -2337,13 +2332,11 @@ func TestDisableModRemovesFromLoadOrder(t *testing.T) {
 		"mod should be in load order file after enable",
 	)
 
-	// Disable the mod
 	{
 		err := h.svc.DisableMod(context.Background(), "disable_test")
 		require.NoError(t, err, "disable: %v", err)
 	}
 
-	// Mod should be removed from load order file
 	content, _ = os.ReadFile(loadOrderPath)
 	assert.NotContains(
 		t,
@@ -2374,7 +2367,6 @@ func TestUninstallModRemovesFromLoadOrder(t *testing.T) {
 		require.NoError(t, err, "enable: %v", err)
 	}
 
-	// Mod should be in load order file
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, _ := os.ReadFile(loadOrderPath)
@@ -2385,13 +2377,11 @@ func TestUninstallModRemovesFromLoadOrder(t *testing.T) {
 		"mod should be in load order file after enable",
 	)
 
-	// Uninstall the mod
 	{
 		err := h.svc.UninstallMod(context.Background(), "uninstall_test")
 		require.NoError(t, err, "uninstall: %v", err)
 	}
 
-	// Mod should be removed from load order file
 	content, _ = os.ReadFile(loadOrderPath)
 	assert.NotContains(
 		t,
@@ -2408,7 +2398,6 @@ func TestEnableDisableModUpdatesLoadOrderFile(t *testing.T) {
 	h := newHarness(t)
 	h.withArchive(t, modFixture("enable_test", "1.0.0"), "enable_test/file.txt")
 
-	// Install the mod without auto-enabling (disable by default)
 	disabled := false
 	{
 		_, err := h.svc.Install(
@@ -2420,7 +2409,6 @@ func TestEnableDisableModUpdatesLoadOrderFile(t *testing.T) {
 		require.NoError(t, err, "install: %v", err)
 	}
 
-	// Mod should not be in load order file before enabling
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
 	content, _ := os.ReadFile(loadOrderPath)
@@ -2431,13 +2419,11 @@ func TestEnableDisableModUpdatesLoadOrderFile(t *testing.T) {
 		"mod should not be in load order file before enabling",
 	)
 
-	// Enable the mod
 	{
 		err := h.svc.EnableMod(context.Background(), "enable_test")
 		require.NoError(t, err, "enable: %v", err)
 	}
 
-	// Mod should be in load order file after enabling
 	content, _ = os.ReadFile(loadOrderPath)
 	assert.Contains(
 		t,
@@ -2447,13 +2433,11 @@ func TestEnableDisableModUpdatesLoadOrderFile(t *testing.T) {
 		string(content),
 	)
 
-	// Disable the mod
 	{
 		err := h.svc.DisableMod(context.Background(), "enable_test")
 		require.NoError(t, err, "disable: %v", err)
 	}
 
-	// Mod should be removed from load order file after disabling
 	content, _ = os.ReadFile(loadOrderPath)
 	assert.NotContains(
 		t,
@@ -2463,13 +2447,11 @@ func TestEnableDisableModUpdatesLoadOrderFile(t *testing.T) {
 		string(content),
 	)
 
-	// Re-enable the mod
 	{
 		err := h.svc.EnableMod(context.Background(), "enable_test")
 		require.NoError(t, err, "re-enable: %v", err)
 	}
 
-	// Mod should be back in load order file
 	content, _ = os.ReadFile(loadOrderPath)
 	assert.Contains(
 		t,
@@ -2488,7 +2470,6 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 	h.withArchive(t, modFixture("mod_b", "1.0.0"), "mod_b/file.txt")
 	h.withArchive(t, modFixture("mod_c", "1.0.0"), "mod_c/file.txt")
 
-	// Install all three mods
 	for _, id := range []string{"mod_a", "mod_b", "mod_c"} {
 		{
 			_, err := h.svc.Install(
@@ -2503,7 +2484,6 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 
 	loadOrderPath := filepath.Join(h.locator.modsPath, "mod_load_order.txt")
 
-	// Enable mod_a
 	{
 		err := h.svc.EnableMod(context.Background(), "mod_a")
 		require.NoError(t, err, "enable mod_a: %v", err)
@@ -2518,7 +2498,6 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 		string(content),
 	)
 
-	// Enable mod_c
 	{
 		err := h.svc.EnableMod(context.Background(), "mod_c")
 		require.NoError(t, err, "enable mod_c: %v", err)
@@ -2533,7 +2512,6 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 		string(content),
 	)
 
-	// Disable mod_a
 	{
 		err := h.svc.DisableMod(context.Background(), "mod_a")
 		require.NoError(t, err, "disable mod_a: %v", err)
@@ -2556,14 +2534,12 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 		string(content),
 	)
 
-	// Enable mod_b
 	{
 		err := h.svc.EnableMod(context.Background(), "mod_b")
 		require.NoError(t, err, "enable mod_b: %v", err)
 	}
 
 	content, _ = os.ReadFile(loadOrderPath)
-	// Should have mod_c and mod_b (mod_a is disabled)
 	assert.Contains(
 		t,
 		string(content),

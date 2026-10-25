@@ -20,9 +20,9 @@ type pionLogger struct{}
 
 // PionLogger returns a pion logger that writes into this process's logger.
 //
-// It reads the package-level logger: an adapter that could be pointed at a second logger
-// adapter that could be pointed at a second logger is how a second appears. A
-// caller that never initialised the service still gets working output.
+// It reads the package-level logger: an adapter that could be pointed at a
+// second logger is how a second instance would appear. A caller that never
+// initialised the service still gets working output.
 func PionLogger() logging.LeveledLogger {
 	return pionLogger{}
 }
@@ -43,10 +43,10 @@ func (pionLogger) Errorf(format string, args ...any) { emit(zerolog.ErrorLevel, 
 // cheaper to render than a fully rendered string escaped a second time.
 func emit(level zerolog.Level, msg string, args []any) {
 	if args == nil {
-		zlog.Logger.WithLevel(level).Msg(msg)
+		zlog.Logger.WithLevel(level).Str("app", appName).Str("op", "p2p-share").Msg(msg)
 
 		return
 	}
 
-	zlog.Logger.WithLevel(level).Msg(fmt.Sprintf(msg, args...))
+	zlog.Logger.WithLevel(level).Str("app", appName).Str("op", "p2p-share").Msg(fmt.Sprintf(msg, args...))
 }

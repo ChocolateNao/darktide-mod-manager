@@ -7,7 +7,6 @@ import "github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 // The identifiers this game answers to. ID is the registry key used in paths,
 // the database and the configuration.
 const (
-	// ID is the registry key for Darktide.
 	ID = "darktide"
 	// SteamAppID is Darktide's Steam application id; it also names the
 	// Proton compatdata directory on Linux.

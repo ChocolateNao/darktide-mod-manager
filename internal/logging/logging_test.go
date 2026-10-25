@@ -22,12 +22,12 @@ import (
 )
 
 // These tests cover the fan-out: each sink receives what it should, a level
-// change is one store rather than a rebuild, and rotation/following/closing work.
+// change is one store, not a rebuild, and rotation/following/closing work.
 
 // newService builds a Service over a temporary log directory and closes it when
 // the test ends.
 //
-// DMM_LOG_DIR is cleared rather than assumed absent, so a developer who exports
+// DMM_LOG_DIR is cleared, so a developer who exports
 // it still gets the directory the test asked for.
 func newService(t *testing.T, cfg Config) *Service {
 	t.Helper()
@@ -209,8 +209,9 @@ func TestTheWriterStackProducesJSONLines(t *testing.T) {
 
 	for i, record := range records {
 		var fields map[string]any
-		if err := json.Unmarshal(record, &fields); err != nil {
-			assert.Fail(t, "record %d is not valid JSON: %v\n%s", i, err, record)
+		parseErr := json.Unmarshal(record, &fields)
+		assert.NoError(t, parseErr, "record %d is not valid JSON: %v\n%s", i, parseErr, record)
+		if parseErr != nil {
 			continue
 		}
 
@@ -302,7 +303,7 @@ func TestEachSinkHonoursItsOwnLevel(t *testing.T) {
 }
 
 // messagesInText pulls the messages out of console output, which is not JSON. It
-// is a substring scan rather than a parse: the console format is a presentation
+// is a substring scan, not a parse: the console format is a presentation
 // choice, and asserting on its exact shape would make this test fail every time
 // the format is made nicer.
 func messagesInText(printed string) []string {
@@ -332,9 +333,8 @@ func TestTheConsoleCanBeAskedForText(t *testing.T) {
 		err := s.Close()
 		require.NoError(t, err, "Close: %v", err)
 	})
-	if strings.Contains(printed, `{"level"`) {
-		assert.Fail(t, "the console wrote JSON while the format is text: %s", printed)
-	}
+	assert.False(t, strings.Contains(printed, `{"level"`),
+		"the console wrote JSON while the format is text: %s", printed)
 
 	for _, want := range []string{"mod enabled", "sword", "INF"} {
 		assert.Contains(t, printed, want, "the console output is missing %q: %s", want, printed)
@@ -473,7 +473,7 @@ func TestTheRotationSettingsDecideWhatIsKept(t *testing.T) {
 	err := s.Close()
 	require.NoError(t, err, "Close: %v", err)
 
-	// lumberjack compresses and prunes on a goroutine after a rotation rather than
+	// lumberjack compresses and prunes on a goroutine after a rotation, not
 	// inside the write, so the last generation is still being worked on here.
 	files := awaitCompressed(t, s.Directory(), 2)
 
@@ -560,7 +560,7 @@ func TestFollowSurvivesARotation(t *testing.T) {
 }
 
 // awaitMessage drains stream until a record with the given message arrives. A
-// closed channel means the follower gave up, which is a failure rather than a
+// closed channel means the follower gave up, which is a failure, not a
 // quiet end: the only thing that closes it is the context.
 func awaitMessage(t *testing.T, stream <-chan LogLine, want string) {
 	t.Helper()
@@ -604,7 +604,7 @@ func TestCloseFlushesEverySinkAndCanBeCalledTwice(t *testing.T) {
 	)
 
 	// A sink that cannot be flushed is reported once, on the first close, and the
-	// second call repeats that answer rather than pretending it worked.
+	// second call repeats that answer, not pretending it worked.
 	failing := &captureSink{failing: true}
 	other := &Service{
 		level: newAtomicLevel(zerolog.InfoLevel),
@@ -767,7 +767,7 @@ func TestDefaultsAreTheDocumentedOnes(t *testing.T) {
 		"the defaults are %+v, want 10 MB, five backups, 30 days and compression",
 		cfg,
 	)
-	// A partially filled block falls back rather than landing on a policy nobody
+	// A partially filled block falls back, not landing on a policy nobody
 	// chose. For Compress that means "on" even though false is the zero value.
 	filled := Config{MaxSizeMB: 25}.Normalize()
 	assert.False(
@@ -806,15 +806,15 @@ func TestResolveDirectoryFollowsTheDocumentedPrecedence(t *testing.T) {
 	fromEnv := filepath.Join(home, "from-env")
 	fromFlag := filepath.Join(home, "from-flag")
 
-	if got, err := ResolveDirectory("", ""); err != nil {
-		require.FailNow(t, "ResolveDirectory: %v", err)
-	} else if !strings.Contains(got, platform.AppName) || !filepath.IsAbs(got) {
-		assert.Fail(t, "with nothing set the log directory is %q", got)
-	}
+	got, err := ResolveDirectory("", "")
+	require.NoError(t, err, "ResolveDirectory: %v", err)
+
+	assert.True(t, strings.Contains(got, platform.AppName) && filepath.IsAbs(got),
+		"with nothing set the log directory is %q", got)
 
 	t.Setenv(EnvLogDir, fromEnv)
 
-	got, err := ResolveDirectory("", configured)
+	got, err = ResolveDirectory("", configured)
 	assert.False(
 		t,
 		err != nil || got != fromEnv,
@@ -876,18 +876,14 @@ func TestListFilesAndCleanLeaveOtherFilesAlone(t *testing.T) {
 	require.NoError(t, err, "Clean --all: %v", err)
 
 	info, err := os.Stat(filepath.Join(dir, LogFileName))
-	switch {
-	case err != nil:
-		assert.Fail(t, "Clean --all removed the active log file: %v", err)
-	case info.Size() != 0:
-		assert.Fail(t, "Clean --all left %d bytes behind; want an empty file", info.Size())
-	}
+	require.NoError(t, err, "Clean --all removed the active log file: %v", err)
+
+	assert.Equal(t, int64(0), info.Size(), "Clean --all left %d bytes behind; want an empty file", info.Size())
 }
 
 func TestParseLineTellsALogLineFromAStrayByteRange(t *testing.T) {
-	if _, ok := ParseLine([]byte(`{"level":"info","message":"installed"}` + "\n")); !ok {
-		assert.Fail(t, "a well-formed record was rejected")
-	}
+	_, ok := ParseLine([]byte(`{"level":"info","message":"installed"}` + "\n"))
+	assert.True(t, ok, "a well-formed record was rejected")
 	// A file being appended to can end mid-record, and a tail must not report a
 	// half-written line as a log entry.
 	for _, raw := range [][]byte{[]byte(""), []byte(`{"level":"info"`), []byte("not json\n")} {

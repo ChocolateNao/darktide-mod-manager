@@ -15,7 +15,7 @@ import (
 // A share is two links: an offer the sender publishes and an answer the
 // recipient returns, each sealed under the same secret and carrying exactly one
 // session description. The prefixes differ so that pasting the wrong half gives
-// "that is an answer, not an offer" rather than a decode failure halfway
+// "that is an answer, not an offer", not a decode failure halfway
 // through a transfer, and they are deliberately not the dmm://share/<provider>/
 // shape the cloud links use: those name a server, these name a peer.
 const (
@@ -26,7 +26,7 @@ const (
 )
 
 // linkSecretBytes sizes the capability secret that travels in the link. Chosen
-// for the length of the link rather than for the strength of the key: the
+// for the length of the link, not for the strength of the key: the
 // secret is pasted, so 128 bits, costing 22 base64url characters, is the better
 // trade against a brute force nobody can attempt.
 const linkSecretBytes = 16
@@ -35,7 +35,7 @@ const linkSecretBytes = 16
 // minified web page fails fast instead of allocating whatever it happens to be.
 const maxLinkBytes = 1 << 20
 
-// Errors a link can fail with. Each one is a sentinel rather than a formatted
+// Errors a link can fail with. Each one is a sentinel, not a formatted
 // string because the caller has to map them onto distinct user-facing outcomes —
 // expired, wrong kind, not from this manager — and a formatted message cannot be
 // matched on.
@@ -96,7 +96,7 @@ func LinkOffer(offer domain.P2PShareOffer, sdp string) (*domain.P2PShareLink, er
 }
 
 // LinkAnswer seals a recipient's session description into a reply link. The
-// offer's secret is echoed rather than regenerated, because both ends have to
+// offer's secret is echoed, not regenerated, because both ends have to
 // derive the same session key and deriving it from anything the sender did not
 // choose would fail in a way that looks like an attack.
 func LinkAnswer(offerID, sdp, secret, receiverName string) (*domain.P2PAnswerLink, error) {
@@ -147,7 +147,7 @@ func IsAnswerLink(text string) bool {
 
 // OpenOffer parses an offer link, opening the sealed payload with the secret
 // carried in the link itself. The version is checked before the offer is handed
-// back so a recipient sees "update the manager" rather than a preview built from
+// back so a recipient sees "update the manager", not a preview built from
 // fields a future version may have moved.
 func OpenOffer(text string) (*domain.P2PShareLink, error) {
 	payload, secret, err := openLink(text, OfferLinkPrefix, domain.P2PLinkKindOffer)

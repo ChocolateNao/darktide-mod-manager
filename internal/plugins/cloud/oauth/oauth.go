@@ -24,13 +24,12 @@ import (
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 const userAgent = "darktide-mod-manager/1.0"
 
-// refreshMargin is how long before expiry a token is renewed. Refreshing on
-// expiry rather than before it loses whatever request was in flight when the
-// old one ran out.
+// refreshMargin is how long before expiry a token is renewed.
 const refreshMargin = 2 * time.Minute
 
 // responseLimit caps a token response. The document is small and uninteresting;
@@ -119,13 +118,18 @@ func (s *Session) Authenticate(creds domain.CloudCredentials) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.token = Token{
 		AccessToken:  access,
 		RefreshToken: valueOf(creds, "refresh_token"),
 		Expiry:       expiryFrom(creds),
 	}
+	refreshStored := s.token.RefreshToken != ""
+	s.mu.Unlock()
+
+	zlog.Info().
+		Str("op", "oauth-auth").
+		Bool("refresh_stored", refreshStored).
+		Msg("provider credentials applied")
 
 	return nil
 }
@@ -139,6 +143,8 @@ func (s *Session) Authorize(ctx context.Context, code, redirectURL string) error
 	if s == nil {
 		return domain.ErrCloudAuthRequired
 	}
+
+	start := time.Now()
 
 	form := url.Values{}
 	form.Set("grant_type", "authorization_code")
@@ -157,6 +163,11 @@ func (s *Session) Authorize(ctx context.Context, code, redirectURL string) error
 	defer s.mu.Unlock()
 
 	s.token = token
+
+	zlog.Info().
+		Str("op", "oauth-authorize").
+		Dur("duration", time.Since(start)).
+		Msg("consent code exchanged")
 
 	return nil
 }
@@ -188,7 +199,7 @@ func (s *Session) Forget() {
 }
 
 // Access returns a usable access token, refreshing it when the current one is
-// close to expiry. The token is returned rather than a ready-made header so an
+// close to expiry. The token is returned, not a ready-made header so an
 // adapter can place it where its API expects, not what a caller could log.
 func (s *Session) Access(ctx context.Context) (string, error) {
 	if s == nil {
@@ -214,6 +225,9 @@ func (s *Session) Access(ctx context.Context) (string, error) {
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", s.token.RefreshToken)
 
+	// Measured before the request so the duration covers the round trip.
+	start := time.Now()
+
 	refreshed, err := s.exchangeLocked(ctx, form)
 	if err != nil {
 		return "", err
@@ -226,6 +240,12 @@ func (s *Session) Access(ctx context.Context) (string, error) {
 	}
 
 	s.token = refreshed
+
+	zlog.Info().
+		Str("op", "token-refresh").
+		Str("endpoint", s.cfg.Endpoints.TokenURL).
+		Dur("duration", time.Since(start)).
+		Msg("access token refreshed")
 
 	return s.token.AccessToken, nil
 }
@@ -299,7 +319,7 @@ func (s *Session) exchangeLocked(ctx context.Context, form url.Values) (Token, e
 	}, nil
 }
 
-// exchange is the unlocked form, for a caller that has not stored a token yet.
+// exchange is the variant for a caller that has not stored a token yet.
 func (s *Session) exchange(ctx context.Context, form url.Values) (Token, error) {
 	if s == nil {
 		return Token{}, domain.ErrCloudAuthRequired
@@ -450,7 +470,7 @@ type Result struct {
 
 // SendJSON performs an authenticated call with a JSON body. Providers with a
 // JSON RPC style — Dropbox among them — have nowhere else to put their
-// arguments, so the body is marshalled here rather than per adapter.
+// arguments, so the body is marshalled here, not per adapter.
 func (s *Session) SendJSON(
 	ctx context.Context,
 	method, rawURL string,

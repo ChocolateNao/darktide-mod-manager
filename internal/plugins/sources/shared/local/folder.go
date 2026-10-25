@@ -1,7 +1,7 @@
 package local
 
 // This file holds the parts of the local source that are about a mod *folder*
-// rather than about where it came from: the id a folder gets without a manifest,
+//, not about where it came from: the id a folder gets without a manifest,
 // the string rules discovery needs, and the tree copy that installs a payload.
 
 import (

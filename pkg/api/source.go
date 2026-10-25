@@ -62,8 +62,7 @@ func (c *Client) SourceInfo(ctx context.Context, sourceID string) (ModSourceInfo
 			"source id must not be blank")
 	}
 	// Has, not Get: describing a source must not build it, so a switched-off or
-	// misconfigured source is still described, and a missing one is reported as missing
-	// rather than as the same empty description.
+	// misconfigured source is still described, and a missing one is reported as missing.
 	if !registry.Has(id) {
 		return ModSourceInfo{}, appErrors.New(appErrors.ErrCodeSourceNotFound,
 			"no mod source with id %q is registered", id)
@@ -135,7 +134,7 @@ func (c *Client) SearchSource(ctx context.Context, sourceID, query string) ([]Mo
 }
 
 // DroppedMod is what a source recognises at a filesystem path, projected for a
-// drop-and-confirm overlay. A projection rather than a domain.Mod because the overlay
+// drop-and-confirm overlay. A projection, not a domain.Mod because the overlay
 // must say what it is about to install before an install exists; LocalPath and
 // SourceData are withheld because nothing about the payload is needed to confirm it,
 // and the install re-reads the path itself.
@@ -329,7 +328,7 @@ func (c *Client) ClearSourceAPIKey(ctx context.Context, sourceID string) error {
 // api_key is the field every source reads back (see each plugin's constructor) and the
 // aliases are the names sources accept, so a caller using the provider's own spelling
 // still lands in the right place. A username is an option because no source has a
-// dedicated field, and anything else is stored as an option rather than dropped: a
+// dedicated field, and anything else is stored as an option, not dropped: a
 // source may need a field this API has never heard of, and keeping half a sign-in is
 // worse than keeping all of it somewhere the source can read.
 func credentialField(name string) (string, bool) {

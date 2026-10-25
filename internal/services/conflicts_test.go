@@ -824,7 +824,7 @@ func TestDetectConflictsVersionSatisfiedIsNotReported(t *testing.T) {
 
 func TestDetectConflictsVersionMismatchAcceptsJSONRoundTrippedMap(t *testing.T) {
 	// The mod travels through the database, so by the time it is scanned the map
-	// has come back as map[string]any rather than map[string]string.
+	// has come back as map[string]any, not map[string]string.
 	h := newHarness(t)
 	a := conflictMod("alpha")
 	a.Dependencies = []string{"beta"}

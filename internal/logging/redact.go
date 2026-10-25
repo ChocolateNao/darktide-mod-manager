@@ -64,10 +64,6 @@ func normalizeKey(key string) string {
 
 // redactingWriter masks sensitive fields in a zerolog JSON line on its way to a
 // sink.
-//
-// It sits between the level gate and the destination rather than being a
-// zerolog.Hook because the event is already encoded; working on the encoded line
-// is what lets one implementation protect every sink, GUI emitter included.
 type redactingWriter struct {
 	w    io.Writer
 	keys map[string]struct{}

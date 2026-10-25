@@ -60,22 +60,16 @@ type CacheManager struct {
 	mu       sync.Mutex
 }
 
-// Downloader fetches a mod's archive into a file the caller owns. It is a narrow
-// interface rather than domain.ModSource so the cache manager can be tested
-// without a source, and so a non-HTTP source plugs in without touching policy.
+// Downloader fetches a mod's archive into a file the caller owns.
 type Downloader interface {
-	// Download writes the mod's archive to destPath and returns the path it
-	// actually wrote. destPath's parent directory already exists and the file
-	// does not.
+	// Download writes the mod's archive to destPath and returns the path.
 	Download(ctx context.Context, mod *domain.Mod, destPath string) (string, error)
 	// Verify reports whether the file at path matches the mod's expected
 	// checksum. Implementations that have no expected checksum return nil.
 	Verify(ctx context.Context, mod *domain.Mod, path string) error
 }
 
-// CacheManagerDeps are the collaborators a CacheManager is built from. Grouping
-// them keeps the constructor from growing a positional-argument list nobody
-// can remember.
+// CacheManagerDeps are the collaborators a CacheManager is built from.
 type CacheManagerDeps struct {
 	Cache     CacheStore
 	Download  Downloader
@@ -193,8 +187,8 @@ func DownloadLocation(mod *domain.Mod) string {
 
 // GetOrDownload returns the path to a local copy of the mod's archive,
 // downloading it only when the cache cannot satisfy the request. A cached blob
-// whose checksum no longer matches is discarded and re-fetched rather than
-// returned, since handing back a corrupt archive would install broken files.
+// whose checksum no longer matches is discarded and re-fetched, not returned,
+// since handing back a corrupt archive would install broken files.
 func (c *CacheManager) GetOrDownload(ctx context.Context, mod *domain.Mod) (string, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -252,14 +246,14 @@ func (c *CacheManager) cached(
 	path := entry.Path
 	if strings.TrimSpace(path) == "" {
 		// An older build could have written a row without a path; recompute it
-		// rather than serving an empty string as a file location.
+		//, not serving an empty string as a file location.
 		path, err = c.cache.BlobPath(key)
 		if err != nil {
 			return "", false, err
 		}
 	}
 	// A size mismatch means a truncated download, and the key comes from the
-	// location rather than the bytes, so the source's checksum is the real proof.
+	// location, not the bytes, so the source's checksum is the real proof.
 	if corrupt, err := sizeMismatch(ctx, c.cache, key, path); err != nil {
 		return "", false, err
 	} else if corrupt {
@@ -272,8 +266,8 @@ func (c *CacheManager) cached(
 
 	if c.download != nil && c.config.VerifyHashes {
 		if err := c.download.Verify(ctx, mod, path); err != nil {
-			// The source expects different bytes, so drop and re-fetch rather than
-			// trust a possible re-release under the same URL.
+			// The source expects different bytes, so drop and re-fetch: a re-release
+			// under the same URL must not be served from the old blob.
 			if !appErrors.IsAppError(err, appErrors.ErrCodeIntegrity) {
 				return "", false, appErrors.Wrap(err, appErrors.ErrCodeIntegrity,
 					"cached copy of mod %q failed verification", mod.ID)
@@ -363,6 +357,8 @@ func (c *CacheManager) downloadOnce(
 		return "", canceledError(err)
 	}
 
+	start := time.Now()
+
 	c.log.Debug().
 		Str("op", "cache-download").
 		Str("mod", mod.ID).
@@ -393,7 +389,7 @@ func (c *CacheManager) downloadOnce(
 	// gets validated and moved.
 	written, err := c.download.Download(ctx, mod, staging)
 	if err != nil {
-		// The partial file is removed rather than left behind: the next attempt
+		// The partial file is removed, not left behind: the next attempt
 		// would find it and either resume into a corrupt file or fail oddly.
 		discardStaging(staging, written)
 		return "", wrapDownloadError(mod, err)
@@ -434,6 +430,15 @@ func (c *CacheManager) downloadOnce(
 	if _, err := c.cache.Index().Acquire(ctx, key, c.now()); err != nil {
 		return "", err
 	}
+
+	c.log.Info().
+		Str("op", "cache-download").
+		Str("mod", mod.ID).
+		Str("version", mod.Version).
+		Str("key", key).
+		Int64("bytes", size).
+		Dur("duration", time.Since(start)).
+		Msg("archive downloaded")
 
 	c.publish(Event{Type: EventCacheDownloaded, ModID: mod.ID, SourceID: mod.SourceID, Data: dest})
 
@@ -511,6 +516,8 @@ func (c *CacheManager) normaliseStaged(
 
 	archive := written + ".zip"
 
+	start := time.Now()
+
 	result, err := packFolder(ctx, written, archive, modLabel(mod))
 	if err != nil {
 		_ = os.Remove(archive)
@@ -534,6 +541,7 @@ func (c *CacheManager) normaliseStaged(
 		Str("mod", modLabel(mod)).
 		Int("entries", len(result.Files)).
 		Int64("payload_bytes", result.TotalSize).
+		Dur("duration", time.Since(start)).
 		Msg("packed a folder download into an archive")
 
 	return archive, nil
@@ -643,6 +651,12 @@ func (c *CacheManager) Store(ctx context.Context, hash string, src io.Reader) (s
 		return "", err
 	}
 
+	c.log.Info().
+		Str("op", "cache-put").
+		Str("key", hash).
+		Int64("bytes", entry.SizeBytes).
+		Msg("stored blob in cache")
+
 	return entry.Path, nil
 }
 
@@ -701,12 +715,19 @@ func (c *CacheManager) Verify(ctx context.Context, hash, path string) error {
 			"%q hashes to %s, expected %s", trimmed, actual, key)
 	}
 
+	c.log.Info().
+		Str("op", "cache-verify").
+		Str("key", key).
+		Str("path", trimmed).
+		Int64("bytes", info.Size()).
+		Msg("verified archive integrity")
+
 	return nil
 }
 
 // sizeMismatch reports whether the blob at path no longer matches the size its
 // index row recorded. This is a cheap structural check, not a content check: the
-// cache key is derived from the download location rather than from the bytes, so
+// cache key is derived from the download location, not from the bytes, so
 // comparing hashes would be meaningless. A changed size still catches the
 // realistic failures without reading the whole archive on every cache hit.
 func sizeMismatch(ctx context.Context, cache CacheStore, key, path string) (bool, error) {
@@ -808,6 +829,11 @@ func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) err
 
 		if err := c.cache.Remove(ctx, e.Hash); err != nil {
 			// One undeletable entry must not stop the sweep.
+			c.log.Warn().
+				Str("op", "cache-prune").
+				Str("key", e.Hash).
+				Err(err).
+				Msg("could not prune an entry")
 			continue
 		}
 

@@ -34,7 +34,7 @@ func TestPaginatePageAndSizeBounds(t *testing.T) {
 		assert.Fail(t, "page 2 size 2 = %v, want [c d]", modIDs(got))
 	}
 
-	// The last page is allowed to be short rather than being an error.
+	// The last page is allowed to be short.
 	got = Paginate(mods, 3, 2)
 	if len(got) != 1 || got[0].ID != "e" {
 		assert.Fail(t, "page 3 size 2 = %v, want [e]", modIDs(got))
@@ -132,7 +132,7 @@ func TestMatchesQueryTagsAreAnded(t *testing.T) {
 		assert.Fail(t, "one missing tag should fail even though the other matches")
 	}
 
-	// A blank tag in the list is ignored rather than failing everything: the UI
+	// A blank tag in the list is ignored: the UI
 	// sends an empty filter box as an empty tag.
 	if !MatchesQuery(m, domain.SearchQuery{Tags: []string{"", "  ", "ui"}}) {
 		assert.Fail(t, "blank tags should be skipped, not treated as required")

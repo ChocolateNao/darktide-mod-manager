@@ -27,7 +27,7 @@ func (f logFactory) NewLogger(string) logging.LeveledLogger {
 
 // loggerFactoryFor adapts a logger to pion's factory, substituting silence for
 // none. pion logs unconditionally from paths this package does not control, so a
-// nil logger has to become a logger that says nothing rather than a panic.
+// nil logger has to become a logger that says nothing.
 func loggerFactoryFor(logger logging.LeveledLogger) logging.LoggerFactory {
 	if logger == nil {
 		return logFactory{logger: discardLogger{}}

@@ -57,8 +57,7 @@ func TestShareStoreSaveAndGet(t *testing.T) {
 	assert.Equal(t, "https://dmm.app/s/s3/share-1", got.Links[0].URL)
 }
 
-// gameIDOf reads the game id off the persisted record rather than the in-memory
-// one, so a write that dropped the column would be caught here.
+// gameIDOf reads the game id off the persisted record.
 func gameIDOf(r *domain.ShareRecord) string { return r.GameID }
 
 func TestShareStoreSaveIsAnUpsert(t *testing.T) {
@@ -155,7 +154,7 @@ func TestShareStoreGetByLink(t *testing.T) {
 
 func TestShareStoreSchemaHasGameIDColumn(t *testing.T) {
 	// The column is in the first schema, so there is no later migration: a store
-	// over an older one fails here rather than silently losing the game id.
+	// over an older one fails here, not silently losing the game id.
 	db := openMemory(t)
 
 	rows, err := db.Query(`SELECT game_id FROM shares LIMIT 1`)

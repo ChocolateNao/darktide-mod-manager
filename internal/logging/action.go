@@ -21,8 +21,8 @@ func ActionOutput() domain.ActionLogger { return ActionLogger{} }
 
 // Logf implements domain.ActionLogger.
 //
-// The line is prefixed: a script's own output is a sentence, and it reads whole
-// sentence, and it reads better whole.
+// The line is prefixed: a script's own output is a sentence, and it reads
+// better whole.
 func (ActionLogger) Logf(format string, args ...any) {
 	if len(args) > 0 {
 		format = fmt.Sprintf(format, args...)

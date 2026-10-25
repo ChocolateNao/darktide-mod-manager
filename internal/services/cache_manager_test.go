@@ -585,7 +585,7 @@ func TestGetOrDownloadRedownloadsWhenTheBlobVanishes(t *testing.T) {
 		require.NoError(t, err)
 	}
 	// The index row still points at a file that no longer exists; the manager
-	// must notice rather than hand the caller a dead path.
+	// must notice.
 	again, err := m.GetOrDownload(ctx, mod)
 	require.NoError(t, err, "GetOrDownload after the blob was deleted")
 
@@ -989,7 +989,7 @@ func TestFetchCollapsesConcurrentCallersOntoOneTransfer(t *testing.T) {
 	<-entered
 
 	// This goroutine blocks until the transfer ends, so reaching the return below proves
-	// the second caller joined rather than starting its own.
+	// the second caller joined, not starting its own.
 	secondPath := make(chan string, 1)
 	secondErr := make(chan error, 1)
 

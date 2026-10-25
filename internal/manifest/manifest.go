@@ -14,6 +14,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // Names are the manifest files recognised inside a mod folder, in priority
@@ -142,10 +143,6 @@ type HookEntry struct {
 }
 
 // Script returns the domain script for this manifest entry.
-//
-// The type must name a known script language ("lua" or "javascript"): a blank or
-// unrecognised one is an error at manifest-parse time rather than something
-// normalised away, so a typo surfaces while the manifest is read.
 func (e HookEntry) Script() (domain.HookScript, error) {
 	lang, err := domain.ParseScriptLanguage(e.Type)
 	if err != nil {
@@ -274,6 +271,8 @@ func Init(dir string) (string, error) {
 		return "", appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
 			"write manifest %s", path)
 	}
+
+	zlog.Info().Str("op", "manifest-init").Str("path", path).Msg("manifest created")
 
 	return path, nil
 }

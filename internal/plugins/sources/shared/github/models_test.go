@@ -172,8 +172,8 @@ func TestNormalizeVersion(t *testing.T) {
 		// is a word, and mangling it would change the tag a maintainer chose.
 		{"vanilla", "vanilla"},
 		{"vNext", "vNext"},
-		// A maintainer is entitled to tag a release something the semver parser
-		// will not understand; it is kept verbatim rather than discarded.
+		// A maintainer can tag a release something the semver parser
+		// may not understand; it is kept.
 		{"hotfix-2024-01", "hotfix-2024-01"},
 		{"", ""},
 		{"   ", ""},
@@ -210,7 +210,7 @@ func TestPayloadAssetPicksTheLargestArchive(t *testing.T) {
 }
 
 // A release whose only assets are documentation has no payload to install, so
-// payloadAsset must report nothing rather than hand back the README. A zero-sized
+// payloadAsset must report nothing, not hand back the README. A zero-sized
 // archive is still a payload: size only picks between candidates, never rejects.
 func TestPayloadAssetIgnoresNonArchives(t *testing.T) {
 	if _, ok := payloadAsset(nil); ok {

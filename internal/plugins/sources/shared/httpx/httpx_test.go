@@ -22,7 +22,7 @@ import (
 
 func TestNewClampsTimeout(t *testing.T) {
 	// A zero timeout means "no timeout" to net/http, which for a network call is
-	// never what a caller wants, so it must become the default rather than hang.
+	// never what a caller wants, so it must become the default, not hang.
 	for _, timeout := range []time.Duration{0, -time.Second} {
 		got := New(timeout).HTTPClient().Timeout
 		assert.Equal(
@@ -74,7 +74,7 @@ func TestNilClientReportsNoHTTPClient(t *testing.T) {
 func TestWithUserAgent(t *testing.T) {
 	base := New(time.Second)
 	// Some hosts reject an empty User-Agent outright, so a blank override has to
-	// keep the default rather than blank the header.
+	// keep the default, not blank the header.
 	for _, blank := range []string{"", "   "} {
 		if got := base.WithUserAgent(
 			blank,
@@ -97,7 +97,7 @@ func TestWithUserAgent(t *testing.T) {
 }
 
 // WithTimeout is how a source narrows or widens the deadline it was built with,
-// so it has to copy rather than mutate: a source derives several clients from
+// so it has to copy, not mutate: a source derives several clients from
 // one base, and mutating would let the last option win for all of them.
 func TestWithTimeout(t *testing.T) {
 	base := New(30 * time.Second)
@@ -516,7 +516,7 @@ func TestStatusErrorQuirksOfErrorBodies(t *testing.T) {
 	if strings.Contains(long.Error(), strings.Repeat("x", 400)) {
 		assert.Fail(t, "long error body was not actually cut")
 	}
-	// Whitespace-only bodies are dropped rather than quoted as "".
+	// Whitespace-only bodies are dropped, not quoted as "".
 	blank := statusError(KindMeta, 400, "https://example.test/x", []byte("   \n  "))
 	assert.False(
 		t,
@@ -575,7 +575,7 @@ func TestDoReturnsResponseAndErrorForFailureStatus(t *testing.T) {
 
 func TestDoRejectsUnencodableBody(t *testing.T) {
 	// A channel cannot be JSON encoded; that is a plugin bug and must be reported
-	// as one rather than panicking inside json.Marshal's caller.
+	// as one, not panicking inside json.Marshal's caller.
 	_, err := New(time.Second).Do(context.Background(), Request{
 		URL:  "https://example.test/x",
 		Body: make(chan int),
@@ -638,7 +638,7 @@ func TestDoRefusesAPreEncodedBody(t *testing.T) {
 
 func TestDoSendsRawMessageThroughUnchanged(t *testing.T) {
 	// json.RawMessage is the declared way to send bytes that are already JSON, so
-	// it must arrive exactly as given rather than quoted or escaped.
+	// it must arrive exactly as given, not quoted or escaped.
 	var (
 		body        string
 		contentType string
@@ -1056,7 +1056,7 @@ func TestDownloadSendsHeaders(t *testing.T) {
 
 func TestCanceledContextShortCircuits(t *testing.T) {
 	// The cancellation must be reported before any socket is opened, so the code
-	// is the manager's cancellation code rather than a network error.
+	// is the manager's cancellation code, not a network error.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
