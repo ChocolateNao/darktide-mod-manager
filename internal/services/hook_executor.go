@@ -17,9 +17,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// defaultHookTimeout mirrors domain.DefaultConfig().Hooks.DefaultTimeout. It is
-// duplicated rather than imported from the config so the executor stays usable
-// with a zero-valued domain.HooksConfig.
+// defaultHookTimeout mirrors domain.DefaultConfig().Hooks.DefaultTimeout.
 const defaultHookTimeout = 10 * time.Second
 
 // maxHookTimeout is the compile-time safety ceiling: no configured MaxTimeout
@@ -71,13 +69,16 @@ var hookEnvAllowlistSet = func() map[string]bool {
 	return m
 }()
 
-// HookRunner executes one kind of hook script. The interface is deliberately one
-// method wide, so a third-party runner needs no access to the manager's state. The
-// argument is a PreparedHook rather than the raw domain.HookScript, because the
-// resolved WorkingDir and Env are exactly what makes a hook safe; the original
-// declaration is still available as hook.Script.
+// HookRunner executes one kind of hook script.
 type HookRunner interface {
 	Run(ctx context.Context, hook PreparedHook, mod *domain.Mod) error
+}
+
+// SyntaxChecker is the optional interface a runner implements when it can reject
+// a script the VM would refuse to compile. Validate consults it, so a syntax
+// error is reported before the script is stored or run.
+type SyntaxChecker interface {
+	Check(script domain.HookScript) error
 }
 
 // LanguageTyper is the optional self-description interface a runner implements
@@ -89,9 +90,7 @@ type LanguageTyper interface {
 // HookContextFunc builds the data handed to a hook script for one phase.
 type HookContextFunc func(mod *domain.Mod, phase domain.HookPhase, index int) domain.HookContext
 
-// HookContextPaths is the manager state a hook script is allowed to see. It is
-// a value rather than a pointer so a caller can capture one and rebuild it as
-// the config changes.
+// HookContextPaths is the manager state a hook script is allowed to see.
 type HookContextPaths struct {
 	GamePath     string
 	GameModsPath string
@@ -148,10 +147,7 @@ type HookExecutorDeps struct {
 	Config         domain.HooksConfig
 }
 
-// HookExecutor runs mod lifecycle hooks through a pluggable runner per script
-// language. It owns the security policy — effective timeouts, permissions,
-// allowed working directories and the environment allowlist — so that a runner
-// cannot be talked into exceeding it.
+// HookExecutor runs mod lifecycle hooks through a pluggable runner per script language.
 type HookExecutor struct {
 	events         EventSink
 	runners        map[domain.ScriptLanguage]HookRunner
@@ -427,6 +423,16 @@ func (h *HookExecutor) Validate(script domain.HookScript, mod *domain.Mod) error
 		return err
 	}
 
+	// The runner owns the parser; a language this build cannot run is caught
+	// above, so a missing runner here just skips the extra check.
+	if runner, err := h.runner(script.Language); err == nil {
+		if checker, ok := runner.(SyntaxChecker); ok {
+			if err := checker.Check(script); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -642,6 +648,10 @@ type PreparedHook struct {
 	Context     domain.HookContext
 	Script      domain.HookScript
 	Permissions domain.ScriptPermissions
+	// Output receives the run's buffered console lines plus the count dropped at
+	// the cap. The runner reports before returning, so a failing script keeps
+	// what it printed.
+	Output func(lines []string, dropped int)
 }
 
 // currentGamePath resolves the game folder, tolerating a nil provider.
@@ -663,7 +673,7 @@ func (h *HookExecutor) currentGameID() string {
 }
 
 // Prepare validates a script and resolves its working directory and environment.
-// Runners are expected to call it rather than reading Script.WorkingDir and
+// Runners are expected to call it instead of reading Script.WorkingDir and
 // Script.Env directly.
 func (h *HookExecutor) Prepare(
 	script domain.HookScript,
@@ -709,17 +719,73 @@ func (h *HookExecutor) runOne(
 	// is the caller's doing, not a hook that ran too long.
 	parent := ctx
 
+	// A failure before the runner starts still reaches the console.
+	publishFailure := func(runErr error) {
+		h.publish(Event{
+			Type:     EventHookFailed,
+			ModID:    modIDOf(mod),
+			SourceID: sourceIDOf(mod),
+			Data: hookEventData{
+				Phase: string(phase),
+				Index: index,
+				Type:  string(script.Language),
+				Error: runErr.Error(),
+			},
+		})
+	}
+
 	runner, err := h.runner(script.Language)
 	if err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeHookInvalid, "hook %d for mod %s", index, label)
+		wrapped := appErrors.Wrap(err, appErrors.ErrCodeHookInvalid, "hook %d for mod %s", index, label)
+		publishFailure(wrapped)
+		return wrapped
 	}
 
 	p, err := h.Prepare(script, mod, phase, index)
 	if err != nil {
+		publishFailure(err)
 		return err
 	}
 
 	timeout := h.Timeout(script, mod)
+
+	p.Output = func(lines []string, dropped int) {
+		h.publish(Event{
+			Type:     EventHookOutput,
+			ModID:    modIDOf(mod),
+			SourceID: sourceIDOf(mod),
+			Data: hookEventData{
+				Phase:   string(phase),
+				Index:   index,
+				Type:    string(script.Language),
+				Lines:   lines,
+				Dropped: dropped,
+			},
+		})
+
+		// An editor run already shows its output in the console.
+		if phase == "" {
+			return
+		}
+
+		event := h.log.Debug().
+			Str("op", "hook.script").
+			Str("phase", string(phase)).
+			Str("type", string(script.Language)).
+			Int("index", index).
+			Str("mod", modIDOf(mod)).
+			Str("game", h.currentGameID())
+
+		if len(lines) > 0 {
+			event = event.Strs("lines", lines)
+		}
+
+		if dropped > 0 {
+			event = event.Int("dropped", dropped)
+		}
+
+		event.Msg("hook output")
+	}
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -839,6 +905,8 @@ type hookEventData struct {
 	Error   string        `json:"error,omitempty"`
 	Index   int           `json:"index"`
 	Timeout time.Duration `json:"timeout,omitempty"`
+	Lines   []string      `json:"lines,omitempty"`
+	Dropped int           `json:"dropped,omitempty"`
 }
 
 func modIDOf(mod *domain.Mod) string {

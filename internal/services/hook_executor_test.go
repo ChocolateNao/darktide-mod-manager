@@ -15,6 +15,7 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -125,7 +126,7 @@ func hookMod(dir string) *domain.Mod {
 }
 
 // newGameDirs returns (gameRoot, modRoot). They are siblings under one temp dir
-// so a "outside both" path is easy to construct and still absolute.
+// so an "outside both" path is easy to construct and still absolute.
 func newGameDirs(t *testing.T) (game, modDir string) {
 	t.Helper()
 	base := t.TempDir()
@@ -716,7 +717,7 @@ func TestEnvForwardsOnlyAllowlistedVariables(t *testing.T) {
 
 func TestEnvIncludesRealAllowlistedVariables(t *testing.T) {
 	t.Setenv("DMM_HOME_FIXTURE", "x")
-	// PATH is always set in a test process; assert the mechanism rather than the
+	// PATH is always set in a test process; assert the mechanism, not the
 	// exact contents of the ambient environment.
 	h := newExecutor(t)
 
@@ -1214,7 +1215,7 @@ func TestExecuteReportsTimeoutWhenRunnerOutlivesDeadline(t *testing.T) {
 }
 
 // A cancelled parent is the caller's doing, so it is reported as an operation
-// cancellation rather than as a hook that ran too long.
+// cancellation, not as a hook that ran too long.
 func TestExecuteReportsCancellationWhenParentCanceled(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	r := &recordingRunner{language: domain.LangLua, waitCtx: true}
@@ -1539,6 +1540,77 @@ func TestExecutePublishesStartedAndFinished(t *testing.T) {
 	)
 }
 
+func TestExecutePublishesScriptOutput(t *testing.T) {
+	_, modDir := newGameDirs(t)
+	events := &collectingEvents{}
+	r := &recordingRunner{
+		language: domain.LangLua,
+		observe: func(_ context.Context, hook PreparedHook) {
+			hook.Output([]string{"hello", "world"}, 3)
+		},
+	}
+
+	h := NewHookExecutor(HookExecutorDeps{Events: events})
+	require.NoError(t, h.Register(r), "register")
+
+	require.NoError(t, h.Execute(
+		context.Background(),
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
+		hookMod(modDir),
+	))
+
+	assert.Equal(t,
+		[]EventType{EventHookStarted, EventHookOutput, EventHookFinished},
+		events.types())
+
+	data, ok := events.snapshot()[1].Data.(hookEventData)
+	require.True(t, ok, "payload type = %T", events.snapshot()[1].Data)
+	assert.Equal(t, []string{"hello", "world"}, data.Lines)
+	assert.Equal(t, 3, data.Dropped)
+}
+
+func TestHookScriptOutputIsLoggedOncePerAutomaticRun(t *testing.T) {
+	_, modDir := newGameDirs(t)
+	output := func(_ context.Context, hook PreparedHook) {
+		hook.Output([]string{"hello", "world"}, 2)
+	}
+
+	var automatic strings.Builder
+	logger := zerolog.New(&automatic)
+	h := NewHookExecutor(HookExecutorDeps{
+		Events: &collectingEvents{},
+		Logger: &logger,
+		GameID: func() string { return "darktide" },
+	})
+	require.NoError(t, h.Register(&recordingRunner{language: domain.LangLua, observe: output}), "register")
+
+	require.NoError(t, h.ExecutePhase(
+		context.Background(),
+		domain.PhasePostEnable,
+		domain.ModHooks{PostEnable: []domain.HookScript{{Language: domain.LangLua, Content: "x"}}},
+		hookMod(modDir),
+	))
+
+	require.Equal(t, 1, strings.Count(automatic.String(), `"op":"hook.script"`), "automatic run logged %s", automatic.String())
+	assert.Contains(t, automatic.String(), `"lines":["hello","world"]`)
+	assert.Contains(t, automatic.String(), `"mod":"better_ui"`)
+	assert.Contains(t, automatic.String(), `"game":"darktide"`)
+	assert.Contains(t, automatic.String(), `"dropped":2`)
+
+	var editor strings.Builder
+	editorLogger := zerolog.New(&editor)
+	h = NewHookExecutor(HookExecutorDeps{Events: &collectingEvents{}, Logger: &editorLogger})
+	require.NoError(t, h.Register(&recordingRunner{language: domain.LangLua, observe: output}), "register")
+
+	require.NoError(t, h.Execute(
+		context.Background(),
+		[]domain.HookScript{{Language: domain.LangLua, Content: "x"}},
+		hookMod(modDir),
+	))
+
+	assert.NotContains(t, editor.String(), `"op":"hook.script"`, "editor run must not duplicate its console output into the log")
+}
+
 func TestExecutePublishesFailed(t *testing.T) {
 	_, modDir := newGameDirs(t)
 	events := &collectingEvents{}
@@ -1697,7 +1769,7 @@ func TestRunnerIsInvokedUnderTestWithoutRace(t *testing.T) {
 }
 
 // The allowlist is the manager's security boundary; a test pins its contents so
-// adding a variable is a deliberate act rather than an accident.
+// adding a variable is a deliberate act, not an accident.
 func TestHookEnvAllowlistHasNoSecrets(t *testing.T) {
 	for _, name := range hookEnvAllowlist {
 		upper := strings.ToUpper(name)

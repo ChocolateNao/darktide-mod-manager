@@ -130,3 +130,13 @@ func TestExecutorReportsUnknownScriptLanguage(t *testing.T) {
 		err,
 	)
 }
+
+func TestValidateRejectsASyntaxError(t *testing.T) {
+	err := wired(t).Validate(domain.HookScript{
+		Language: domain.LangJS,
+		Content:  "function (",
+	}, nil)
+
+	require.Error(t, err, "a script that cannot compile validated")
+	assert.Equal(t, appErrors.ErrCodeHookInvalid, appErrors.CodeOf(err))
+}

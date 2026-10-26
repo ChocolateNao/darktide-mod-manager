@@ -182,3 +182,22 @@ func TestRunnerSupportsOrdinaryLua(t *testing.T) {
 	)
 	require.NoError(t, err, "Run: %v", err)
 }
+
+func TestCheckRejectsASyntaxError(t *testing.T) {
+	err := NewRunner(host.Providers{}).Check(domain.HookScript{
+		Language: domain.LangLua,
+		Content:  "if",
+	})
+
+	require.Error(t, err, "an unparseable script passed Check")
+	assert.Equal(t, appErrors.ErrCodeHookInvalid, appErrors.CodeOf(err))
+}
+
+func TestCheckAcceptsAValidScript(t *testing.T) {
+	err := NewRunner(host.Providers{}).Check(domain.HookScript{
+		Language: domain.LangLua,
+		Content:  "print('hi')",
+	})
+
+	require.NoError(t, err, "Check: %v", err)
+}

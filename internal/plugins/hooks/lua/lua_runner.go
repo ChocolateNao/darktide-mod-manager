@@ -42,6 +42,20 @@ func NewRunnerWithSink(sink LogSink, providers host.Providers) *Runner {
 // Language identifies the scripts this runner handles.
 func (r *Runner) Language() domain.ScriptLanguage { return domain.LangLua }
 
+// Check compiles the script without running it, so a syntax error reaches the
+// editor before a save.
+func (r *Runner) Check(script domain.HookScript) error {
+	st := lua.NewState()
+	defer st.Close()
+
+	if _, err := st.LoadString(script.Content); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeHookInvalid,
+			"lua syntax error: %v", err)
+	}
+
+	return nil
+}
+
 // Run evaluates the script in a fresh state. gopher-lua has no instruction hook,
 // so there is no separate step budget: the executor's deadline is enforced by
 // the state's context, which the VM consults on every instruction.
@@ -96,6 +110,10 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 	runErr := st.DoString(source)
 
 	lines, dropped := h.Logs()
+	if hook.Output != nil {
+		hook.Output(lines, dropped)
+	}
+
 	if r != nil && r.sink != nil {
 		r.sink(lines, dropped)
 	}

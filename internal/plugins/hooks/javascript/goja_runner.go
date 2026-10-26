@@ -36,6 +36,17 @@ func NewRunnerWithSink(sink LogSink, providers host.Providers) *Runner {
 
 func (r *Runner) Language() domain.ScriptLanguage { return domain.LangJS }
 
+// Check compiles the script without running it, so a syntax error reaches the
+// editor before a save.
+func (r *Runner) Check(script domain.HookScript) error {
+	if _, err := goja.Compile("hook.js", script.Content, false); err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeHookInvalid,
+			"javascript syntax error: %v", err)
+	}
+
+	return nil
+}
+
 // Run evaluates the script in a fresh VM. The context is enforced with an
 // interrupt watcher: Goja only observes an interrupt at a bytecode boundary, so
 // a tight loop needs one.
@@ -94,8 +105,13 @@ func (r *Runner) Run(ctx context.Context, hook services.PreparedHook, mod *domai
 	_, runErr := vm.RunString(source)
 	vm.ClearInterrupt()
 
+	lines, dropped := h.Logs()
+
+	if hook.Output != nil {
+		hook.Output(lines, dropped)
+	}
+
 	if r != nil && r.sink != nil {
-		lines, dropped := h.Logs()
 		r.sink(lines, dropped)
 	}
 
