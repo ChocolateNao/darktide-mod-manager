@@ -48,6 +48,7 @@ func fullMod() *domain.Mod {
 		Dependencies:  []string{"lib_a", "lib_b"},
 		ConflictsWith: []string{"worse_ui"},
 		Tags:          []string{"hud", "ui"},
+		Issues:        []string{domain.IssueMultipleManifests},
 		Enabled:       true,
 		InstalledAt:   fixedTime.Add(-72 * time.Hour),
 		UpdatedAt:     fixedTime,
@@ -104,6 +105,7 @@ func assertModEqual(t *testing.T, want, got *domain.Mod) {
 		{"Dependencies", want.Dependencies, got.Dependencies},
 		{"ConflictsWith", want.ConflictsWith, got.ConflictsWith},
 		{"Tags", want.Tags, got.Tags},
+		{"Issues", want.Issues, got.Issues},
 	} {
 		assert.Equal(
 			t,

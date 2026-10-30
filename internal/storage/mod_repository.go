@@ -13,7 +13,7 @@ import (
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
-// Sort keys accepted by ListOrdered. Anything else is rejected rather than
+// Sort keys accepted by ListOrdered. Anything else is rejected, never
 // interpolated, so a caller cannot smuggle SQL through a sort parameter.
 const (
 	SortPriority     = "priority"
@@ -171,7 +171,7 @@ func (r *sqliteModRepository) Close() error {
 const modColumns = `id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
 	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name,
-	source_url, download_url, update_url`
+	source_url, download_url, update_url, issues`
 
 // Save upserts a mod. A zero UpdatedAt becomes "now"; a zero InstalledAt takes that value on
 // insert but is left alone on update, so an update that says nothing about the install time
@@ -230,6 +230,11 @@ func (r *sqliteModRepository) Save(ctx context.Context, m *domain.Mod) error {
 		return appErrors.Wrap(err, appErrors.ErrCodeInvalidMod, "encode tags of %q", id)
 	}
 
+	issues, err := encodeStringList(m.Issues)
+	if err != nil {
+		return appErrors.Wrap(err, appErrors.ErrCodeInvalidMod, "encode issues of %q", id)
+	}
+
 	sourceData, err := encodeJSONObject(m.SourceData)
 	if err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeInvalidMod, "encode source data of %q", id)
@@ -244,8 +249,8 @@ func (r *sqliteModRepository) Save(ctx context.Context, m *domain.Mod) error {
 INSERT INTO mods (id, game_id, name, version, author, description, source_id, game_version,
 	dependencies, conflicts_with, tags, source_data, hooks, local_path, hash,
 	enabled, installed_at, updated_at, priority, install_mode, mod_folder_name,
-	source_url, download_url, update_url)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	source_url, download_url, update_url, issues)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
 	game_id        = excluded.game_id,
 	name           = excluded.name,
@@ -269,13 +274,14 @@ ON CONFLICT(id) DO UPDATE SET
 	mod_folder_name = excluded.mod_folder_name,
 	source_url     = excluded.source_url,
 	download_url   = excluded.download_url,
-	update_url     = excluded.update_url`
+	update_url     = excluded.update_url,
+	issues         = excluded.issues`
 
 	_, err = r.db.ExecContext(ctx, query,
 		id, m.GameID, m.Name, m.Version, m.Author, m.Description, m.SourceID, m.GameVersion,
 		deps, conflicts, tags, sourceData, hooks, m.LocalPath, m.Hash,
 		boolToInt(m.Enabled), formatTime(installedAt), formatTime(updatedAt), m.Priority,
-		m.InstallMode, m.ModFolderName, m.SourceURL, m.DownloadURL, m.UpdateURL)
+		m.InstallMode, m.ModFolderName, m.SourceURL, m.DownloadURL, m.UpdateURL, issues)
 	if err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "save mod %q: %v", id, err)
 	}
@@ -1136,14 +1142,14 @@ type rowScanner interface {
 }
 
 // scanMod reads one mods row into a domain.Mod. A corrupt JSON column fails the whole
-// read rather than being silently dropped: a mod that installs without its
+// read, not being silently dropped: a mod that installs without its
 // dependencies and hooks looks like a bug in the game instead of a bug in the file.
 func scanMod(row rowScanner) (*domain.Mod, error) {
 	var (
-		m                                            domain.Mod
-		deps, conflicts, tags, sourceData, hooksJSON string
-		installedAt, updatedAt                       string
-		enabled                                      int64
+		m                                                    domain.Mod
+		deps, conflicts, tags, issues, sourceData, hooksJSON string
+		installedAt, updatedAt                               string
+		enabled                                              int64
 	)
 
 	err := row.Scan(
@@ -1151,7 +1157,7 @@ func scanMod(row rowScanner) (*domain.Mod, error) {
 		&m.GameVersion,
 		&deps, &conflicts, &tags, &sourceData, &hooksJSON, &m.LocalPath, &m.Hash,
 		&enabled, &installedAt, &updatedAt, &m.Priority, &m.InstallMode, &m.ModFolderName,
-		&m.SourceURL, &m.DownloadURL, &m.UpdateURL)
+		&m.SourceURL, &m.DownloadURL, &m.UpdateURL, &issues)
 	if err != nil {
 		return nil, err
 	}
@@ -1181,6 +1187,16 @@ func scanMod(row rowScanner) (*domain.Mod, error) {
 			err,
 			appErrors.ErrCodeCacheCorrupt,
 			"decode tags of %q: %v",
+			m.ID,
+			err,
+		)
+	}
+
+	if m.Issues, err = decodeStringList(issues); err != nil {
+		return nil, appErrors.Wrap(
+			err,
+			appErrors.ErrCodeCacheCorrupt,
+			"decode issues of %q: %v",
 			m.ID,
 			err,
 		)
@@ -1263,8 +1279,8 @@ func SortKeys() []string {
 	}
 }
 
-// encodeStringList renders a string slice as a JSON array. A nil slice becomes "[]"
-// rather than "null", so a column read back later is unambiguous.
+// encodeStringList renders a string slice as a JSON array. A nil slice becomes "[]",
+// not "null", so a column read back later is unambiguous.
 func encodeStringList(values []string) (string, error) {
 	if values == nil {
 		return "[]", nil
@@ -1377,7 +1393,7 @@ func boolToInt(v bool) int64 {
 }
 
 // isForeignKeyViolation reports whether err came from the foreign key constraint.
-// modernc's driver renders the message rather than exporting a typed error, so the
+// modernc's driver renders the message, not exporting a typed error, so the
 // check is on text; the alternative — probing the schema — costs a query per insert.
 func isForeignKeyViolation(err error) bool {
 	if err == nil {

@@ -83,6 +83,46 @@ func TestHasRecognisesEveryNameAndOnlyFiles(t *testing.T) {
 	assert.False(t, IsName("mod.json"), "IsName is about the format, not about any file")
 }
 
+func TestLocatePrefersTheClosestManifest(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "mod.toml"), "[mod]\nid = \"root\"\n")
+	writeFile(t, filepath.Join(dir, "src", "manifest.toml"), "[mod]\nid = \"nested\"\n")
+
+	location, ok := Locate(dir)
+	require.True(t, ok, "Locate should find a manifest")
+	assert.Equal(t, "mod.toml", location.Name, "the root manifest wins")
+	assert.Equal(t, 0, location.Depth)
+	assert.Equal(t, []string{filepath.Join(dir, "src", "manifest.toml")}, location.Others)
+
+	m, err := Read(dir)
+	require.NoError(t, err, "Read")
+	assert.Equal(t, "root", m.Mod.ID)
+}
+
+func TestLocateFindsAManifestInASubdirectory(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "payload", "mod.toml"), "[mod]\nid = \"nested\"\n")
+
+	location, ok := Locate(dir)
+	require.True(t, ok, "Locate should look through the tree")
+	assert.Equal(t, 1, location.Depth)
+	assert.Empty(t, location.Others)
+
+	m, err := Read(dir)
+	require.NoError(t, err, "Read")
+	assert.Equal(t, "nested", m.Mod.ID)
+}
+
+func TestLocateUsesNamePrecedenceAtTheSameDepth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "a", "metadata.toml"), "[mod]\nid = \"metadata\"\n")
+	writeFile(t, filepath.Join(dir, "b", "manifest.toml"), "[mod]\nid = \"manifest\"\n")
+
+	location, ok := Locate(dir)
+	require.True(t, ok, "Locate should find both manifests")
+	assert.Equal(t, "manifest.toml", location.Name, "Names order breaks a depth tie")
+}
+
 func TestHooksCoverEveryPhase(t *testing.T) {
 	var body strings.Builder
 

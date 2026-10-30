@@ -29,6 +29,10 @@ func (m ModInstallMode) Valid() bool {
 // String implements fmt.Stringer.
 func (m ModInstallMode) String() string { return string(m) }
 
+// IssueMultipleManifests marks a payload carrying more than one recognised
+// manifest. The one closest to the mod root is read; the rest are ignored.
+const IssueMultipleManifests = "multiple_manifests"
+
 // Mod is an installed mod as tracked by the manager. Where it came from
 // (SourceID, SourceData) is kept apart from where it lives (LocalPath) so the same
 // struct can describe both a remote listing and an installed mod.
@@ -55,8 +59,13 @@ type Mod struct {
 	Dependencies  []string       `json:"dependencies,omitempty"`
 	ConflictsWith []string       `json:"conflicts_with,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`
-	Priority      int            `json:"priority"`
-	Enabled       bool           `json:"enabled"`
+	// Issues are stable codes for non-fatal problems found in the payload, so
+	// the table can warn without hiding the mod.
+	Issues   []string `json:"issues,omitempty"`
+	Priority int      `json:"priority"`
+	Enabled  bool     `json:"enabled"`
+	// External marks a mod the manager found in the game folder but does not own.
+	External bool `json:"external"`
 }
 
 // ModFile is one file belonging to an installed mod. StoredPath is absolute;
@@ -82,6 +91,7 @@ func (m *Mod) Clone() *Mod {
 	out.ConflictsWith = cloneStrings(m.ConflictsWith)
 
 	out.Tags = cloneStrings(m.Tags)
+	out.Issues = cloneStrings(m.Issues)
 	if m.SourceData != nil {
 		out.SourceData = make(map[string]any, len(m.SourceData))
 		maps.Copy(out.SourceData, m.SourceData)
@@ -165,9 +175,7 @@ const (
 
 // ConflictReport is a single detected conflict between two mods.
 type ConflictReport struct {
-	// ID is the identity the resolution path takes. A field rather than a
-	// method because a method does not serialise, and a bridge caller has
-	// nothing but the JSON to refer back to.
+	// ID is the identity the resolution path takes.
 	ID             string           `json:"id"`
 	Type           ConflictType     `json:"type"`
 	ModA           *Mod             `json:"mod_a,omitempty"`

@@ -7,8 +7,10 @@
 package manifest
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -28,8 +30,122 @@ var Names = []string{"mod.toml", "manifest.toml", "metadata.toml"}
 // folds case: on a case-insensitive filesystem a mod author may well have
 // written "Mod.TOML", and shipping that into the game folder helps nobody.
 func IsName(name string) bool {
-	for _, candidate := range Names {
+	return nameRank(name) < len(Names)
+}
+
+// nameRank is a manifest file's position in Names, or len(Names) when it is not
+// one. Lower wins when two manifests sit at the same depth.
+func nameRank(name string) int {
+	for i, candidate := range Names {
 		if strings.EqualFold(name, candidate) {
+			return i
+		}
+	}
+
+	return len(Names)
+}
+
+// Location is where a mod's manifest was found. Depth counts directory levels
+// below the folder that was searched. Others holds every other manifest under
+// that folder, so a caller can flag a payload that carries more than one.
+type Location struct {
+	Name   string
+	Path   string
+	Depth  int
+	Others []string
+}
+
+// Locate finds the manifest a mod folder is read from, looking through its whole
+// tree: a payload often keeps mod.toml beside the files rather than at the top.
+// The file closest to dir wins, and manifests at the same depth follow Names
+// order. A *directory* named mod.toml is not a manifest.
+func Locate(dir string) (Location, bool) {
+	type match struct {
+		path  string
+		name  string
+		depth int
+	}
+
+	var matches []match
+
+	_ = filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			// An unreadable subdirectory must not hide the rest of the mod.
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+
+			return nil
+		}
+
+		if entry.IsDir() || !IsName(entry.Name()) {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return nil
+		}
+
+		matches = append(matches, match{
+			path:  path,
+			name:  entry.Name(),
+			depth: strings.Count(rel, string(filepath.Separator)),
+		})
+
+		return nil
+	})
+
+	if len(matches) == 0 {
+		return Location{}, false
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].depth != matches[j].depth {
+			return matches[i].depth < matches[j].depth
+		}
+
+		if left, right := nameRank(matches[i].name), nameRank(matches[j].name); left != right {
+			return left < right
+		}
+
+		return matches[i].path < matches[j].path
+	})
+
+	chosen := matches[0]
+	others := make([]string, 0, len(matches)-1)
+	for _, other := range matches[1:] {
+		others = append(others, other.path)
+	}
+
+	return Location{
+		Name:   chosen.name,
+		Path:   chosen.path,
+		Depth:  chosen.depth,
+		Others: others,
+	}, true
+}
+
+// Find returns the manifest file a mod folder is actually read from, and
+// whether the folder has one at all.
+func Find(dir string) (name, path string, ok bool) {
+	location, ok := Locate(dir)
+	if !ok {
+		return "", "", false
+	}
+
+	return location.Name, location.Path, true
+}
+
+// Has reports whether dir directly contains a recognised manifest file. Callers
+// that treat a folder as a container need this shallow answer; Read and Find
+// look through the whole tree.
+func Has(dir string) bool {
+	for _, candidate := range Names {
+		full := filepath.Join(dir, candidate)
+
+		info, err := os.Stat(full)
+		if err == nil && !info.IsDir() {
 			return true
 		}
 	}
@@ -37,50 +153,27 @@ func IsName(name string) bool {
 	return false
 }
 
-// Find returns the manifest file a mod folder is actually read from, and
-// whether the folder has one at all. A *directory* named mod.toml does not
-// count: that is a folder the author made, not a manifest.
-func Find(dir string) (name, path string, ok bool) {
-	for _, candidate := range Names {
-		full := filepath.Join(dir, candidate)
-
-		info, err := os.Stat(full)
-		if err == nil && !info.IsDir() {
-			return candidate, full, true
-		}
-	}
-
-	return "", "", false
-}
-
-// Has reports whether dir directly contains a recognised manifest file.
-func Has(dir string) bool {
-	_, _, ok := Find(dir)
-
-	return ok
-}
-
-// Read parses the manifest of a mod folder, the first recognised file winning.
+// Read parses the manifest of a mod folder, the one closest to its root winning.
 //
 // Every field is optional: a manifest that only sets an id is a valid mod, and a
 // folder with no manifest at all is discovered under its folder name. That
 // leniency is the point — mod authors are not going to write perfect manifests,
 // and a reader that rejected incomplete ones would mostly report "nothing found".
 func Read(dir string) (*Manifest, error) {
-	_, path, ok := Find(dir)
+	location, ok := Locate(dir)
 	if !ok {
 		return &Manifest{}, nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(location.Path)
 	if err != nil {
-		return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "read manifest %q", path)
+		return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "read manifest %q", location.Path)
 	}
 
 	var m Manifest
 	if err := toml.Unmarshal(data, &m); err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidMod,
-			"parse manifest %q: %v", path, err)
+			"parse manifest %q: %v", location.Path, err)
 	}
 
 	// Hook languages are validated here, at parse time: a manifest naming an unknown
@@ -88,7 +181,7 @@ func Read(dir string) (*Manifest, error) {
 	// half-loading it.
 	if _, err := m.DomainHooks(); err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidMod,
-			"parse manifest %q: %v", path, err)
+			"parse manifest %q: %v", location.Path, err)
 	}
 
 	return &m, nil
