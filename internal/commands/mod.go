@@ -193,6 +193,17 @@ func (c *ModCommands) UninstallModWithOptions(id string, opts api.UninstallOptio
 	return nil
 }
 
+// TrashAvailable tells the delete dialog whether it can offer "move to trash".
+func (c *ModCommands) TrashAvailable() bool {
+	client, _, cancel, err := c.ready()
+	if err != nil {
+		return false
+	}
+	defer cancel()
+
+	return client.TrashAvailable()
+}
+
 func (c *ModCommands) EnableMod(id string) error {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
