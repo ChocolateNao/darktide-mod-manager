@@ -62,6 +62,7 @@ type modView struct {
 	Priority      int      `json:"priority,omitempty"`
 	Hooks         int      `json:"hooks,omitempty"`
 	Enabled       bool     `json:"enabled"`
+	External      bool     `json:"external,omitempty"`
 }
 
 func newModView(mod api.Mod) modView {
@@ -78,16 +79,19 @@ func newModView(mod api.Mod) modView {
 		Hooks:         mod.Hooks.Count(),
 		InstallMode:   string(mod.InstallMode),
 		ModFolderName: mod.ModFolderName,
+		External:      mod.External,
 	}
 }
 
 func newModListCommand(s *session) *cobra.Command {
-	return &cobra.Command{
+	var page, pageSize int
+
+	command := &cobra.Command{
 		Use:   "list",
 		Short: "List installed mods",
 		Long: "List the installed mods, enabled ones first and then in load order.\n" +
 			"That order is the one the game will read them in, which is why it is\n" +
-			"the default rather than alphabetical.",
+			"the default, not alphabetical.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := s.client(cmd.Context())
@@ -100,18 +104,69 @@ func newModListCommand(s *session) *cobra.Command {
 				return err
 			}
 
-			table := NewTable("ID", "VERSION", "SOURCE", "STATE", "NAME")
-
 			views := make([]modView, 0, len(mods))
 			for _, mod := range mods {
-				table.Add(mod.ID, orDash(mod.Version), orDash(mod.SourceID),
-					modState(mod), Clip(mod.Name))
 				views = append(views, newModView(mod))
 			}
 
-			return s.writeJSONOrTable(s.env.Out, views, table, "No mods are installed.")
+			if s.opts.asJSON {
+				return writeJSON(s.env.Out, views)
+			}
+
+			if len(mods) == 0 {
+				_, err := fmt.Fprintln(s.env.Out, "No mods are installed.")
+
+				return err
+			}
+
+			start, end, pages := pageBounds(len(mods), page, pageSize)
+			if start < 0 {
+				return appErrors.New(appErrors.ErrCodeInvalidArgument,
+					"page %d is outside the %d available", page, pages)
+			}
+
+			table := NewTable("ID", "VERSION", "SOURCE", "STATE", "NAME")
+
+			for _, mod := range mods[start:end] {
+				table.Add(mod.ID, orDash(mod.Version), orDash(mod.SourceID),
+					modState(mod), Clip(mod.Name))
+			}
+
+			if err := table.Render(s.env.Out); err != nil {
+				return err
+			}
+
+			if pages > 1 {
+				_, err := fmt.Fprintf(s.env.Out, "\nPage %d/%d (%d mods)\n", page, pages, len(mods))
+
+				return err
+			}
+
+			return nil
 		},
 	}
+	command.Flags().IntVar(&page, "page", 1, "page to print, 1-based")
+	command.Flags().IntVar(&pageSize, "page-size", 50, "rows per page; 0 prints every mod")
+
+	return command
+}
+
+// pageBounds returns the half-open slice for a page, or start == -1 when the
+// page is outside the data.
+func pageBounds(total, page, pageSize int) (int, int, int) {
+	if pageSize <= 0 {
+		return 0, total, 1
+	}
+
+	pages := (total + pageSize - 1) / pageSize
+	if page < 1 || page > pages {
+		return -1, -1, pages
+	}
+
+	start := (page - 1) * pageSize
+	end := min(start+pageSize, total)
+
+	return start, end, pages
 }
 
 func newModShowCommand(s *session) *cobra.Command {
@@ -173,8 +228,8 @@ func newModInstallCommand(s *session) *cobra.Command {
 		Use:   "install <source> <mod>",
 		Short: "Install a mod from a source",
 		Long: "Install a mod by source id and mod id.\n\n" +
-			"The source decides which version exists, so --version is a check\n" +
-			"rather than a request: asking for a version the source does not\n" +
+			"The source decides which version exists, so --version is a check,\n" +
+			"not a request: asking for a version the source does not\n" +
 			"offer is refused instead of installing the newest one, because\n" +
 			"quietly installing something other than what was asked for is worse\n" +
 			"than an error.\n\n" +
@@ -245,7 +300,7 @@ func newModInstallCommand(s *session) *cobra.Command {
 }
 
 func newModUninstallCommand(s *session) *cobra.Command {
-	var purge bool
+	var purge, permanent bool
 
 	command := &cobra.Command{
 		Use:     "uninstall <mod>",
@@ -258,10 +313,12 @@ func newModUninstallCommand(s *session) *cobra.Command {
 				return err
 			}
 
+			trash := !permanent && client.TrashAvailable()
+
 			if err := client.Uninstall(
 				cmd.Context(),
 				args[0],
-				api.UninstallOptions{PurgeCache: purge},
+				api.UninstallOptions{PurgeCache: purge, Trash: trash},
 			); err != nil {
 				return err
 			}
@@ -272,6 +329,8 @@ func newModUninstallCommand(s *session) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&purge, "purge", false, "also delete the cached archive")
+	command.Flags().BoolVar(&permanent, "permanent", false,
+		"delete an external mod instead of moving it to the trash")
 
 	return command
 }
@@ -821,6 +880,14 @@ func resolutionNames() string {
 }
 
 func modState(mod api.Mod) string {
+	if mod.External {
+		if mod.Enabled {
+			return "external"
+		}
+
+		return "external, disabled"
+	}
+
 	if mod.Enabled {
 		return "enabled"
 	}
