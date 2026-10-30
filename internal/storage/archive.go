@@ -14,6 +14,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
+
+	zlog "github.com/rs/zerolog/log"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
@@ -123,6 +126,8 @@ func (e *ArchiveExtractor) Extract(
 	ctx context.Context,
 	archivePath, destDir string,
 ) (ExtractionResult, error) {
+	start := time.Now()
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -176,7 +181,27 @@ func (e *ArchiveExtractor) Extract(
 		return ExtractionResult{}, err
 	}
 
-	return state.result(), nil
+	result := state.result()
+
+	if skipped := len(result.Skipped); skipped > 0 {
+		// Details travel back in result; keep one Warn line here, not per entry.
+		zlog.Warn().
+			Str("op", "archive-extract").
+			Str("path", archivePath).
+			Int("count", skipped).
+			Msg("archive entries skipped during extraction")
+	}
+
+	zlog.Info().
+		Str("op", "archive-extract").
+		Str("path", archivePath).
+		Str("dest", destDir).
+		Int("files", len(result.Files)).
+		Int("skipped", len(result.Skipped)).
+		Dur("duration", time.Since(start)).
+		Msg("archive extracted")
+
+	return result, nil
 }
 
 // detectArchiveKind picks the reader for a path. Magic bytes are checked before
@@ -292,7 +317,7 @@ func (s *extractState) result() ExtractionResult {
 // letters, UNC prefixes, and any ".." that climbs above the root.
 func safeRelPath(name string) (string, bool) {
 	// Archives built on Windows may use backslashes, and treating them as
-	// separators means "..\..\evil.dll" is caught rather than becoming one file.
+	// separators means "..\..\evil.dll" is caught, not becoming one file.
 	slashed := strings.ReplaceAll(name, "\\", "/")
 	if strings.TrimSpace(slashed) == "" {
 		return "", false
@@ -433,7 +458,7 @@ func (s *extractState) writeFile(
 
 // trySymlink re-creates a link entry only when its resolved target stays inside the
 // destination: a link to /etc/passwd is the archive equivalent of "../", and unlike a plain
-// file it survives a later move of the mod folder. A refusal is reported rather than fatal.
+// file it survives a later move of the mod folder. A refusal is reported, not fatal.
 func (s *extractState) trySymlink(rel, target string) (ok bool, reason string, err error) {
 	destPath, err := s.resolve(rel)
 	if err != nil {
@@ -530,6 +555,8 @@ func (s *extractState) zip(ctx context.Context, archivePath string) error {
 		if err != nil {
 			// A single unreadable member is skipped; the rest of the mod is still
 			// worth installing and the user is told what is missing.
+			zlog.Warn().Str("op", "archive-extract").
+				Str("entry", entry.Name).Msg("archive entry could not be read, skipped")
 			s.skip(entry.Name, "entry could not be read")
 			continue
 		}

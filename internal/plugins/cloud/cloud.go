@@ -51,8 +51,7 @@ func Build(id string, opts map[string]string) (domain.CloudProvider, error) {
 }
 
 // RegisterConfigured builds every provider the configuration names and registers
-// them on the registry. Incomplete configs are skipped rather than failing the
-// wiring: a share to a provider the user never set up is a dead share.
+// them on the registry.
 func RegisterConfigured(
 	registry *services.CloudRegistry,
 	cfg domain.CloudSharingConfig,
@@ -65,14 +64,19 @@ func RegisterConfigured(
 	for id, opts := range cfg.Providers {
 		provider, err := Build(id, opts)
 		if err != nil {
-			logger.Warn().Str("provider", id).Err(err).Msg("cloud provider not built")
+			logger.Warn().Str("op", "cloud-share").Str("provider", id).Err(err).Msg("cloud provider not built")
 			continue
 		}
 
 		if err := registry.Register(provider); err != nil {
-			logger.Warn().Str("provider", id).Err(err).Msg("cloud provider not registered")
+			logger.Warn().Str("op", "cloud-share").Str("provider", id).Err(err).Msg("cloud provider not registered")
 			continue
 		}
+
+		logger.Info().
+			Str("op", "cloud-provider-register").
+			Str("provider", id).
+			Msg("cloud provider registered")
 	}
 
 	return nil

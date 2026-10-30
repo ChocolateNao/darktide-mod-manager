@@ -76,7 +76,7 @@ func (s *ConfigStore) Load() (*domain.Config, error) {
 }
 
 // decodeConfig parses configuration bytes, mapping every failure onto the typed
-// invalid-config code. Whitespace-only content is an empty document rather than an
+// invalid-config code. Whitespace-only content is an empty document, not an
 // error: a file truncated to nothing is still recoverable by defaults, whereas a
 // half-written object is not, and the caller deserves to hear about it.
 func decodeConfig(data []byte) (*domain.Config, error) {
@@ -165,7 +165,7 @@ func SaveConfig(path string, cfg *domain.Config) error {
 }
 
 // equalConfig compares two configurations by their canonical JSON form. Using the
-// encoding rather than field-by-field comparison means a new field is covered the
+// encoding, not field-by-field comparison means a new field is covered the
 // moment it is added, and it cannot be forgotten here.
 func equalConfig(a, b *domain.Config) bool {
 	if a == nil || b == nil {

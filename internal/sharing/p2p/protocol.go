@@ -38,10 +38,7 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/crypto"
 )
 
-// ProtocolVersion is the version both peers must agree on. It travels in the
-// handshake rather than being implied by the link format, so a manager which
-// predates a framing change can refuse the session with a clear message instead
-// of misreading the first frame it is sent.
+// ProtocolVersion is the version both peers must agree on.
 const ProtocolVersion = 1
 
 // Fixed field widths, in bytes.
@@ -55,7 +52,7 @@ const (
 // is 4 bytes wide. The largest legitimate value is a manifest for a large share,
 // still tens of kilobytes, so a megabyte is comfortably above that and far below
 // the point where one frame could exhaust memory; a peer announcing a larger
-// field is treated as hostile rather than accommodated. Fields with a 2-byte
+// field is treated as hostile, not accommodated. Fields with a 2-byte
 // prefix are bounded by that prefix instead.
 const maxFieldBytes = 1 << 20
 
@@ -72,10 +69,10 @@ const (
 	labelHelloAck = "dmm/p2p/hello-ack/v1"
 )
 
-// Sentinel errors. They are distinct values rather than formatted messages so
+// Sentinel errors. They are distinct values, not formatted messages so
 // that a caller can tell a rejected handshake from a truncated frame without
-// matching text, and so that the error surfaced to a user names the problem
-// rather than a byte offset.
+// matching text, and so that the error surfaced to a user names the problem,
+// not a byte offset.
 var (
 	// ErrFrameTruncated means a frame ended before its declared fields did.
 	ErrFrameTruncated = errors.New("p2p: frame is shorter than its header claims")
@@ -126,7 +123,7 @@ const (
 	// FrameHelloAck answers it and proves the answerer holds the passphrase.
 	FrameHelloAck FrameType = 0x02
 	// FrameManifest restates what is about to be transferred, so both ends
-	// agree on the inventory rather than each trusting its own copy.
+	// agree on the inventory.
 	FrameManifest FrameType = 0x03
 	// FrameFileStart announces one archive. Sender only.
 	FrameFileStart FrameType = 0x04
@@ -181,8 +178,8 @@ func (t FrameType) String() string {
 	}
 }
 
-// HelloFrame proves the sender holds the session key. It carries the offer id
-// rather than relying on the channel being the one that was negotiated: the offer
+// HelloFrame proves the sender holds the session key. It carries the offer id,
+// not relying on the channel being the one that was negotiated: the offer
 // id is what the user pasted, so binding the handshake to it means a data channel
 // reached by any other route cannot be mistaken for this share.
 type HelloFrame struct {
@@ -324,8 +321,8 @@ func BuildHello(key []byte, role Role, offerID string) (*HelloFrame, error) {
 // HelloAckFrame proves the receiver holds the session key. It echoes the sender's
 // nonce and adds one of its own: echoing alone would authenticate the sender but
 // leave the receiver anonymous, since anyone who could observe the sender's frame
-// could answer it, and the second nonce makes the acknowledgement a response
-// rather than a replay.
+// could answer it, and the second nonce makes the acknowledgement a response,
+// not a replay.
 type HelloAckFrame struct {
 	OfferID     string
 	SenderNonce []byte
@@ -419,7 +416,7 @@ func (a *HelloAckFrame) tag(key []byte) []byte {
 }
 
 // Verify reports whether the frame was produced by a holder of the session key.
-// senderNonce is the nonce from the HELLO this answers; passing it in rather than
+// senderNonce is the nonce from the HELLO this answers; passing it in, not
 // reading it from the frame is what makes the check a response, because a captured
 // HELLO_ACK replayed into a later session carries the old nonce and fails here.
 func (a *HelloAckFrame) Verify(key []byte, offerID string, senderNonce []byte) error {
@@ -533,7 +530,7 @@ func putSize(size int64) (uint64, error) {
 // putCount converts a file count for the wire. A count always comes from a
 // manifest, and a manifest is itself length-bounded by the frame that carried it,
 // so the conversion cannot overflow in practice; it is checked anyway so that a
-// future limit change fails loudly here rather than as a silently wrapped count.
+// future limit change fails loudly here, not as a silently wrapped count.
 func putCount(count int) (uint32, error) {
 	if count < 0 || count > math.MaxUint32 {
 		return 0, fmt.Errorf("p2p: %d is not a usable file count", count)
@@ -622,7 +619,7 @@ func DecodeFileStart(payload []byte) (*FileStartFrame, error) {
 	return &FileStartFrame{FileID: string(fileID), Size: decoded, SHA256: sum}, nil
 }
 
-// ChunkFrame carries part of an archive. The offset is explicit rather than
+// ChunkFrame carries part of an archive. The offset is explicit, not
 // implied by the running total so a receiver can tell a reordered or duplicated
 // chunk from a correct one, which is the difference between detecting corruption
 // and silently writing a mangled archive.
@@ -642,7 +639,7 @@ func (c *ChunkFrame) Encode() []byte {
 }
 
 // DecodeChunk parses a CHUNK frame. The payload is whatever is left in the
-// message, so it is bounded by maxChunkBytes rather than maxFieldBytes.
+// message, so it is bounded by maxChunkBytes, not maxFieldBytes.
 func DecodeChunk(payload []byte) (*ChunkFrame, error) {
 	r := &reader{buf: payload}
 
@@ -803,10 +800,9 @@ func DecodeComplete(payload []byte) (*CompleteFrame, error) {
 }
 
 // TransferCompleteFrame is the receiver's confirmation that a transfer landed.
-// It deliberately repeats the same two numbers COMPLETE carried: the receiver is
-// not merely saying "I got something" but "I got exactly the files and the bytes
-// that were promised", which lets the sender treat a mismatch as a failure rather
-// than as a transfer that quietly differed from the offer.
+// It deliberately repeats the same two numbers COMPLETE carried, so the
+// receiver confirms it got exactly the files and the bytes that were promised,
+// and the sender treats a mismatch as a failure.
 type TransferCompleteFrame struct {
 	FileCount  uint32
 	TotalBytes int64
@@ -890,8 +886,8 @@ func (s *StatusFrame) Encode(typ FrameType) ([]byte, error) {
 	return w.bytes(), nil
 }
 
-// DecodeStatus parses an ABORT or ERROR frame. The expected type is passed in
-// rather than returned so a caller waiting for one cannot accept the other.
+// DecodeStatus parses an ABORT or ERROR frame. The expected type is passed in,
+// not returned so a caller waiting for one cannot accept the other.
 func DecodeStatus(payload []byte, want FrameType) (*StatusFrame, error) {
 	r := &reader{buf: payload}
 
@@ -931,7 +927,7 @@ func FrameTypeOf(payload []byte) (FrameType, error) {
 	return FrameType(payload[0]), nil
 }
 
-// writer assembles a frame. A byte slice rather than bytes.Buffer: a frame is
+// writer assembles a frame. A byte slice, not bytes.Buffer: a frame is
 // built once, measured once and sent once, and the append chain reads more like
 // the specification it implements than a sequence of Write calls would.
 type writer struct {

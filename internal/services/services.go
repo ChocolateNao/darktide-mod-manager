@@ -17,8 +17,7 @@ import (
 type ConfigStore interface {
 	// Path is the file the configuration is read from and written to.
 	Path() string
-	// Load returns the stored configuration. A missing file yields defaults
-	// rather than an error, so first run needs no special case.
+	// Load returns the stored configuration.
 	Load() (*domain.Config, error)
 	// Save replaces the stored configuration.
 	Save(cfg *domain.Config) error
@@ -42,7 +41,7 @@ type InstallationDetector interface {
 // DetectorFactory builds a detector for one registered game plus one game's
 // configuration snapshot.
 //
-// A function rather than a stored detector, because the configuration is re-read
+// A function, not a stored detector, because the configuration is re-read
 // on every lookup: a user who repoints the game in the UI must not need a restart
 // for detection to agree with the config file.
 type DetectorFactory func(

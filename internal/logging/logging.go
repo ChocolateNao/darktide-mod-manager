@@ -347,6 +347,20 @@ func (s *Service) Level() zerolog.Level { return s.level.Get() }
 // SetLevel changes the active severity without rebuilding any writer.
 func (s *Service) SetLevel(lvl zerolog.Level) { s.level.Set(lvl) }
 
+// Applied returns the configuration the writer stack currently runs with. It
+// reflects command-line overrides and runtime redaction edits, so it can differ
+// from the persisted config file.
+func (s *Service) Applied() Config {
+	if s == nil {
+		return Config{}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.cfg
+}
+
 // Directory is the resolved log directory, or "" when no file sink is active.
 func (s *Service) Directory() string {
 	if s == nil {
@@ -502,7 +516,7 @@ func (s *Service) rebuild() {
 // belongs to the sink gates so SetLevel stays a single atomic store.
 func newLogger(sinks []io.Writer) zerolog.Logger {
 	return zerolog.New(zerolog.SyncWriter(zerolog.MultiLevelWriter(sinks...))).
-		With().Timestamp().Str("app", appName).Logger()
+		With().Timestamp().Caller().Str("app", appName).Logger()
 }
 
 // NewBootstrap returns a throwaway logger for code that runs before the config
@@ -519,7 +533,7 @@ func NewBootstrap(w io.Writer, debug bool) *zerolog.Logger {
 		level = zerolog.DebugLevel
 	}
 
-	lg := zerolog.New(w).Level(level).With().Timestamp().Str("app", appName).Logger()
+	lg := zerolog.New(w).Level(level).With().Timestamp().Caller().Str("app", appName).Logger()
 
 	return &lg
 }
@@ -533,7 +547,7 @@ func NewConsoleOnly(debug bool) *zerolog.Logger {
 	}
 
 	lg := zerolog.New(newConsoleSink(os.Stderr, FormatText)).
-		Level(level).With().Timestamp().Str("app", appName).Logger()
+		Level(level).With().Timestamp().Caller().Str("app", appName).Logger()
 
 	return &lg
 }

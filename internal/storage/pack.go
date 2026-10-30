@@ -8,6 +8,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
+
+	zlog "github.com/rs/zerolog/log"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -15,7 +18,7 @@ import (
 
 // PackEntry is one file to place into a share archive. Name is the path the file
 // will carry inside the archive, written as given, so two mods each shipping one
-// are kept apart by the archive they sit in rather than by renaming contents.
+// are kept apart by the archive they sit in.
 type PackEntry struct {
 	Source string
 	Name   string
@@ -41,11 +44,13 @@ type PackResult struct {
 
 // PackArchive writes entries to destPath as a single zip archive and returns the inventory.
 //
-// The reported hash is of the archive file rather than the entries, so the recipient verifies
+// The reported hash is of the archive file, so the recipient verifies
 // the download in one pass; entry checksums are recorded because the mod index expects one
 // per file. The archive is written to a temporary file and moved into place, because a
 // partial one at destPath would be indistinguishable from a finished one.
 func PackArchive(ctx context.Context, destPath string, entries []PackEntry) (*PackResult, error) {
+	start := time.Now()
+
 	if destPath == "" {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no destination path given")
 	}
@@ -81,6 +86,14 @@ func PackArchive(ctx context.Context, destPath string, entries []PackEntry) (*Pa
 	if err := os.Rename(tmpName, destPath); err != nil {
 		return nil, fmt.Errorf("move the packed archive into place: %w", err)
 	}
+
+	zlog.Info().
+		Str("op", "archive-pack").
+		Str("path", destPath).
+		Int("entries", len(result.Files)).
+		Int64("bytes", result.TotalSize).
+		Dur("duration", time.Since(start)).
+		Msg("archive packed")
 
 	return result, nil
 }
@@ -142,7 +155,7 @@ func addZipEntry(ctx context.Context, zw *zip.Writer, entry PackEntry) (int64, s
 		Method: zip.Deflate,
 	}
 	// Stored mods are never meant to be executed from inside the archive, so the mode
-	// is fixed rather than copied: a source mod that happens to be executable
+	// is fixed: a source mod that happens to be executable
 	// should not install as one.
 	header.SetMode(0o644)
 

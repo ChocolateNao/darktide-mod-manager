@@ -23,9 +23,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// p2pRoleSender and p2pRoleRecipient are the two ends of a share. They are
-// strings rather than the protocol's Role byte because they end up in a session
-// record that a frontend renders verbatim.
+// p2pRoleSender and p2pRoleRecipient are the two ends of a share.
 const (
 	p2pRoleSender    = "sender"
 	p2pRoleRecipient = "recipient"
@@ -70,7 +68,7 @@ func shareEventFor(state domain.P2PShareState) EventType {
 }
 
 // P2PShareConfig is the transport configuration handed to every peer this service
-// creates. It wraps p2p.Config rather than copying its fields: the settings mean
+// creates. It wraps p2p.Config, not copying its fields: the settings mean
 // something only to the WebRTC layer, and duplicating them here would be a second
 // place to forget a knob. Per-share overrides are applied to a copy.
 type P2PShareConfig struct {
@@ -146,7 +144,7 @@ func NewP2PShareService(deps P2PShareServiceDeps) *P2PShareService {
 }
 
 // Close abandons every share in flight and removes its staging. It is registered
-// as a bundle cleanup rather than left to the process exiting: a desktop app that
+// as a bundle cleanup, not left to the process exiting: a desktop app that
 // restarts without exiting would leave every socket from the previous run open.
 func (s *P2PShareService) Close() {
 	if s == nil {
@@ -184,7 +182,7 @@ func (s *P2PShareService) CreateShare(
 		return nil, err
 	}
 
-	// Checked here rather than only when the recipient opens the link: a share of
+	// Checked here, not only when the recipient opens the link: a share of
 	// mods for a game this build does not know cannot succeed there either.
 	if _, known := games.Get(gameID); !known {
 		return nil, appErrors.New(appErrors.ErrCodeGameNotRegistered,
@@ -297,6 +295,7 @@ func (s *P2PShareService) CreateShare(
 	keepStaging = true
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", offer.OfferID).
 		Str("game_id", gameID).
 		Int("mod_count", len(mods)).
@@ -328,6 +327,7 @@ func (s *P2PShareService) PreviewOffer(
 	preview := buildP2PPreview(link)
 
 	s.logger.Debug().
+		Str("op", "p2p-share").
 		Str("offer_id", preview.OfferID).
 		Str("game_id", preview.GameID).
 		Int("mod_count", len(preview.Mods)).
@@ -403,6 +403,7 @@ func (s *P2PShareService) AcceptOffer(
 	s.store.add(s.newRecipientRecord(link, peer, destDir))
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", link.Offer.OfferID).
 		Str("game_id", link.Offer.GameID).
 		Str("receiver", receiverName).
@@ -414,12 +415,7 @@ func (s *P2PShareService) AcceptOffer(
 // RejectOffer declines a share, hands back the answer link so the sender can open
 // the connection, and delivers the refusal over it in the background.
 //
-// The answer link is returned rather than discarded, and that is why a refusal
-// works at all: the sender holds the connection offer, so without an answer it
-// never opens a data channel, and a refusal into a channel that has not opened is
-// indistinguishable from a peer that went away.
-//
-// It returns once the answer is sealed rather than blocking on delivery, because
+// It returns once the answer is sealed, not blocking on delivery, because
 // the caller has to be able to show the link. AwaitRejection waits for the outcome.
 func (s *P2PShareService) RejectOffer(
 	ctx context.Context,
@@ -499,13 +495,19 @@ func (s *P2PShareService) deliverRejection(
 	defer session.signal()
 	// The session is dropped either way: there are no archives to install, and a
 	// rejected share left in memory is one per link the user ever declined. The
-	// outcome goes on the session rather than the store, because signal() could
+	// outcome goes on the session, not the store, because signal() could
 	// lose the race against remove() and read a missing record as success.
 	if err != nil {
 		session.rejectErr = appErrors.New(appErrors.ErrCodeShareRevoked,
 			"the refusal did not reach the sender: %s", err)
 
 		s.store.mark(session.offerID, domain.P2PShareStateFailed, session.rejectErr.Error())
+		// Background goroutine: nothing receives this error unless the sender waits on it.
+		s.logger.Error().
+			Str("op", "p2p-share").
+			Str("offer_id", session.offerID).
+			Err(err).
+			Msg("failed to deliver the p2p rejection")
 
 		return
 	}
@@ -513,6 +515,7 @@ func (s *P2PShareService) deliverRejection(
 	s.store.mark(session.offerID, domain.P2PShareStateRejected, reason)
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", session.offerID).
 		Str("reason", reason).
 		Msg("p2p offer rejected")
@@ -544,7 +547,7 @@ func (s *P2PShareService) AwaitRejection(ctx context.Context, offerID string) er
 // SendShare completes a share the sender created: it applies the recipient's
 // answer and streams every archive. It blocks for the length of the transfer;
 // progress is published to the session record, so a frontend shows a moving bar
-// by polling GetShareSession rather than by receiving per-byte events.
+// by polling GetShareSession, not by receiving per-byte events.
 func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink string) error {
 	if s == nil {
 		return appErrors.ErrInvalidArgument
@@ -583,6 +586,7 @@ func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink str
 	s.store.mark(offerID, domain.P2PShareStateConnecting, "")
 
 	session := p2p.Session{Peer: rec.peer, Secret: rec.secret, Offer: rec.offer}
+	start := s.now()
 	transferErr := p2p.Send(ctx, session, rec.stageDir, s.progressReporter(offerID))
 
 	s.finish(offerID, transferErr)
@@ -592,9 +596,11 @@ func (s *P2PShareService) SendShare(ctx context.Context, offerID, answerLink str
 	}
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", offerID).
 		Int("file_count", len(rec.offer.Files)).
 		Int64("total_bytes", rec.totalSize).
+		Int64("duration_ms", s.now().Sub(start).Milliseconds()).
 		Msg("p2p share sent")
 
 	return nil
@@ -619,6 +625,7 @@ func (s *P2PShareService) AwaitShare(ctx context.Context, offerID string) error 
 	}
 
 	session := p2p.Session{Peer: rec.peer, Secret: rec.secret, Offer: rec.offer}
+	start := s.now()
 	transferErr := p2p.Receive(ctx, session, rec.stageDir, s.progressReporter(offerID))
 
 	s.finish(offerID, transferErr)
@@ -628,9 +635,11 @@ func (s *P2PShareService) AwaitShare(ctx context.Context, offerID string) error 
 	}
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", offerID).
 		Int("file_count", len(rec.offer.Files)).
 		Int64("total_bytes", rec.totalSize).
+		Int64("duration_ms", s.now().Sub(start).Milliseconds()).
 		Msg("p2p share received")
 
 	return nil
@@ -638,7 +647,7 @@ func (s *P2PShareService) AwaitShare(ctx context.Context, offerID string) error 
 
 // InstallShare installs a received share's archives.
 //
-// The hashes are recomputed here rather than trusted from the transfer: the
+// The hashes are recomputed here, not trusted from the transfer: the
 // archives have been sitting in a temporary directory since the transfer ended, and
 // this is the last point at which a substituted file can still be refused.
 //
@@ -676,6 +685,7 @@ func (s *P2PShareService) InstallShare(
 	sharedByArchive := sharedModsByArchive(rec.offer)
 
 	installed := make([]domain.Mod, 0, len(rec.offer.Files))
+	start := s.now()
 
 	for i := range rec.offer.Files {
 		file := rec.offer.Files[i]
@@ -700,7 +710,7 @@ func (s *P2PShareService) InstallShare(
 			shareInstallOptions(opts),
 		)
 		if err != nil {
-			s.logger.Warn().Str("mod", mod.Name).Err(err).Msg("install from p2p share failed")
+			s.logger.Warn().Str("op", "p2p-share").Str("mod", mod.Name).Err(err).Msg("install from p2p share failed")
 			return nil, err
 		}
 
@@ -713,9 +723,11 @@ func (s *P2PShareService) InstallShare(
 	s.store.remove(offerID, true)
 
 	s.logger.Info().
+		Str("op", "p2p-share").
 		Str("offer_id", offerID).
 		Str("game_id", rec.offer.GameID).
 		Int("installed_count", len(installed)).
+		Int64("duration_ms", s.now().Sub(start).Milliseconds()).
 		Msg("p2p share installed")
 
 	return installed, nil
@@ -739,7 +751,7 @@ func (s *P2PShareService) DiscardShare(_ context.Context, offerID string) error 
 
 	s.store.remove(offerID, true)
 
-	s.logger.Info().Str("offer_id", offerID).Msg("p2p share discarded")
+	s.logger.Info().Str("op", "p2p-share").Str("offer_id", offerID).Msg("p2p share discarded")
 
 	return nil
 }
@@ -765,7 +777,7 @@ func (s *P2PShareService) CancelShare(_ context.Context, offerID string) error {
 
 	s.store.remove(offerID, true)
 
-	s.logger.Info().Str("offer_id", offerID).Msg("p2p share cancelled")
+	s.logger.Info().Str("op", "p2p-share").Str("offer_id", offerID).Msg("p2p share cancelled")
 
 	return nil
 }
@@ -1171,7 +1183,7 @@ func sharedModsByArchive(offer domain.P2PShareOffer) map[string]domain.SharedMod
 }
 
 // buildInstalledMod turns an inventory entry into the mod the installer writes.
-// The upstream link is carried across rather than dropped: a mod that came from
+// The upstream link is carried across, not dropped: a mod that came from
 // somebody's share is still a mod from Nexus or GitHub, and keeping the source and
 // its update URL is what lets it be updated later without another share. A mod
 // with no upstream is recorded as "p2p-share", which no source plugin claims.
@@ -1294,7 +1306,7 @@ func (r *p2pShareRecord) snapshot(now time.Time) domain.P2PShareSession {
 		UpdatedAt:        r.updatedAt,
 	}
 
-	// The preview is copied rather than shared so a caller cannot mutate the stored
+	// The preview is copied so a caller cannot mutate the stored
 	// one while a running transfer writes to it.
 	if r.preview != nil {
 		preview := *r.preview
@@ -1315,7 +1327,7 @@ func (r *p2pShareRecord) snapshot(now time.Time) domain.P2PShareSession {
 
 // p2pSessionStore is the set of shares this process is part of.
 //
-// A map behind one mutex rather than a database: a peer connection cannot survive
+// A map behind one mutex, not a database: a peer connection cannot survive
 // a restart, so a persisted record would be a lie the moment the process came back.
 //
 // It owns event publishing because it owns every state transition; routing that

@@ -821,8 +821,6 @@ func TestVerifyAlwaysSucceeds(t *testing.T) {
 	assert.NoError(t, err, "Verify should never fail for a local payload, got %v", err)
 }
 
-// --- archiveEntry ----------------------------------------------------------
-
 func TestArchiveEntry(t *testing.T) {
 	cases := []struct {
 		path string

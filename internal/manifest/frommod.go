@@ -12,6 +12,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // FromMod projects an installed mod onto the manifest format.
@@ -46,9 +47,8 @@ func FromMod(mod *domain.Mod) *Manifest {
 
 // hooksFromMod converts the stored hook scripts back into manifest entries.
 //
-// Hooks are the one part of the database that a manifest *is* rather than merely
-// documents: dropping them would leave an installed mod that no longer runs its
-// own lifecycle scripts.
+// Hooks are the part of a manifest that actually runs: dropping them would
+// leave an installed mod that no longer executes its own lifecycle scripts.
 func hooksFromMod(hooks domain.ModHooks) Hooks {
 	var out Hooks
 
@@ -88,7 +88,7 @@ func hooksFromMod(hooks domain.ModHooks) Hooks {
 }
 
 // set assigns one phase's entries, mirroring Manifest.phaseEntries in reverse.
-// An unknown phase is ignored rather than panicking: domain.HookPhases is the
+// An unknown phase is ignored, not panicking: domain.HookPhases is the
 // authority on which phases exist, and a future phase added there without a
 // manifest field must not crash a write.
 func (h *Hooks) set(phase domain.HookPhase, entries []HookEntry) {
@@ -123,7 +123,7 @@ func (h *Hooks) set(phase domain.HookPhase, entries []HookEntry) {
 // nested objects, nulls — while TOML's `source_data` table is typed as strings
 // because it is read by people and by tools that have no business re-implementing
 // each source's schema. Scalars take their obvious spelling and anything
-// structured becomes JSON; nil becomes an empty string rather than being dropped,
+// structured becomes JSON; nil becomes an empty string, not being dropped,
 // because the key is part of what the source told us.
 func SourceDataStrings(in map[string]any) map[string]string {
 	if len(in) == 0 {
@@ -218,6 +218,8 @@ func Write(dir string, m *Manifest) (string, error) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return "", appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "write manifest %s", path)
 	}
+
+	zlog.Info().Str("op", "manifest-write").Str("path", path).Int("bytes", len(data)).Msg("manifest written")
 
 	return path, nil
 }

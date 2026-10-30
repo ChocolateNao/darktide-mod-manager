@@ -47,7 +47,7 @@ func normalizeGameID(gameID string) string {
 
 // RegisterSourceFactory records the constructor for a generic source id — one
 // available to every game. It is called from plugin init functions, so a
-// duplicate id is a programming error and is reported rather than overwritten.
+// duplicate id is a programming error and is reported, not overwritten.
 func RegisterSourceFactory(id string, factory SourceFactory) error {
 	key := strings.TrimSpace(id)
 	if key == "" {
@@ -176,7 +176,7 @@ func RegisteredGameFactoryIDs(gameID string) []string {
 // building anything. The registry uses it to tell "not installed" from
 // "installed but misconfigured"; internal/plugins/sources uses it to build every
 // registered source eagerly at start-up, so a misconfigured source shows in the
-// UI rather than only when the user first clicks it. Ids match case-insensitively.
+// UI, not only when the user first clicks it. Ids match case-insensitively.
 func SourceFactoryFor(id string) (SourceFactory, bool) {
 	key := normalizeSourceID(id)
 	if key == "" {
@@ -355,6 +355,13 @@ func (r *SourceRegistry) RebuildForGame(def domain.GameDefinition) {
 	r.game = def
 	r.instantiated = map[string]domain.ModSource{}
 	r.failures = map[string]error{}
+
+	if def != nil {
+		r.logger().Info().
+			Str("op", "source-rebuild").
+			Str("game", def.ID()).
+			Msg("rebuilt the sources for the game")
+	}
 }
 
 // activeGame returns the game this registry resolves for, or nil when none was
@@ -411,6 +418,11 @@ func (r *SourceRegistry) Register(source domain.ModSource) error {
 	r.sources[id] = source
 	delete(r.failures, id)
 
+	r.logger().Info().
+		Str("op", "source-register").
+		Str("source", id).
+		Msg("mod source registered")
+
 	return nil
 }
 
@@ -431,6 +443,12 @@ func (r *SourceRegistry) Unregister(id string) bool {
 	delete(r.failures, key)
 	// Authentication state is kept: the credentials did not change just because
 	// the source object was dropped, and forcing a re-login would be a regression.
+	if live {
+		r.logger().Info().
+			Str("op", "source-unregister").
+			Str("source", key).
+			Msg("mod source unregistered")
+	}
 	return live
 }
 
@@ -472,7 +490,7 @@ func (r *SourceRegistry) Get(id string) (domain.ModSource, error) {
 // InspectPath asks every registered source that can read the filesystem what it
 // sees at path. Sources are asked in registration order and the first recognition
 // wins, so the answer is deterministic. A source that is not a PathInspector is
-// skipped rather than asked and refused.
+// skipped, not asked and refused.
 func (r *SourceRegistry) InspectPath(
 	ctx context.Context,
 	path string,
@@ -583,7 +601,7 @@ func (r *SourceRegistry) factoryFor(key string) (SourceFactory, bool) {
 }
 
 // logger returns the attached logger without assuming it was set: a registry
-// built by NewSourceRegistry rather than the wiring path has none.
+// built by NewSourceRegistry, not the wiring path has none.
 func (r *SourceRegistry) logger() *zerolog.Logger {
 	if r == nil || r.log == nil {
 		return &nopLogger
@@ -605,7 +623,7 @@ func (r *SourceRegistry) rememberFailure(key string, err error) error {
 
 // List returns every source that can currently be resolved, sorted by id.
 //
-// Sources whose factory fails are skipped rather than aborting the list: a
+// Sources whose factory fails are skipped, not aborting the list: a
 // broken Nexus key must not stop the UI from showing Steam and Local.
 func (r *SourceRegistry) List() []domain.ModSource {
 	ids := r.IDs()
@@ -713,7 +731,7 @@ func (r *SourceRegistry) Has(id string) bool {
 }
 
 // Info describes one source. A source that cannot be built reports the
-// Authenticated/Enabled flags as false rather than being omitted.
+// Authenticated/Enabled flags as false, not being omitted.
 func (r *SourceRegistry) Info(id string) domain.ModSourceInfo {
 	key := normalizeSourceID(id)
 	return r.infoWith(key, r.configSnapshot())
@@ -729,7 +747,7 @@ func enabledByConfig(cfg domain.Config, id string) bool {
 
 // infoWith describes one source against an already-loaded configuration.
 //
-// Enabled comes from the configuration rather than from whether a source object
+// Enabled comes from the configuration, not from whether a source object
 // could be produced: a switched-off source is deliberately never built, so
 // reporting it as enabled would show a green tick next to something unused.
 func (r *SourceRegistry) infoWith(id string, cfg domain.Config) domain.ModSourceInfo {
@@ -878,6 +896,10 @@ func (r *SourceRegistry) Authenticate(
 	}
 
 	r.SetAuthenticated(id, true)
+	r.logger().Info().
+		Str("op", "source-auth").
+		Str("source", normalizeSourceID(id)).
+		Msg("mod source authenticated")
 
 	return nil
 }

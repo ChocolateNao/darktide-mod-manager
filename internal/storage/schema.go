@@ -17,6 +17,8 @@ import (
 	"time"
 
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+
+	zlog "github.com/rs/zerolog/log"
 	// Pure-Go SQLite: registers the "sqlite" database/sql driver. No CGO, so
 	// the manager cross-compiles for every platform Wails targets.
 	_ "modernc.org/sqlite"
@@ -110,6 +112,10 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	if err := addModsIssuesColumn(ctx, tx); err != nil {
+		return err
+	}
+
 	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := tx.ExecContext(ctx, stmt); err != nil {
 			return appErrors.Wrap(
@@ -142,7 +148,7 @@ func ApplySchema(ctx context.Context, db *sql.DB) error {
 }
 
 // addModsGameIDColumn upgrades a mods table created by a pre-multi-game build. A single
-// guarded ALTER rather than a versioned migration: the column carries a DEFAULT so it
+// guarded ALTER, not a versioned migration: the column carries a DEFAULT so it
 // cannot fail on populated tables, and the probe makes it a no-op on every database
 // this build creates, so the version is never bumped.
 func addModsGameIDColumn(ctx context.Context, tx *sql.Tx) error {
@@ -185,13 +191,15 @@ func addModsColumn(ctx context.Context, tx *sql.Tx, name, ddl string) error {
 		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "add mods.%s column", name)
 	}
 
+	zlog.Info().Str("op", "schema-migrate").Str("column", "mods."+name).Msg("schema column added")
+
 	return nil
 }
 
 // addModsSourceLinkColumns upgrades a mods table written before the manager remembered where a
 // mod came from. Without these columns a mod from a source that cannot be re-queried becomes
 // unreachable once the database moves machine: a share recipient never sees the manifest in
-// the mod folder. Three guarded ALTERs rather than a versioned migration, as in
+// the mod folder. Three guarded ALTERs, not a versioned migration, as in
 // addModsGameIDColumn.
 func addModsSourceLinkColumns(ctx context.Context, tx *sql.Tx) error {
 	columns := []struct {
@@ -221,13 +229,21 @@ func addModsSourceLinkColumns(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
+// addModsIssuesColumn upgrades a mods table written before the manager recorded
+// payload problems. A guarded ALTER, not a versioned migration, as in
+// addModsGameIDColumn.
+func addModsIssuesColumn(ctx context.Context, tx *sql.Tx) error {
+	return addModsColumn(ctx, tx, "issues",
+		"ALTER TABLE mods ADD COLUMN issues TEXT NOT NULL DEFAULT '[]'")
+}
+
 // OpenDB opens (creating if necessary) the manager database at path.
 //
 // An empty path or ":memory:" yields a database that lives inside one connection, so those
 // handles get a pool of exactly one: a pooled second connection would open a brand-new empty
 // database and every read would come back empty. On-disk databases get WAL journalling
-// (concurrent readers alongside one writer), a busy timeout so a competing writer waits
-// rather than fails, and enforced foreign keys.
+// (concurrent readers alongside one writer), a busy timeout so a competing writer waits,
+// not fails, and enforced foreign keys.
 func OpenDB(ctx context.Context, path string) (*sql.DB, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -320,6 +336,8 @@ func canceledError(err error) error {
 
 // Open initializes the database at path and applies the schema.
 func Open(ctx context.Context, path string) (*sql.DB, error) {
+	start := time.Now()
+
 	db, err := OpenDB(ctx, path)
 	if err != nil {
 		return nil, err
@@ -330,13 +348,22 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	// In-memory database tests open constantly; log only real state changes.
+	if !IsMemoryPath(path) {
+		zlog.Info().
+			Str("op", "database-open").
+			Str("path", path).
+			Dur("duration", time.Since(start)).
+			Msg("database opened")
+	}
+
 	return db, nil
 }
 
 // MemoryPath is the DSN fragment that asks for a private in-memory database.
 const MemoryPath = ":memory:"
 
-// IsMemoryPath reports whether path names a private in-memory database rather than a
+// IsMemoryPath reports whether path names a private in-memory database, not a
 // file: the empty string, ":memory:", and the URI spelling "file::memory:". Production
 // always passes a real path; the empty case is for tests and "--dry-run" flows.
 func IsMemoryPath(path string) bool {
@@ -366,7 +393,7 @@ func fileURI(absolute string) string {
 	// as a separator, which is the build under test.
 	slashed := strings.ReplaceAll(absolute, `\`, "/")
 
-	// The drive is matched explicitly rather than with filepath.VolumeName, which
+	// The drive is matched explicitly, not with filepath.VolumeName, which
 	// only knows volumes of the platform it was compiled for.
 	if windowsDrive.MatchString(absolute) {
 		// `C:\state` -> `/C:/state`. The leading slash is what keeps the
@@ -454,8 +481,9 @@ func firstLine(s string) string {
 
 func itoa(v int) string { return fmt.Sprintf("%d", v) }
 
-// formatTime renders t for storage. The zero time becomes the empty string rather than
-// year 1, so a caller scanning it into a string can tell "never set" from a real instant.
+// formatTime renders t for storage. The zero time becomes the empty string, not
+// year 1, so a caller scanning it into a string can tell "never set" from a
+// real instant.
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return ""

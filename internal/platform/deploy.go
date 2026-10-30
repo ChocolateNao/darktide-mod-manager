@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	zlog "github.com/rs/zerolog/log"
 
 	manifestpkg "github.com/ChocolateNao/darktide-mod-manager/internal/manifest"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
@@ -99,6 +102,10 @@ func (d *Deployer) ModeFor(preferred string) DeployMode {
 			return DeploySymlink
 		}
 
+		zlog.Warn().Str("op", "deploy-mode").
+			Str("preferred", domain.InstallMethodSymlink).
+			Msg("symlinks unavailable, install will copy mod files")
+
 		return DeployCopy
 	case domain.InstallMethodDirect:
 		return DeployCopy
@@ -118,6 +125,8 @@ func (d *Deployer) Deploy(srcDir, dstDir string) error {
 // Existing entries at dstDir are replaced, but entries the source no longer has
 // are left alone: a stale file there belongs to another mod or to the user.
 func (d *Deployer) DeployAs(srcDir, dstDir string, mode DeployMode) error {
+	start := time.Now()
+
 	if srcDir == "" || dstDir == "" {
 		return errors.New(
 			errors.ErrCodeInvalidMod,
@@ -174,6 +183,15 @@ func (d *Deployer) DeployAs(srcDir, dstDir string, mode DeployMode) error {
 			return err
 		}
 	}
+
+	zlog.Info().
+		Str("op", "deploy").
+		Str("mode", string(mode)).
+		Str("src", srcDir).
+		Str("dst", dstDir).
+		Int("entries", len(entries)).
+		Dur("duration", time.Since(start)).
+		Msg("mod folder deployed")
 
 	return nil
 }
@@ -252,6 +270,14 @@ func (d *Deployer) UndeployEntries(dstDir string, names []string) (int, error) {
 		}
 
 		removed++
+	}
+
+	if removed > 0 {
+		zlog.Info().
+			Str("op", "undeploy").
+			Str("dst", dstDir).
+			Int("removed", removed).
+			Msg("mod entries removed from game folder")
 	}
 
 	return removed, nil
@@ -392,6 +418,14 @@ func (d *Deployer) Repair(srcDir, dstDir string) ([]string, error) {
 		}
 
 		fixed = append(fixed, name)
+	}
+
+	if len(fixed) > 0 {
+		zlog.Info().
+			Str("op", "link-repair").
+			Str("dst", dstDir).
+			Int("fixed", len(fixed)).
+			Msg("symlinks repaired")
 	}
 
 	return fixed, nil
