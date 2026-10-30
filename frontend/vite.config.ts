@@ -9,10 +9,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
-      // `wailsjs/` is generated into the project rather than installed, and Vite
-      // does not read tsconfig's paths — so the same alias the typechecker needs
+      // `wailsjs/` is generated into the project and Vite
+      // does not read tsconfig's paths, so the same alias the typechecker needs
       // has to be repeated here or the dev server cannot resolve a single
-      // bridge import. Kept in step with vitest.config.ts.
+      // bridge import.
       wailsjs: path.resolve(import.meta.dirname, "./wailsjs"),
     },
   },

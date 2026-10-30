@@ -6,10 +6,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Darktide Mod Manager</title>
     <script>
-      // Runs before first paint on purpose. The persisted ui cache is read here
-      // rather than in React because a first frame of light navy followed by a
-      // dark repaint is exactly the flash §10.1 exists to prevent, and React
-      // cannot get to it soon enough.
+      // Runs before first paint to avoid flash of default theme.
       (() => {
         try {
           const raw = window.localStorage.getItem("dmm.ui.v1");
@@ -25,8 +22,7 @@
           document.documentElement.dataset.theme = resolved;
           document.documentElement.dataset.compact = String(cached?.compact === true);
         } catch {
-          // A malformed cache is not worth a blank window; dark is the default
-          // anyway, which is why the element ships with class="dark" above.
+          // Dark is the default.
         }
       })();
     </script>

@@ -56,6 +56,12 @@ export default [
       ],
       // (Optional) Enforces 'export type' for type-only exports
       "@typescript-eslint/consistent-type-exports": "error",
+      // Prop interfaces are intentionally empty when they only extend a DOM or
+      // Radix props type; the name is what call sites read.
+      "@typescript-eslint/no-empty-object-type": [
+        "error",
+        { allowInterfaces: "always" },
+      ],
       "no-console": ["warn", { allow: ["error"] }],
       "simple-import-sort/exports": "warn",
       "import/first": "error",
