@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS mods (
     -- than derived so a source that cannot be re-queried stays reachable.
     source_url      TEXT NOT NULL DEFAULT '',
     download_url    TEXT NOT NULL DEFAULT '',
-    update_url      TEXT NOT NULL DEFAULT ''
+    update_url      TEXT NOT NULL DEFAULT '',
+    -- JSON array of issue codes found in the payload, e.g. several manifests.
+    issues          TEXT NOT NULL DEFAULT '[]'
 );
 
 -- One row per file belonging to a mod. CASCADE means deleting the mod row is
