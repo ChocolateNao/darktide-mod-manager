@@ -51,6 +51,13 @@ func everyOperation() []clientOperation {
 		},
 		{func(c *Client) error { _, err := c.GetModHooks(ctx, "m"); return err }, "GetModHooks"},
 		{func(c *Client) error { return c.UpdateModHooks(ctx, "m", ModHooks{}) }, "UpdateModHooks"},
+		{
+			func(c *Client) error {
+				return c.DeleteData(ctx, DeleteDataOptions{ModData: true, Config: true})
+			},
+			"DeleteData",
+		},
+		{func(c *Client) error { return c.DeleteAllData(ctx) }, "DeleteAllData"},
 		{func(c *Client) error { return c.ReorderMods(ctx, []string{"m"}) }, "ReorderMods"},
 		{func(c *Client) error { _, err := c.LoadOrder(ctx); return err }, "LoadOrder"},
 		{func(c *Client) error { _, err := c.ModPath(ctx, "m"); return err }, "ModPath"},
