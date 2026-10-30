@@ -54,6 +54,7 @@ func TestGameCandidatesLinux(t *testing.T) {
 		"/home/tester/.steam/root/steamapps/common/Darktide",
 		"/home/tester/.local/share/Steam/steamapps/common/Darktide",
 		"/home/tester/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/Darktide",
+		"/home/tester/snap/steam/common/.local/share/Steam/steamapps/common/Darktide",
 		"/home/tester/.local/share/EpicGames/Darktide",
 		"/home/tester/.EpicGames/Darktide",
 		"/home/tester/.var/app/com.heroicgameslauncher.hgl/data/EpicGames/Darktide",
@@ -74,7 +75,7 @@ func TestGameCandidatesLinux(t *testing.T) {
 
 	// Proton is a distinct source so the UI can explain where the game lives.
 	proton := candidatePaths(cands, domain.GameSourceProton)
-	assert.Len(t, proton, 4, "proton candidates = %v, want one per Steam root", proton)
+	assert.Len(t, proton, 5, "proton candidates = %v, want one per Steam root", proton)
 
 	for _, p := range proton {
 		assert.Contains(t, p, domain.SteamAppID, "proton candidate %q does not name the app id", p)

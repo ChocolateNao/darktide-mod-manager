@@ -61,6 +61,8 @@ func steamRoots(p domain.Platform, home string, getenv Env) []string {
 			domain.JoinPath(home, ".local", "share", "Steam"),
 			// Steam installed as a Flatpak keeps its library inside the sandbox.
 			domain.JoinPath(home, ".var", "app", "com.valvesoftware.Steam", "data", "Steam"),
+			// The Snap package keeps its own home under ~/snap.
+			domain.JoinPath(home, "snap", "steam", "common", ".local", "share", "Steam"),
 		}
 	}
 }
