@@ -109,26 +109,22 @@ func (c *SourceCommands) GetSourceMod(sourceID, modID string) (*api.Mod, error) 
 
 // InspectDroppedPath describes the mod a drop gesture landed on, because the drop
 // overlay has to name what it is about to install and no other command can:
-// Search needs a query and GetMod needs an id. The recognised flag lets the
-// overlay refuse an unclaimed path in its own wording. The returned DroppedMod is
-// *api.DroppedMod in the generated binding.
-func (c *SourceCommands) InspectDroppedPath(path string) (*api.DroppedMod, bool, error) {
+// Search needs a query and GetMod needs an id. The result carries the recognised
+// flag so the overlay can refuse an unclaimed path in its own wording. Wails only
+// binds one or two return values, hence the result struct.
+func (c *SourceCommands) InspectDroppedPath(path string) (*api.DroppedPathResult, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	defer cancel()
 
 	mod, recognised, err := client.InspectDroppedPath(ctx, strings.TrimSpace(path))
 	if err != nil {
-		return nil, false, c.fail(err, "inspect dropped path %q", path)
+		return nil, c.fail(err, "inspect dropped path %q", path)
 	}
 
-	if !recognised {
-		return nil, false, nil
-	}
-
-	return mod, true, nil
+	return &api.DroppedPathResult{Mod: mod, Recognised: recognised}, nil
 }
 
 // AuthenticateSource signs a source in. The credentials arrive as a map because

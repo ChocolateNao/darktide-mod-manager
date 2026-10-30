@@ -64,6 +64,7 @@ func TestEventBusDeliversToEverySubscriber(t *testing.T) {
 	bus.Publish(services.Event{
 		Type:     services.EventModEnabled,
 		ModID:    "better_ui",
+		ModName:  "Better UI",
 		SourceID: "vortex",
 		Data:     "enabled",
 	})
@@ -76,6 +77,8 @@ func TestEventBusDeliversToEverySubscriber(t *testing.T) {
 		assert.Equal(t, EventModEnabled, got.Type, "%s subscriber got type", name)
 
 		assert.Equal(t, "better_ui", got.ModID, "%s subscriber got mod", name)
+
+		assert.Equal(t, "Better UI", got.ModName, "%s subscriber got mod name", name)
 
 		assert.Equal(t, "vortex", got.SourceID, "%s subscriber got source", name)
 

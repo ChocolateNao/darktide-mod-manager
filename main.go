@@ -58,6 +58,9 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop: true,
+		},
 		OnStartup: func(ctx context.Context) {
 			startNotifications(ctx)
 			forwardEvents(ctx, container.Client)
@@ -109,11 +112,8 @@ func forwardEvents(ctx context.Context, client *api.Client) {
 // webviewEventName is the single Wails event channel the manager publishes on.
 const webviewEventName = "mod-manager:event"
 
-// startNotifications opens the native notification channel from here rather than
-// from the frontend: InitializeNotifications establishes the connection the
-// JavaScript side borrows. A failure is reported and swallowed, so a desktop
-// without a notification daemon degrades to in-app toasts instead of refusing to
-// start.
+// startNotifications opens the native notification channel: InitializeNotifications establishes the connection the
+// JavaScript side borrows.
 func startNotifications(ctx context.Context) {
 	if err := wailsruntime.InitializeNotifications(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "native notifications unavailable: %v\n", err)

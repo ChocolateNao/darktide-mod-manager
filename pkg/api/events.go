@@ -41,6 +41,9 @@ const (
 	EventHookStarted  EventType = "hook.started"
 	EventHookFinished EventType = "hook.finished"
 	EventHookFailed   EventType = "hook.failed"
+	// EventHookOutput carries the lines a script printed during one run. Data
+	// also holds phase, type and index so a console can group a run.
+	EventHookOutput EventType = "hook.output"
 
 	EventCacheDownloaded EventType = "cache.downloaded"
 	EventCachePruned     EventType = "cache.pruned"
@@ -70,6 +73,7 @@ var eventTypes = []EventType{
 	EventModInstallFailed, EventModUninstallStarted, EventModUninstallCompleted,
 	EventModEnabled, EventModDisabled, EventModUpdated, EventModUpdateStarted,
 	EventModUpdateCompleted, EventHookStarted, EventHookFinished, EventHookFailed,
+	EventHookOutput,
 	EventCacheDownloaded, EventCachePruned, EventCacheCleared,
 	EventShareCreated, EventShareOffered, EventShareAccepted, EventShareProgress,
 	EventShareCompleted, EventShareRejected, EventShareExpired, EventShareFailed,
@@ -85,15 +89,16 @@ func EventTypes() []EventType {
 	return out
 }
 
-// Event is one notification. ModID and SourceID are pulled out of Data so a
-// subscriber can filter without unpacking a map. Data's concrete type depends on
-// Type. The tags are load-bearing: this struct crosses the Wails bridge, where Go
-// casing would produce a silently empty field: not an error.
+// Event is one notification. ModID, ModName and SourceID are pulled out of Data
+// so a subscriber can filter or label without unpacking a map. Data's concrete
+// type depends on Type. The tags are load-bearing: this struct crosses the Wails
+// bridge, where Go casing would produce a silently empty field: not an error.
 type Event struct {
 	Type      EventType `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	Data      any       `json:"data,omitempty"`
 	ModID     string    `json:"mod_id,omitempty"`
+	ModName   string    `json:"mod_name,omitempty"`
 	SourceID  string    `json:"source_id,omitempty"`
 }
 
@@ -231,6 +236,7 @@ func (b *EventBus) Publish(e services.Event) {
 		Timestamp: now(),
 		Data:      e.Data,
 		ModID:     e.ModID,
+		ModName:   e.ModName,
 		SourceID:  e.SourceID,
 	}
 	// Taken under the read lock and delivered under none, so a handler may

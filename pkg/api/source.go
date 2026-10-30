@@ -147,6 +147,14 @@ type DroppedMod struct {
 	Path     string `json:"path"`
 }
 
+// DroppedPathResult carries both inspection outcomes in one value. Wails only
+// binds functions with one or two return values, so the command cannot expose
+// the (mod, recognised, error) triple directly.
+type DroppedPathResult struct {
+	Mod        *DroppedMod `json:"mod"`
+	Recognised bool        `json:"recognised"`
+}
+
 // InspectDroppedPath asks the registered sources what mod sits at path.
 //
 // The recognised flag is separate from the error so the caller can refuse an
