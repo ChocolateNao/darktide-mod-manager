@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	manifestpkg "github.com/ChocolateNao/darktide-mod-manager/internal/manifest"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
@@ -58,6 +59,10 @@ type Source struct {
 	// maxDepth is the scan depth; zero means defaultMaxScanDepth. It is settable
 	// so a test (or a future "deep scan" toggle) does not need a real tree.
 	maxDepth int
+	// inspected remembers paths the user dropped. Install resolves a mod by id
+	// through GetMod, and a dropped path is usually outside the configured roots.
+	mu        sync.Mutex
+	inspected map[string]*domain.Mod
 }
 
 // Option customises a Source.
@@ -90,6 +95,33 @@ func New(paths []string, opts ...Option) *Source {
 	}
 
 	return s
+}
+
+func (s *Source) rememberInspected(mod *domain.Mod) {
+	if mod == nil || strings.TrimSpace(mod.ID) == "" {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.inspected == nil {
+		s.inspected = make(map[string]*domain.Mod)
+	}
+
+	s.inspected[strings.ToLower(mod.ID)] = mod.Clone()
+}
+
+func (s *Source) inspectedMod(id string) (*domain.Mod, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	mod, ok := s.inspected[strings.ToLower(strings.TrimSpace(id))]
+	if !ok {
+		return nil, false
+	}
+
+	return mod.Clone(), true
 }
 
 // ID implements domain.ModSource.
@@ -236,6 +268,10 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "empty mod id")
 	}
 
+	if mod, ok := s.inspectedMod(id); ok {
+		return mod, nil
+	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -319,29 +355,64 @@ func (s *Source) InspectPath(ctx context.Context, path string) (*domain.Mod, boo
 		)
 	}
 
-	if !info.IsDir() {
-		e, ok := archiveEntry(trimmed)
-		if !ok {
-			return nil, false, nil
-		}
+	var (
+		e  entry
+		ok bool
+	)
 
-		return modFromEntry(e)
+	if info.IsDir() {
+		e, ok = folderEntry(trimmed)
+	} else {
+		e, ok = archiveEntry(trimmed)
 	}
 
-	e, ok := folderEntry(trimmed)
 	if !ok {
 		return nil, false, nil
 	}
 
-	return modFromEntry(e)
+	mod, recognised, err := modFromEntry(e)
+	if err == nil && recognised {
+		s.rememberInspected(mod)
+	}
+
+	return mod, recognised, err
 }
 
-// folderEntry turns a dropped directory into an entry: the directory itself is the
-// mod when it holds a manifest, otherwise a single mod folder inside it, since a user
-// who drops their "Mods" folder meant the one thing in it. Exactly one child must
-// qualify; two or more is a guess the manager should not make silently.
+// modRoot reports whether dir is one mod, even when the manifest sits in a
+// subdirectory. Manifests spread across several immediate children mean dir is a
+// container the scan should descend into instead.
+func modRoot(dir string, location manifestpkg.Location) bool {
+	if location.Depth == 0 {
+		return true
+	}
+
+	branch := func(path string) string {
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return path
+		}
+
+		first, _, _ := strings.Cut(rel, string(filepath.Separator))
+
+		return first
+	}
+
+	root := branch(location.Path)
+	for _, other := range location.Others {
+		if branch(other) != root {
+			return false
+		}
+	}
+
+	return true
+}
+
+// folderEntry turns a dropped directory into an entry. The directory itself is the
+// mod when it holds a manifest. Otherwise the drop is a container: one mod folder or
+// one archive inside it wins, because a user who drops their "Mods" folder meant the
+// one thing in it. Several candidates are a guess the manager should not make.
 func folderEntry(dir string) (entry, bool) {
-	if manifestpkg.Has(dir) {
+	if location, ok := manifestpkg.Locate(dir); ok && modRoot(dir, location) {
 		m, err := manifestpkg.Read(dir)
 		if err != nil {
 			// A malformed manifest is still a mod folder: the error belongs to the
@@ -352,32 +423,46 @@ func folderEntry(dir string) (entry, bool) {
 		return entry{dir: dir, manifest: m, fallbackID: fallbackID(dir)}, true
 	}
 
-	var found []entry
-
 	children, err := os.ReadDir(dir)
-	if err != nil {
+	if err != nil || len(children) == 0 {
 		return entry{}, false
 	}
 
+	var found []entry
+
 	for _, child := range children {
-		if !child.IsDir() || !manifestpkg.Has(filepath.Join(dir, child.Name())) {
+		path := filepath.Join(dir, child.Name())
+
+		if child.IsDir() {
+			if location, ok := manifestpkg.Locate(path); ok && modRoot(path, location) {
+				m, err := manifestpkg.Read(path)
+				if err != nil {
+					m = nil
+				}
+
+				found = append(found, entry{
+					dir: path, manifest: m, fallbackID: fallbackID(path),
+				})
+			}
+
 			continue
 		}
 
-		found = append(found, entry{
-			dir:        filepath.Join(dir, child.Name()),
-			fallbackID: fallbackID(filepath.Join(dir, child.Name())),
-		})
-		if len(found) > 1 {
-			return entry{}, false
+		if e, ok := archiveEntry(path); ok {
+			found = append(found, e)
 		}
 	}
 
-	if len(found) != 1 {
+	switch len(found) {
+	case 1:
+		return found[0], true
+	case 0:
+		// The user dropped this folder itself. Without a manifest the folder name
+		// supplies the id, and the install still has a concrete payload to copy.
+		return entry{dir: dir, fallbackID: fallbackID(dir)}, true
+	default:
 		return entry{}, false
 	}
-
-	return found[0], true
 }
 
 // modFromEntry is the one place an entry becomes a Mod, so a dropped folder and
@@ -572,17 +657,21 @@ func scanDir(ctx context.Context, root string, depth int) ([]entry, error) {
 
 		if d.IsDir() {
 			// The root itself is a mod folder if it holds a manifest.
-			if path != root && manifestpkg.Has(path) {
-				m, err := manifestpkg.Read(path)
-				if err != nil {
-					// A malformed manifest is skipped and not failing the scan:
-					// one broken mod should not make the others invisible.
+			if path != root {
+				if location, ok := manifestpkg.Locate(path); ok &&
+					withinDepth(root, filepath.Dir(location.Path), depth) &&
+					modRoot(path, location) {
+					m, err := manifestpkg.Read(path)
+					if err != nil {
+						// A malformed manifest is skipped and not failing the scan:
+						// one broken mod should not make the others invisible.
+						return fs.SkipDir
+					}
+
+					out = append(out, entry{dir: path, manifest: m, fallbackID: fallbackID(path)})
+
 					return fs.SkipDir
 				}
-
-				out = append(out, entry{dir: path, manifest: m, fallbackID: fallbackID(path)})
-
-				return fs.SkipDir
 			}
 
 			return nil
