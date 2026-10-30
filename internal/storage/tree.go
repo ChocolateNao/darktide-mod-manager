@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // TreeEntry is one file found by CollectTree.
@@ -42,10 +44,12 @@ func (e TreeEntry) PackEntry() PackEntry {
 // Names are relative and slash-separated: absolute names would leak the sharer's home layout to
 // the recipient and would not extract anywhere. Symlinks are followed only when they resolve
 // inside the tree — a mod folder is user-owned, so inner links are expected, and an outward
-// one would turn "share this folder" into "read whatever it points at". Such a link is refused
-// rather than skipped, because a mod that silently loses a file is the failure mode this walk
+// one would turn "share this folder" into "read whatever it points at". Such a link is refused,
+// not skipped, because a mod that silently loses a file is the failure mode this walk
 // exists to remove. Sockets, devices and FIFOs have no meaning inside a mod archive.
 func CollectTree(root string) ([]TreeEntry, error) {
+	start := time.Now()
+
 	if strings.TrimSpace(root) == "" {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no folder to collect")
 	}
@@ -117,6 +121,13 @@ func CollectTree(root string) ([]TreeEntry, error) {
 	// WalkDir already sorts lexically; the explicit sort states the guarantee
 	// the archive's bytes — and therefore its hash — depend on.
 	slices.SortFunc(entries, func(a, b TreeEntry) int { return strings.Compare(a.Path, b.Path) })
+
+	zlog.Info().
+		Str("op", "tree-collect").
+		Str("root", root).
+		Int("entries", len(entries)).
+		Dur("duration", time.Since(start)).
+		Msg("mod tree collected")
 
 	return entries, nil
 }
