@@ -3,6 +3,7 @@ package commands
 import (
 	"strings"
 
+	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/api"
 )
 
@@ -21,6 +22,17 @@ func NewConfigCommands(deps Deps) *ConfigCommands {
 
 func newConfigCommands(b *base) *ConfigCommands {
 	return &ConfigCommands{base: b}
+}
+
+// DefaultPaths reports the folders used when a settings path is left empty, so
+// the UI can show the value the manager would pick before the user sets one.
+func (c *ConfigCommands) DefaultPaths() (*api.DefaultPaths, error) {
+	dirs, err := platform.CurrentDirs()
+	if err != nil {
+		return nil, c.fail(err, "resolve the default folders")
+	}
+
+	return &api.DefaultPaths{Storage: dirs.StorageRoot(), Cache: dirs.Cache}, nil
 }
 
 // GetConfig returns the whole configuration, as a copy, so a frontend editing the
@@ -51,6 +63,39 @@ func (c *ConfigCommands) UpdateConfig(cfg *api.Config) error {
 
 	if err := client.UpdateConfig(ctx, cfg); err != nil {
 		return c.fail(err, "write the configuration")
+	}
+
+	return nil
+}
+
+// DeleteData removes the selected application data: mods with their hooks and
+// database records, the configuration file, or both. The caller owns the
+// confirmation step.
+func (c *ConfigCommands) DeleteData(opts api.DeleteDataOptions) error {
+	client, ctx, cancel, err := c.ready()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	if err := client.DeleteData(ctx, opts); err != nil {
+		return c.fail(err, "delete application data")
+	}
+
+	return nil
+}
+
+// DeleteAllData removes every managed mod, clears the cache and restores the
+// default configuration. The caller owns the confirmation step.
+func (c *ConfigCommands) DeleteAllData() error {
+	client, ctx, cancel, err := c.ready()
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	if err := client.DeleteAllData(ctx); err != nil {
+		return c.fail(err, "delete all data")
 	}
 
 	return nil

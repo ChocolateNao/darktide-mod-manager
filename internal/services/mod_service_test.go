@@ -17,6 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestManifestIssuesFlagsSeveralManifests(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "mod.toml"), []byte("[mod]\n"), 0o600,
+	))
+	assert.Nil(t, manifestIssues(dir), "one manifest is not an issue")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "nested"), 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "nested", "manifest.toml"), []byte("[mod]\n"), 0o600,
+	))
+	assert.Equal(t, []string{domain.IssueMultipleManifests}, manifestIssues(dir))
+}
+
 func TestNewModServiceRequiresIndex(t *testing.T) {
 	_, err := NewModService(ModServiceDeps{})
 	require.True(
@@ -1075,6 +1089,42 @@ func TestUninstallRemovesEverything(t *testing.T) {
 		"uninstall must not purge the cache unless asked, got %v",
 		h.cache.removedKeys(),
 	)
+}
+
+func TestDeleteAllModsRemovesEveryPayloadAndRecord(t *testing.T) {
+	h := newHarness(t)
+
+	first := modFixture("first_mod", "1.0.0")
+	second := modFixture("second_mod", "2.0.0")
+	h.withArchive(t, first, "first.dll").withArchive(t, second, "second.dll")
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", first.ID)
+		require.NoError(t, err, "install first")
+	}
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", second.ID)
+		require.NoError(t, err, "install second")
+	}
+
+	{
+		err := h.svc.DeleteAllMods(context.Background())
+		require.NoError(t, err, "delete all")
+	}
+
+	{
+		mods, err := h.index.List(context.Background())
+		require.NoError(t, err, "list after delete")
+		assert.Empty(t, mods, "every record must be gone")
+	}
+
+	for _, mod := range []*domain.Mod{first, second} {
+		_, err := os.Stat(h.payloadPath(mod.ID, mod.Version))
+		assert.True(t, os.IsNotExist(err), "payload %q must be removed, stat gave %v", mod.ID, err)
+	}
+
+	assert.NotEmpty(t, h.deployer.undeployCalls(), "enabled mods must be undeployed")
 }
 
 func TestUninstallPurgeCacheDropsTheArchive(t *testing.T) {

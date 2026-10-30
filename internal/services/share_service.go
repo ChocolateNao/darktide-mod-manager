@@ -26,6 +26,7 @@ type ShareStore interface {
 	List(ctx context.Context) ([]domain.ShareRecord, error)
 	ListByGame(ctx context.Context, gameID string) ([]domain.ShareRecord, error)
 	Delete(ctx context.Context, id string) error
+	DeleteAll(ctx context.Context) error
 	GetByLink(ctx context.Context, link domain.ShareLink) (*domain.ShareRecord, error)
 }
 
@@ -203,16 +204,19 @@ func (s *ShareService) CreateShare(
 
 		if provider.SupportsAuth() {
 			if err := provider.ValidateCredentials(ctx); err != nil {
-				s.logger.Warn().Str("provider", pid).Err(err).Msg("provider auth failed, skipping")
+				s.logger.Warn().Str("op", "cloud-share").Str("provider", pid).Err(err).Msg("provider auth failed, skipping")
 				errs = append(errs, fmt.Errorf("provider %q: %w", pid, err))
 
 				continue
 			}
 		}
 
+		uploadStart := s.clock()
+
 		uploaded, err := provider.Upload(ctx, files, domain.UploadOptions{})
 		if err != nil {
 			s.logger.Warn().
+				Str("op", "cloud-share").
 				Str("provider", pid).
 				Int("files", len(files)).
 				Err(err).
@@ -234,7 +238,7 @@ func (s *ShareService) CreateShare(
 		if _, err := provider.CreateShareLink(ctx, uploaded.References, domain.ShareOptions{
 			Expiry: deadlineOrZero(expiry),
 		}); err != nil {
-			s.logger.Warn().Str("provider", pid).Err(err).Msg("provider share link ignored")
+			s.logger.Warn().Str("op", "cloud-share").Str("provider", pid).Err(err).Msg("provider share link ignored")
 		}
 
 		link, err := s.encodeLink(pid, gameID, uploaded.References, sharedMod, expiry)
@@ -246,11 +250,13 @@ func (s *ShareService) CreateShare(
 		links = append(links, link)
 
 		s.logger.Info().
+			Str("op", "cloud-share").
 			Str("share_id", shareID).
 			Str("provider", pid).
 			Int("mod_count", len(sharedMod)).
 			Int("file_count", len(files)).
 			Int64("total_bytes", totalBytes).
+			Int64("duration_ms", s.clock().Sub(uploadStart).Milliseconds()).
 			Msg("uploaded to provider")
 	}
 
@@ -273,7 +279,7 @@ func (s *ShareService) CreateShare(
 	}
 	if s.store != nil {
 		if err := s.store.Save(ctx, record); err != nil {
-			s.logger.Warn().Err(err).Msg("failed to persist share record")
+			s.logger.Warn().Str("op", "cloud-share").Err(err).Msg("failed to persist share record")
 		}
 	}
 
@@ -299,8 +305,8 @@ func (s *ShareService) ResolveShare(
 		return nil, err
 	}
 
-	// A share for a game this manager does not have is refused: not falling back
-	// falling back to the active game: the install would be silently broken.
+	// A share for a game this manager does not have is refused; installing it
+	// as the active game would be silently broken.
 	if _, ok := games.Get(payload.GameID); !ok {
 		return nil, appErrors.Wrap(
 			domain.ErrGameNotRegistered,
@@ -333,6 +339,7 @@ func (s *ShareService) ResolveShare(
 	}
 
 	s.logger.Debug().
+		Str("op", "cloud-share").
 		Str("provider", payload.Provider).
 		Int("payload_version", payload.Version).
 		Str("share", link.URL).
@@ -341,6 +348,7 @@ func (s *ShareService) ResolveShare(
 	preview := s.buildPreview(link, payload, files)
 
 	s.logger.Info().
+		Str("op", "cloud-share").
 		Str("share_id", preview.ShareID).
 		Str("provider", payload.Provider).
 		Int("mod_count", len(preview.Mods)).
@@ -428,7 +436,7 @@ func (s *ShareService) InstallShare(
 	}
 
 	// Every archive is staged under one folder that goes away when the install
-	// returns, rather than filling temp with a copy of every shared mod.
+	// returns, so temp is not left holding a copy of every shared mod.
 	staging, err := os.MkdirTemp("", "dmm-share-install-*")
 	if err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeCloudDownloadFailed,
@@ -471,7 +479,7 @@ func (s *ShareService) InstallShare(
 			shareInstallOptions(opts),
 		)
 		if err != nil {
-			s.logger.Warn().Str("mod", mod.Name).Err(err).Msg("install from share failed")
+			s.logger.Warn().Str("op", "cloud-share").Str("mod", mod.Name).Err(err).Msg("install from share failed")
 			return nil, err
 		}
 
@@ -480,6 +488,7 @@ func (s *ShareService) InstallShare(
 	}
 
 	s.logger.Info().
+		Str("op", "cloud-share").
 		Str("share", link.URL).
 		Str("share_id", preview.ShareID).
 		Str("provider", link.ProviderID).
@@ -492,7 +501,7 @@ func (s *ShareService) InstallShare(
 
 // shareInstallOptions maps the share's install preferences onto the installer's.
 // AutoInstall is a property of the share, so it becomes the installer's explicit
-// enable flag rather than the installer's own auto-detection.
+// enable flag, not the installer's own auto-detection.
 func shareInstallOptions(opts domain.InstallOptions) InstallOptions {
 	if !opts.AutoInstall {
 		return InstallOptions{}
@@ -544,6 +553,9 @@ func (s *ShareService) fetchModArchive(
 	}
 
 	ref := domain.FileReference{ID: packed.FileID, Size: packed.Size, Hash: packed.Hash}
+
+	downloadStart := s.clock()
+
 	if err := provider.Download(ctx, ref, archivePath); err != nil {
 		return "", appErrors.Wrap(
 			err,
@@ -561,6 +573,7 @@ func (s *ShareService) fetchModArchive(
 
 	if actual != packed.Hash {
 		s.logger.Warn().
+			Str("op", "cloud-share").
 			Str("file", packed.FileID).
 			Str("expected_hash", packed.Hash).
 			Str("actual_hash", actual).
@@ -572,6 +585,13 @@ func (s *ShareService) fetchModArchive(
 			packed.FileID, packed.Hash, actual,
 		)
 	}
+
+	s.logger.Info().
+		Str("op", "cloud-share").
+		Str("file", packed.FileID).
+		Int64("bytes", packed.Size).
+		Int64("duration_ms", s.clock().Sub(downloadStart).Milliseconds()).
+		Msg("shared archive downloaded")
 
 	return archivePath, nil
 }
@@ -601,6 +621,19 @@ func (s *ShareService) ListSharesByGame(
 	}
 
 	return s.store.ListByGame(ctx, gameID)
+}
+
+// DeleteAllShares removes every share record, used by the factory reset.
+func (s *ShareService) DeleteAllShares(ctx context.Context) error {
+	if s == nil {
+		return appErrors.ErrInvalidArgument
+	}
+
+	if s.store == nil {
+		return nil
+	}
+
+	return s.store.DeleteAll(ctx)
 }
 
 // GetShare returns one share record by id.
@@ -671,11 +704,13 @@ func (s *ShareService) RevokeShare(ctx context.Context, shareID string) error {
 	for _, link := range record.Links {
 		provider, err := s.registry.Get(link.ProviderID)
 		if err != nil {
+			s.logger.Warn().Str("op", "cloud-share").Str("share_id", shareID).Str("provider", link.ProviderID).Err(err).Msg("provider for share link unavailable, skipping")
 			continue
 		}
 
 		files, err := provider.ResolveShareLink(ctx, link)
 		if err != nil {
+			s.logger.Warn().Str("op", "cloud-share").Str("share_id", shareID).Str("provider", link.ProviderID).Err(err).Msg("share link could not be resolved, skipping")
 			continue
 		}
 
@@ -684,6 +719,7 @@ func (s *ShareService) RevokeShare(ctx context.Context, shareID string) error {
 		}
 
 		s.logger.Info().
+			Str("op", "cloud-share").
 			Str("share_id", shareID).
 			Str("provider", link.ProviderID).
 			Int("files", len(files)).
@@ -737,6 +773,14 @@ func (s *ShareService) UpdateShare(
 		return nil, err
 	}
 
+	s.logger.Info().
+		Str("op", "share-update").
+		Str("share_id", shareID).
+		Int("added", len(addMods)).
+		Int("removed", len(removeMods)).
+		Int("mod_count", len(kept)).
+		Msg("share record updated")
+
 	return record, nil
 }
 
@@ -781,7 +825,7 @@ func (s *ShareService) encodeLink(
 }
 
 // encodePayload marshals a payload and base64url-encodes it for the carrier
-// link. URL encoding rather than standard: the payload travels in a path, and
+// link. URL encoding, not standard: the payload travels in a path, and
 // '+' and '/' would both change meaning there.
 func (s *ShareService) encodePayload(payload domain.SharePayload) (string, error) {
 	raw, err := json.Marshal(payload)
@@ -938,7 +982,7 @@ func (s *ShareService) collectShare(
 		}
 
 		// A mod whose files cannot be read produces no archive, so the whole
-		// share is refused rather than promising the recipient nothing.
+		// share is refused, not promising the recipient nothing.
 		upload, packed, err := s.packMod(ctx, staging, mod, collectModFiles(s.logger, mod))
 		if err != nil {
 			return nil, nil, err
@@ -956,7 +1000,7 @@ func (s *ShareService) collectShare(
 
 // packMod writes one mod's files into a single archive and reports it both as an
 // upload candidate and as the payload's description of it. Packing makes a mod
-// one object rather than every file it contains: twenty small files are twenty
+// one object, not every file it contains: twenty small files are twenty
 // chances for the connection to drop, and per-request pricing is per file.
 func (s *ShareService) packMod(
 	ctx context.Context,
@@ -1015,8 +1059,8 @@ func (s *ShareService) packMod(
 		)
 	}
 
-	// The hash the recipient checks covers the archive's own bytes rather than
-	// the sum of its parts, which would let a truncated archive through.
+	// The hash the recipient checks covers the archive's own bytes; hashing the
+	// files inside it would let a truncated archive through.
 	hash, err := fileHash(archivePath)
 	if err != nil {
 		return domain.ShareFile{}, domain.PackedMod{}, appErrors.Wrap(
@@ -1039,6 +1083,7 @@ func (s *ShareService) packMod(
 	packed := *domain.PackedModFromFile(archiveName, info.Size(), hash)
 
 	s.logger.Debug().
+		Str("op", "cloud-share").
 		Str("mod", mod.Name).
 		Str("archive", archiveName).
 		Int("entries", len(result.Files)).
@@ -1054,7 +1099,7 @@ func (s *ShareService) packMod(
 // The walk is recursive: a Darktide mod is usually a folder of folders, and a
 // top-level-only read would ship a mod that loads and does nothing.
 //
-// A file that cannot be hashed is logged and skipped rather than failing the
+// A file that cannot be hashed is logged and skipped, not failing the
 // share, because one unreadable file should not cost the user the other nineteen.
 func collectModFiles(logger zerolog.Logger, mod domain.Mod) []domain.ShareFile {
 	if mod.LocalPath == "" {
@@ -1064,6 +1109,7 @@ func collectModFiles(logger zerolog.Logger, mod domain.Mod) []domain.ShareFile {
 	entries, err := storage.CollectTree(mod.LocalPath)
 	if err != nil {
 		logger.Warn().
+			Str("op", "cloud-share").
 			Str("mod", mod.Name).
 			Str("path", mod.LocalPath).
 			Err(err).
@@ -1078,6 +1124,7 @@ func collectModFiles(logger zerolog.Logger, mod domain.Mod) []domain.ShareFile {
 		hash, err := fileHash(entry.Source)
 		if err != nil {
 			logger.Warn().
+				Str("op", "cloud-share").
 				Str("mod", mod.Name).
 				Str("path", entry.Path).
 				Err(err).

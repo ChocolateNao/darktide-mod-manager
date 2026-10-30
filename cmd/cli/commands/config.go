@@ -19,6 +19,7 @@ func newConfigCommand(s *session) *cobra.Command {
 		newConfigGetCommand(s),
 		newConfigSetCommand(s),
 		newConfigEditCommand(s),
+		newConfigResetCommand(s),
 	)
 
 	return group
@@ -110,6 +111,39 @@ func newConfigSetCommand(s *session) *cobra.Command {
 	// The value is whatever the user typed, even something that looks like a flag:
 	// `dmm config set cache.max_size_gb -1` would otherwise be refused as an unknown shorthand.
 	command.Flags().SetInterspersed(false)
+
+	return command
+}
+
+func newConfigResetCommand(s *session) *cobra.Command {
+	var confirmed bool
+
+	command := &cobra.Command{
+		Use:   "reset",
+		Short: "Delete all mods, the cache and every setting",
+		Long: "Delete every managed mod, clear the download cache and restore the\n" +
+			"default configuration. This action cannot be undone.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !confirmed {
+				return fmt.Errorf("refusing to delete all data without --yes")
+			}
+
+			client, err := s.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			if err := client.DeleteAllData(cmd.Context()); err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprintln(s.env.Out, "all data deleted")
+
+			return err
+		},
+	}
+	command.Flags().BoolVar(&confirmed, "yes", false, "confirm deleting all data")
 
 	return command
 }

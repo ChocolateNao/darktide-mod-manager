@@ -174,6 +174,15 @@ func (s *shareMemStore) Delete(_ context.Context, id string) error {
 	return appErrors.ErrShareNotFound
 }
 
+func (s *shareMemStore) DeleteAll(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.shares = nil
+
+	return nil
+}
+
 func (s *shareMemStore) GetByLink(
 	_ context.Context,
 	link domain.ShareLink,
