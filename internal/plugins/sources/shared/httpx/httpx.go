@@ -626,6 +626,16 @@ func (c *Client) Download(
 		)
 	}
 
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		return 0, appErrors.New(
+			appErrors.ErrCodeDownloadFailed,
+			"download %s ended after %d of %d bytes",
+			rawURL,
+			written,
+			resp.ContentLength,
+		)
+	}
+
 	if written > MaxDownloadBody {
 		return 0, appErrors.New(appErrors.ErrCodeDownloadFailed,
 			"download %s exceeds the %d byte limit", rawURL, int64(MaxDownloadBody))

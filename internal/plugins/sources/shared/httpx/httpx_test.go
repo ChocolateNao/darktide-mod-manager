@@ -870,6 +870,31 @@ func TestDownloadWritesFile(t *testing.T) {
 	}
 }
 
+func TestDownloadIgnoresClientTotalTimeout(t *testing.T) {
+	// Large archives take far longer than a request timeout. The client timeout
+	// must not cut the body off while bytes are still arriving.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("first"))
+		w.(http.Flusher).Flush()
+		time.Sleep(120 * time.Millisecond)
+		_, _ = w.Write([]byte("second"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "slow.bin")
+
+	got, err := New(50*time.Millisecond).Download(
+		context.Background(),
+		srv.URL,
+		dest,
+		nil,
+		"",
+	)
+	require.NoError(t, err, "Download")
+
+	assert.Equal(t, int64(len("firstsecond")), got)
+}
+
 func TestDownloadVerifiesChecksum(t *testing.T) {
 	payload := []byte("verified payload")
 
