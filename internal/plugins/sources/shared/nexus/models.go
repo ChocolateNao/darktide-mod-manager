@@ -21,16 +21,62 @@ import (
 // strings even when plainly numeric — kept unparsed so a widened id cannot make a
 // mod uninstallable.
 
-// modScoped is what GET /games/{game_domain}/mods/{game_scoped_id} returns: four
-// fields, three of them ids.
+// modScoped is what GET /games/{game_domain}/mods/{game_scoped_id} returns.
 //
-// v3's single-mod endpoint is deliberately thin — no summary, author, category or
-// timestamp — so a mod's author comes from the trending feed or from nowhere.
+// The endpoint is the one place a mod's author, description, category, tags and
+// stats come from; the trending feed only has a subset for entries it lists.
 type modScoped struct {
-	ID           string `json:"id"`
-	GameScopedID string `json:"game_scoped_id"`
-	GameID       string `json:"game_id"`
-	Name         string `json:"name"`
+	ID            string            `json:"id"`
+	GameScopedID  string            `json:"game_scoped_id"`
+	GameID        string            `json:"game_id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	Version       string            `json:"version"`
+	Author        string            `json:"author"`
+	AdultContent  bool              `json:"adult_content"`
+	Uploader      *modUploader      `json:"uploader"`
+	Category      *modCategory      `json:"category"`
+	Stats         modStats          `json:"stats"`
+	Tags          []modTag          `json:"tags"`
+	Status        string            `json:"status"`
+	PrimaryImage  *modImage         `json:"primary_image"`
+	GalleryImages []modGalleryImage `json:"gallery_images"`
+}
+
+type modUploader struct {
+	ID   string  `json:"id"`
+	Name *string `json:"name"`
+}
+
+type modCategory struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type modStats struct {
+	Downloads       int64 `json:"downloads"`
+	UniqueDownloads int64 `json:"unique_downloads"`
+	Views           int64 `json:"views"`
+	Endorsements    int64 `json:"endorsements"`
+}
+
+type modTag struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type modImage struct {
+	URL                      string `json:"url"`
+	ThumbnailURL             string `json:"thumbnail_url"`
+	LargeThumbnailURL        string `json:"large_thumbnail_url"`
+	BlurredThumbnailURL      string `json:"blurred_thumbnail_url"`
+	BlurredLargeThumbnailURL string `json:"blurred_large_thumbnail_url"`
+}
+
+type modGalleryImage struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	modImage
 }
 
 // fileAggregate is a mod file with the counts the API aggregates across its
@@ -230,14 +276,24 @@ type modsBatchRequest struct {
 // version responses name no mod, so the name comes from the mod fetch and is
 // threaded through, not rediscovered.
 type modContext struct {
-	scopedID     string // game-scoped id: the number in a mod page URL and an nxm link
-	uid          string // composite Mod.id
-	gameID       string
-	gameDomain   string
-	name         string
-	summary      string
-	author       string
-	thumbnailURL string
+	scopedID      string // game-scoped id: the number in a mod page URL and an nxm link
+	uid           string // composite Mod.id
+	gameID        string
+	gameDomain    string
+	name          string
+	summary       string
+	author        string
+	thumbnailURL  string
+	description   string
+	apiVersion    string
+	adultContent  bool
+	status        string
+	category      *modCategory
+	uploader      *modUploader
+	stats         modStats
+	apiTags       []modTag
+	primaryImage  *modImage
+	galleryImages []modGalleryImage
 }
 
 // pageURL renders the canonical mod page address, the same form an nxm link is
@@ -450,11 +506,12 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 	}
 
 	mod := &domain.Mod{
-		ID:          id,
-		Name:        firstText(ctx.name, version.Name, file.Name),
-		Version:     firstText(version.Version, unversioned),
-		Author:      strings.TrimSpace(ctx.author),
-		Description: strings.TrimSpace(ctx.summary),
+		ID:      id,
+		Name:    firstText(ctx.name, version.Name, file.Name),
+		Version: firstText(version.Version, unversioned),
+		Author:  firstText(ctx.author, uploaderName(ctx.uploader)),
+		// The feed's summary is friendlier than the API's raw BBCode.
+		Description: firstText(ctx.summary, ctx.description),
 		SourceID:    SourceID,
 	}
 
@@ -475,7 +532,66 @@ func modFor(ctx modContext, file fileAggregate, version fileVersion) *domain.Mod
 		"category":             strings.TrimSpace(version.Category),
 		"is_primary":           version.IsPrimary,
 		"download_url":         ctx.locationURL(versionID),
+		"adult_content":        ctx.adultContent,
+		"stats": map[string]any{
+			"downloads":        ctx.stats.Downloads,
+			"unique_downloads": ctx.stats.UniqueDownloads,
+			"views":            ctx.stats.Views,
+			"endorsements":     ctx.stats.Endorsements,
+		},
 	}
+
+	if ctx.apiVersion != "" {
+		mod.SourceData["mod_version"] = ctx.apiVersion
+	}
+
+	if ctx.description != "" {
+		mod.SourceData["description_bbcode"] = ctx.description
+	}
+
+	if ctx.status != "" {
+		mod.SourceData["status"] = ctx.status
+	}
+
+	if ctx.category != nil {
+		mod.SourceData["mod_category"] = map[string]any{
+			"id":   ctx.category.ID,
+			"name": ctx.category.Name,
+		}
+	}
+
+	if ctx.uploader != nil {
+		mod.SourceData["uploader"] = map[string]any{
+			"id":   ctx.uploader.ID,
+			"name": uploaderName(ctx.uploader),
+		}
+	}
+
+	if len(ctx.apiTags) > 0 {
+		tags := make([]map[string]any, 0, len(ctx.apiTags))
+		for _, tag := range ctx.apiTags {
+			tags = append(tags, map[string]any{"id": tag.ID, "name": tag.Name})
+		}
+
+		mod.SourceData["nexus_tags"] = tags
+	}
+
+	if ctx.primaryImage != nil {
+		mod.SourceData["primary_image"] = imageData(*ctx.primaryImage)
+	}
+
+	if len(ctx.galleryImages) > 0 {
+		images := make([]map[string]any, 0, len(ctx.galleryImages))
+		for _, image := range ctx.galleryImages {
+			data := imageData(image.modImage)
+			data["id"] = image.ID
+			data["title"] = image.Title
+			images = append(images, data)
+		}
+
+		mod.SourceData["gallery_images"] = images
+	}
+
 	if file.Name != "" {
 		mod.SourceData["file_name"] = file.Name
 	}
@@ -646,6 +762,24 @@ func dlcNames(resp dependencyResponse) []string {
 	}
 
 	return out
+}
+
+func uploaderName(uploader *modUploader) string {
+	if uploader == nil || uploader.Name == nil {
+		return ""
+	}
+
+	return strings.TrimSpace(*uploader.Name)
+}
+
+func imageData(image modImage) map[string]any {
+	return map[string]any{
+		"url":                         image.URL,
+		"thumbnail_url":               image.ThumbnailURL,
+		"large_thumbnail_url":         image.LargeThumbnailURL,
+		"blurred_thumbnail_url":       image.BlurredThumbnailURL,
+		"blurred_large_thumbnail_url": image.BlurredLargeThumbnailURL,
+	}
 }
 
 // firstText returns the first non-blank value, trimmed.

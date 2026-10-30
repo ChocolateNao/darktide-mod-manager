@@ -25,7 +25,7 @@
 //
 // A download is two steps: POST /mod-file-versions/{id}/download-repacked mints a
 // short-lived download_url, which is then fetched. That URL points at a content
-// host rather than the API and is fetched with no credentials: it is already
+// host, not the API and is fetched with no credentials: it is already
 // signed, and sending the account key to a third-party host would hand it to
 // anyone who could read the request.
 //
@@ -42,7 +42,7 @@
 // are alternatives and separate definitions are separate requirements; both are
 // flattened into the manager's single list, which over-reports alternatives — see
 // dependencyMods. Reading them is best-effort: a list the manager cannot read is
-// recorded in SourceData rather than failing an otherwise installable mod, which
+// recorded in SourceData, not failing an otherwise installable mod, which
 // keeps "no dependencies" and "dependencies unknown" distinguishable.
 //
 // # Games
@@ -269,7 +269,7 @@ func New(cfg domain.SourceConfig, opts ...Option) (*Source, error) {
 
 // validAPIBase reports whether a base is something the transport will accept.
 // The transport rejects anything that is not http or https by refusing the
-// request rather than by reporting a bad configuration, so the same rule is
+// request, not by reporting a bad configuration, so the same rule is
 // applied at construction to move the diagnosis to where the mistake was made.
 func validAPIBase(value string) bool {
 	parsed, err := url.Parse(value)
@@ -337,7 +337,7 @@ func (s *Source) RequiresAPIKey() bool { return true }
 
 // Authenticate stores an API key and checks that Nexus accepts it. v3 has no
 // login step, so the key is the credential: there is nothing to exchange or cache.
-// Checking it here rather than at first use tells a user who pasted the wrong key
+// Checking it here, not at first use tells a user who pasted the wrong key
 // while they are still looking at the form. A blank credential is reported as
 // ErrCodeAuthRequired without a request.
 func (s *Source) Authenticate(ctx context.Context, creds domain.AuthCredentials) error {
@@ -398,7 +398,7 @@ func (s *Source) checkCredential(ctx context.Context) error {
 		Header: header,
 		Kind:   httpx.KindAuth,
 	}); err != nil {
-		// The request carries a key, so a 401 means refused rather than missing —
+		// The request carries a key, so a 401 means refused, not missing —
 		// the same translation classify applies to the reads.
 		return classify(err)
 	}
@@ -469,7 +469,7 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 }
 
 // Search returns the trending feed, filtered locally. A failing provider is
-// reported rather than swallowed: unlike the registry's fan-out, a direct Search
+// reported, not swallowed: unlike the registry's fan-out, a direct Search
 // on one provider has nothing to fall back to, and an empty result would read as
 // "this mod does not exist".
 func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain.Mod, error) {
@@ -488,7 +488,7 @@ func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain
 	}
 	// Expanding an entry needs a credential, so the first failure is kept: an
 	// empty list would read as "nothing trending matched", a statement about Nexus
-	// rather than about the user.
+	//, not about the user.
 	var firstErr error
 
 	identified := 0
@@ -501,7 +501,7 @@ func (s *Source) Search(ctx context.Context, query domain.SearchQuery) ([]domain
 
 		scopedID, ok := scopedIDFromPageURL(entry.ModPageURL)
 		if !ok {
-			// Skipped rather than counted as a failure: nothing was asked of the
+			// Skipped, not counted as a failure: nothing was asked of the
 			// API, and a guessed id could be a different mod entirely.
 			continue
 		}
@@ -541,9 +541,9 @@ func (s *Source) trendingMod(
 	// The feed's name wins: a query naming an entry as it appears there has
 	// to match the name the user just searched for.
 	info.name = firstText(entry.Name, info.name)
-	info.author = strings.TrimSpace(entry.Author)
+	info.author = firstText(entry.Author, info.author)
 	info.summary = firstText(entry.Summary, info.summary)
-	info.thumbnailURL = strings.TrimSpace(entry.PictureURL)
+	info.thumbnailURL = firstText(entry.PictureURL, info.thumbnailURL)
 
 	files, err := s.modFiles(ctx, info.uid)
 	if err != nil {
@@ -577,7 +577,7 @@ func (s *Source) trendingMod(
 }
 
 // modContext fetches the mod a game-scoped id names. A 404 is answered as
-// "no such mod" rather than the transport's not-found, which a caller showing a
+// "no such mod", not the transport's not-found, which a caller showing a
 // mod page has no use for.
 func (s *Source) modContext(ctx context.Context, scopedID string) (modContext, error) {
 	var envelope modEnvelope
@@ -590,14 +590,32 @@ func (s *Source) modContext(ctx context.Context, scopedID string) (modContext, e
 		return modContext{}, err
 	}
 
+	data := envelope.Data
+	thumbnailURL := ""
+	if data.PrimaryImage != nil {
+		thumbnailURL = strings.TrimSpace(data.PrimaryImage.ThumbnailURL)
+	}
+
 	return modContext{
 		// The requested id wins over the one in the response: a disagreement is a
 		// redirect or a mistake, and neither may rename the mod.
-		scopedID:   firstText(scopedID, envelope.Data.GameScopedID),
-		uid:        strings.TrimSpace(envelope.Data.ID),
-		gameID:     strings.TrimSpace(envelope.Data.GameID),
-		gameDomain: s.gameDomain,
-		name:       strings.TrimSpace(envelope.Data.Name),
+		scopedID:      firstText(scopedID, data.GameScopedID),
+		uid:           strings.TrimSpace(data.ID),
+		gameID:        strings.TrimSpace(data.GameID),
+		gameDomain:    s.gameDomain,
+		name:          strings.TrimSpace(data.Name),
+		author:        strings.TrimSpace(data.Author),
+		description:   strings.TrimSpace(data.Description),
+		apiVersion:    strings.TrimSpace(data.Version),
+		adultContent:  data.AdultContent,
+		status:        strings.TrimSpace(data.Status),
+		category:      data.Category,
+		uploader:      data.Uploader,
+		stats:         data.Stats,
+		apiTags:       data.Tags,
+		primaryImage:  data.PrimaryImage,
+		galleryImages: data.GalleryImages,
+		thumbnailURL:  thumbnailURL,
 	}, nil
 }
 
@@ -723,7 +741,7 @@ func (s *Source) modFileForID(
 }
 
 // attachDependencies records a version's requirements on the mod, recording a
-// failure rather than returning it: the mod is installable either way, and only
+// failure, not returning it: the mod is installable either way, and only
 // "requirements could not be read" is a reason to distrust the conflict report.
 func (s *Source) attachDependencies(ctx context.Context, mod *domain.Mod) {
 	versionID := strings.TrimSpace(sourceutil.StringOf(mod.SourceData["version_id"]))
@@ -822,7 +840,7 @@ func (s *Source) downloadURL(
 	if _, _, _, ok := nxmGrant(mod); ok {
 		url, err := s.downloadURLForKeyed(ctx, mod, versionID)
 		if err != nil {
-			// The grant survives: a status rather than a URL means the key was
+			// The grant survives: a status, not a URL means the key was
 			// not spent, and burning it here would need a new one from the website.
 			return "", err
 		}
@@ -873,7 +891,7 @@ func (s *Source) downloadURLRepacked(ctx context.Context, versionID string) (str
 
 // downloadURLForKeyed mints a content-host URL with the one-time authorization
 // a keyed nxm link carried. It is a GET taking the three parameters the website
-// put in the link, and it answers with mirrors rather than one URL; the first is
+// put in the link, and it answers with mirrors, not one URL; the first is
 // used, since they are the same file and one has no basis for preferring a host.
 func (s *Source) downloadURLForKeyed(
 	ctx context.Context,
@@ -1013,7 +1031,7 @@ func quoteAll(ids []string) string {
 // mod's SourceData. A free account cannot mint a download URL, so the website
 // hands a registered nxm:// handler a key, expires and user_id for the legacy
 // download_link endpoint to exchange. All three are required, and a link
-// carrying only some is reported as no key rather than as a grant that would
+// carrying only some is reported as no key, not as a grant that would
 // blame the account with a 403.
 func nxmGrant(mod *domain.Mod) (key, expires, userID string, ok bool) {
 	if mod == nil || mod.SourceData == nil {
@@ -1060,7 +1078,7 @@ func (s *Source) unauthHeader() http.Header {
 }
 
 // authHeader returns the headers for an authenticated request. A missing key is
-// refused locally rather than sent, so the caller is told what is missing.
+// refused locally, not sent, so the caller is told what is missing.
 func (s *Source) authHeader() (http.Header, error) {
 	key := s.apiKeyIfAny()
 	if key == "" {
@@ -1079,7 +1097,7 @@ func (s *Source) authHeader() (http.Header, error) {
 
 // authedJSON performs one authenticated GET against the v3 base and decodes the
 // body into out. Every authenticated v3 read goes through here, so the credential
-// policy lives in one place. It is a helper rather than an inline header argument
+// policy lives in one place. It is a helper, not an inline header argument
 // because Go will not spread a two-value call into a call with other arguments.
 func (s *Source) authedJSON(ctx context.Context, path string, out any, kind httpx.Kind) error {
 	return s.authedJSONAt(ctx, s.apiBase, path, nil, out, kind)
@@ -1159,8 +1177,8 @@ func isVersionSegment(segment string) bool {
 // classify turns the transport's status mapping into one the manager can present.
 //
 // A 404 on any of these reads means the mod or file is not there, which the
-// registry and the CLI both know how to present. A 401 means the key was refused
-// rather than missing, and the message says so: the chain below still reads
+// registry and the CLI both know how to present. A 401 means the key was refused,
+// not missing, and the message says so: the chain below still reads
 // AUTH_REQUIRED, and without the sentence the two contradict each other.
 func classify(err error) error {
 	switch {
@@ -1187,7 +1205,7 @@ func (s *Source) apiKeyIfAny() string {
 }
 
 // forgetCredential discards a key Nexus refused, so the next attempt starts from
-// what the user typed rather than from what was rejected.
+// what the user typed, not from what was rejected.
 func (s *Source) forgetCredential() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1208,7 +1226,7 @@ func (s *Source) HasCredentials() bool { return s.apiKeyIfAny() != "" }
 // ValidateCredentials for that.
 func (s *Source) Authenticated() bool { return s.HasCredentials() }
 
-// pluginVersion is reported by Version. A constant rather than a build stamp, so
+// pluginVersion is reported by Version. A constant, not a build stamp, so
 // a build of the manager and a build of the plugin always agree.
 const pluginVersion = "1.0.0"
 

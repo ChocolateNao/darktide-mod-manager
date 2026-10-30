@@ -296,7 +296,29 @@ func batchBodyProblem(body []byte) string {
 // ---------------------------------------------------------------------------
 
 func modFixtureJSON() string {
-	return `{"data":{"id":"1234567890123","game_scoped_id":"900","game_id":"3834","name":"Better UI"}}`
+	return `{"data":{
+		"id":"1234567890123","game_scoped_id":"900","game_id":"3834",
+		"name":"Better UI","description":"[b]UI tweaks[/b]","version":"1.2.0",
+		"author":"API Author","adult_content":true,
+		"uploader":{"id":"42","name":"Uploader"},
+		"category":{"id":"5","name":"User Interface"},
+		"status":"published",
+		"stats":{"downloads":1234,"unique_downloads":1000,"views":5000,"endorsements":321},
+		"tags":[{"id":"1","name":"UI"}],
+		"primary_image":{
+			"url":"https://images.invalid/full.png",
+			"thumbnail_url":"https://images.invalid/thumb.png",
+			"large_thumbnail_url":"https://images.invalid/thumb-large.png",
+			"blurred_thumbnail_url":"https://images.invalid/thumb-blurred.png",
+			"blurred_large_thumbnail_url":"https://images.invalid/thumb-large-blurred.png"},
+		"gallery_images":[{
+			"id":"g1","title":"Screenshot",
+			"url":"https://images.invalid/gallery.png",
+			"thumbnail_url":"https://images.invalid/gallery-thumb.png",
+			"large_thumbnail_url":"https://images.invalid/gallery-large.png",
+			"blurred_thumbnail_url":"https://images.invalid/gallery-blurred.png",
+			"blurred_large_thumbnail_url":"https://images.invalid/gallery-large-blurred.png"}]
+	}}`
 }
 
 func filesFixtureJSON() string {
@@ -869,6 +891,75 @@ func TestGetModWalksTheResourcesInOrder(t *testing.T) {
 	}
 }
 
+func TestGetModCarriesTheModDetails(t *testing.T) {
+	s := armedStub(t)
+	src := newSource(t, s)
+
+	mod, err := src.GetMod(t.Context(), ModID("900", "7001"))
+	require.NoError(t, err, "GetMod")
+
+	assert.Equal(t, "API Author", mod.Author, "mod.Author = %q, want the API's author", mod.Author)
+	assert.Equal(
+		t,
+		"[b]UI tweaks[/b]",
+		mod.Description,
+		"mod.Description = %q, want the API's description when the feed has no summary",
+		mod.Description,
+	)
+
+	assert.Equal(t, true, mod.SourceData["adult_content"], "adult_content")
+	assert.Equal(t, "published", mod.SourceData["status"], "status")
+	assert.Equal(t, "1.2.0", mod.SourceData["mod_version"], "mod_version")
+	assert.Equal(t, "[b]UI tweaks[/b]", mod.SourceData["description_bbcode"], "description_bbcode")
+
+	assert.Equal(
+		t,
+		map[string]any{"id": "5", "name": "User Interface"},
+		mod.SourceData["mod_category"],
+		"mod_category",
+	)
+	assert.Equal(
+		t,
+		map[string]any{"id": "42", "name": "Uploader"},
+		mod.SourceData["uploader"],
+		"uploader",
+	)
+	assert.Equal(
+		t,
+		map[string]any{
+			"downloads":        int64(1234),
+			"unique_downloads": int64(1000),
+			"views":            int64(5000),
+			"endorsements":     int64(321),
+		},
+		mod.SourceData["stats"],
+		"stats",
+	)
+	assert.Equal(
+		t,
+		[]map[string]any{{"id": "1", "name": "UI"}},
+		mod.SourceData["nexus_tags"],
+		"nexus_tags",
+	)
+
+	if got := mod.SourceData["primary_image"]; got == nil {
+		assert.Fail(t, "primary_image is missing although the API returned one")
+	}
+
+	images, ok := mod.SourceData["gallery_images"].([]map[string]any)
+	if !ok || len(images) != 1 || images[0]["title"] != "Screenshot" {
+		assert.Fail(t, "gallery_images = %#v, want the API's gallery", mod.SourceData["gallery_images"])
+	}
+
+	assert.Equal(
+		t,
+		"https://images.invalid/thumb.png",
+		mod.SourceData["thumbnail_url"],
+		"thumbnail_url = %#v, want the API's primary image",
+		mod.SourceData["thumbnail_url"],
+	)
+}
+
 func TestGetModReadsTheDependencyResponse(t *testing.T) {
 	s := armedStub(t)
 	src := newSource(t, s)
@@ -1186,7 +1277,7 @@ func TestSearchExpandsTheTrendingFeed(t *testing.T) {
 			mod.ID,
 		)
 	}
-	// The feed knows the author and the summary; the mod endpoint knows neither.
+	// The feed wins for presentation fields; the mod endpoint supplies the details it lacks.
 	var found bool
 
 	for _, mod := range mods {
