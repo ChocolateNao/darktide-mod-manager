@@ -27,6 +27,8 @@ const (
 	EventHookStarted  EventType = "hook.started"
 	EventHookFinished EventType = "hook.finished"
 	EventHookFailed   EventType = "hook.failed"
+	// EventHookOutput carries a finished run's buffered console lines.
+	EventHookOutput EventType = "hook.output"
 
 	EventCacheDownloaded EventType = "cache.downloaded"
 	EventCachePruned     EventType = "cache.pruned"
@@ -53,6 +55,7 @@ var allEventTypes = []EventType{
 	EventModInstallFailed, EventModUninstallStarted, EventModUninstallCompleted,
 	EventModEnabled, EventModDisabled, EventModUpdated, EventModUpdateStarted,
 	EventModUpdateCompleted, EventHookStarted, EventHookFinished, EventHookFailed,
+	EventHookOutput,
 	EventCacheDownloaded, EventCachePruned, EventCacheCleared,
 	EventShareCreated, EventShareOffered, EventShareAccepted, EventShareProgress,
 	EventShareCompleted, EventShareRejected, EventShareExpired, EventShareFailed,
@@ -68,13 +71,14 @@ func EventTypes() []EventType {
 	return out
 }
 
-// Event is a single notification. ModID and SourceID are pulled out of Data's
-// sibling fields rather than left inside it so a subscriber can filter on them
-// without unpacking a map.
+// Event is a single notification. ModID, ModName and SourceID are pulled out of
+// Data's sibling fields instead of being left inside it so a subscriber can
+// filter or label without unpacking a map.
 type Event struct {
 	Data     any
 	Type     EventType
 	ModID    string
+	ModName  string
 	SourceID string
 }
 

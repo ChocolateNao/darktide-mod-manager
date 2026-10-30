@@ -724,6 +724,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookFailed,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase: string(phase),
@@ -753,6 +754,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookOutput,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase:   string(phase),
@@ -804,6 +806,7 @@ func (h *HookExecutor) runOne(
 	h.publish(Event{
 		Type:     EventHookStarted,
 		ModID:    modIDOf(mod),
+		ModName:  modNameOf(mod),
 		SourceID: sourceIDOf(mod),
 		Data: hookEventData{
 			Phase:   string(phase),
@@ -832,6 +835,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookFinished,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase: string(phase),
@@ -845,6 +849,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookFailed,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase: string(phase),
@@ -860,6 +865,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookFailed,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase:   string(phase),
@@ -876,6 +882,7 @@ func (h *HookExecutor) runOne(
 		h.publish(Event{
 			Type:     EventHookFailed,
 			ModID:    modIDOf(mod),
+			ModName:  modNameOf(mod),
 			SourceID: sourceIDOf(mod),
 			Data: hookEventData{
 				Phase: string(phase),
@@ -915,6 +922,14 @@ func modIDOf(mod *domain.Mod) string {
 	}
 
 	return mod.ID
+}
+
+func modNameOf(mod *domain.Mod) string {
+	if mod == nil {
+		return ""
+	}
+
+	return mod.Name
 }
 
 func sourceIDOf(mod *domain.Mod) string {
