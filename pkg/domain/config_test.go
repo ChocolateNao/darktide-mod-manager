@@ -84,6 +84,17 @@ func TestApplyDefaultsFillsZeroValues(t *testing.T) {
 	assert.Equal(t, "en", c.UI.Language, "ui defaults not applied")
 
 	assert.Equal(t, 24, c.AutoUpdate.CheckIntervalHours, "auto update defaults not applied")
+	require.NotNil(t, c.Security.AllowActionCommands, "action command permission not defaulted")
+	assert.True(t, c.Security.AllowsActionCommands(), "action commands should stay enabled")
+}
+
+func TestApplyDefaultsKeepsExplicitlyDisabledActionCommands(t *testing.T) {
+	allowed := false
+	c := Config{Security: SecurityConfig{AllowActionCommands: &allowed}}
+	c.ApplyDefaults()
+
+	assert.False(t, c.Security.AllowsActionCommands(),
+		"an explicit false must survive ApplyDefaults")
 }
 
 func TestApplyDefaultsRepairsNegativeValues(t *testing.T) {
@@ -502,6 +513,19 @@ func TestConfigJSONRoundTripKeepsGameShape(t *testing.T) {
 		out.Hooks.Permissions.Mods,
 		"per-mod permissions lost",
 	)
+}
+
+func TestCloneDetachesActionCommandPermission(t *testing.T) {
+	allowed := false
+	in := DefaultConfig()
+	in.Security.AllowActionCommands = &allowed
+
+	out := in.Clone()
+	require.NotNil(t, out.Security.AllowActionCommands, "clone dropped the permission")
+
+	*out.Security.AllowActionCommands = true
+
+	assert.False(t, in.Security.AllowsActionCommands(), "clone shared the permission pointer")
 }
 
 func TestCloneDetachesGameAndPermissionMaps(t *testing.T) {

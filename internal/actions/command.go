@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	"github.com/rs/zerolog"
 )
 
 // CommandSpec is one external program invocation: directly, through an
@@ -20,6 +22,11 @@ type CommandSpec struct {
 	Dir   string
 	Stdin string
 	Args  []string
+	// Action is the game action that requested this command, when there is one.
+	Action domain.ActionID
+	// Detached starts the process and returns without waiting for it, so a game
+	// outlives the action that launched it.
+	Detached bool
 }
 
 // CommandOutput is what an external program produced.
@@ -58,6 +65,19 @@ type LookPathFunc func(file string) (string, error)
 type ExecRunner struct {
 	// LookPath resolves a program name. Nil means exec.LookPath.
 	LookPath LookPathFunc
+	// Logger records each process's start and finish. Nil discards.
+	Logger *zerolog.Logger
+}
+
+// nopLogger is where process events go when the runner was built without one.
+var nopLogger = zerolog.Nop()
+
+func (r *ExecRunner) logger() *zerolog.Logger {
+	if r == nil || r.Logger == nil {
+		return &nopLogger
+	}
+
+	return r.Logger
 }
 
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }
@@ -93,17 +113,59 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, 
 			"action command %q was not found on PATH", spec.Path)
 	}
 
-	cmd := exec.CommandContext(ctx, resolved, spec.Args...)
-	cmd.Dir = spec.Dir
-
-	if spec.Stdin != "" {
-		cmd.Stdin = strings.NewReader(spec.Stdin)
+	var cmd *exec.Cmd
+	if spec.Detached {
+		// Not CommandContext: a cancelled request would kill the game.
+		cmd = exec.Command(resolved, spec.Args...)
+	} else {
+		cmd = exec.CommandContext(ctx, resolved, spec.Args...)
 	}
+
+	cmd.Dir = spec.Dir
 
 	var stdout, stderr bytes.Buffer
 
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if !spec.Detached {
+		if spec.Stdin != "" {
+			cmd.Stdin = strings.NewReader(spec.Stdin)
+		}
+
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+	}
+
+	start := time.Now()
+
+	startEvent := r.logger().Debug().
+		Str("op", "action-process").
+		Str("action", spec.Action.String()).
+		Str("cmd", resolved).
+		Strs("args", spec.Args)
+
+	if spec.Dir != "" {
+		startEvent = startEvent.Str("dir", spec.Dir)
+	}
+
+	startEvent.Msg("action process start")
+
+	if spec.Detached {
+		if err := cmd.Start(); err != nil {
+			return CommandOutput{}, appErrors.Wrap(err, appErrors.ErrCodeActionFailed,
+				"action command %q could not be started", spec.Path)
+		}
+
+		// Release hands the child to the OS; without it Go reaps it on exit.
+		_ = cmd.Process.Release()
+
+		r.logger().Debug().
+			Str("op", "action-process").
+			Str("action", spec.Action.String()).
+			Str("cmd", resolved).
+			Dur("duration", time.Since(start)).
+			Msg("action process detached")
+
+		return CommandOutput{}, nil
+	}
 
 	runErr := cmd.Run()
 
@@ -112,6 +174,15 @@ func (r *ExecRunner) Run(ctx context.Context, spec CommandSpec) (CommandOutput, 
 		Stderr:   stderr.String(),
 		ExitCode: cmd.ProcessState.ExitCode(),
 	}
+
+	r.logger().Debug().
+		Str("op", "action-process").
+		Str("action", spec.Action.String()).
+		Str("cmd", resolved).
+		Strs("args", spec.Args).
+		Int("exit_code", output.ExitCode).
+		Dur("duration", time.Since(start)).
+		Msg("action process finish")
 
 	if runErr == nil {
 		return output, nil

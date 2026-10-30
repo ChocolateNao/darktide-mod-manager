@@ -28,15 +28,16 @@ type DefinitionLookup interface {
 }
 
 // RunnerDeps is what a Runner needs. A nil Opener or Commands disables the
-// actions that need it.
+// actions that need it. A nil AllowCommands leaves command actions enabled.
 type RunnerDeps struct {
-	Definitions DefinitionLookup
-	Games       GameResolver
-	Opener      domain.ActionOpener
-	Commands    CommandRunner
-	Echo        domain.ActionLogger
-	Registry    *Registry
-	Platform    domain.Platform
+	Definitions   DefinitionLookup
+	Games         GameResolver
+	Opener        domain.ActionOpener
+	Commands      CommandRunner
+	AllowCommands func() bool
+	Echo          domain.ActionLogger
+	Registry      *Registry
+	Platform      domain.Platform
 }
 
 // Runner executes registered actions.
@@ -44,13 +45,14 @@ type RunnerDeps struct {
 // It is safe for concurrent use: the registry is already guarded, and the
 // runner keeps no mutable state of its own.
 type Runner struct {
-	definitions DefinitionLookup
-	games       GameResolver
-	opener      domain.ActionOpener
-	commands    CommandRunner
-	echo        domain.ActionLogger
-	registry    *Registry
-	platform    domain.Platform
+	definitions   DefinitionLookup
+	games         GameResolver
+	opener        domain.ActionOpener
+	commands      CommandRunner
+	allowCommands func() bool
+	echo          domain.ActionLogger
+	registry      *Registry
+	platform      domain.Platform
 }
 
 // NewRunner builds a Runner, filling in the platform default. The error return
@@ -72,14 +74,19 @@ func NewRunner(deps RunnerDeps) (*Runner, error) {
 	}
 
 	return &Runner{
-		registry:    deps.Registry,
-		definitions: deps.Definitions,
-		games:       deps.Games,
-		opener:      deps.Opener,
-		commands:    commands,
-		platform:    platform,
-		echo:        deps.Echo,
+		registry:      deps.Registry,
+		definitions:   deps.Definitions,
+		games:         deps.Games,
+		opener:        deps.Opener,
+		commands:      commands,
+		allowCommands: deps.AllowCommands,
+		platform:      platform,
+		echo:          deps.Echo,
 	}, nil
+}
+
+func (r *Runner) commandsAllowed() bool {
+	return r.allowCommands == nil || r.allowCommands()
 }
 
 func (r *Runner) Platform() domain.Platform {
@@ -137,6 +144,20 @@ func (r *Runner) Run(
 	actx, err := r.buildContext(ctx, action, args, logger)
 	if err != nil {
 		return nil, err
+	}
+
+	actx.Action = action.ID
+	actx.CommandsAllowed = r.commandsAllowed()
+	actx.StartCommand = func(ctx context.Context, command domain.ActionCommand) error {
+		_, err := r.commands.Run(ctx, CommandSpec{
+			Path:     command.Path,
+			Args:     command.Args,
+			Dir:      actx.WorkingDir,
+			Action:   action.ID,
+			Detached: true,
+		})
+
+		return err
 	}
 
 	if action.Script != nil {
@@ -282,13 +303,29 @@ func (r *Runner) runScript(
 			// Reporting success keeps a caller that loops over every available
 			// action from treating "not applicable" as a failure.
 			return &domain.GameActionResult{
-				Success: true,
-				Message: fmt.Sprintf("%s has nothing to run on %s", action.ID, r.platform),
+				Success:    true,
+				Message:    fmt.Sprintf("%s has nothing to run on %s", action.ID, r.platform),
+				MessageKey: "actions.noCommand",
+				MessageArgs: map[string]any{
+					"action":   string(action.ID),
+					"platform": string(r.platform),
+				},
 			}, nil
 		}
 
 		return nil, appErrors.New(appErrors.ErrCodeActionUnavailable,
 			"action %q has no command for %s", action.ID, r.platform)
+	}
+
+	if !r.commandsAllowed() {
+		return &domain.GameActionResult{
+			Success:    false,
+			Message:    fmt.Sprintf("%s needs permission to execute commands", action.ID),
+			MessageKey: "actions.commandsDisabled",
+			MessageArgs: map[string]any{
+				"action": string(action.ID),
+			},
+		}, nil
 	}
 
 	args, err := renderArgs(command.Args, actx.Args)
@@ -323,9 +360,10 @@ func (r *Runner) runScript(
 	actx.Logf("running %s %s", command.Path, strings.Join(args, " "))
 
 	output, err := r.commands.Run(ctx, CommandSpec{
-		Path: command.Path,
-		Args: args,
-		Dir:  workDir,
+		Path:   command.Path,
+		Args:   args,
+		Dir:    workDir,
+		Action: action.ID,
 	})
 	if err != nil {
 		return nil, wrapActionError(action, err)
@@ -340,9 +378,14 @@ func (r *Runner) runScript(
 	actx.Logger.Logf("%s", output.Combined())
 
 	return &domain.GameActionResult{
-		Success: true,
-		Message: fmt.Sprintf("%s finished with exit code %d", action.ID, output.ExitCode),
-		Output:  output.Combined(),
+		Success:    true,
+		Message:    fmt.Sprintf("%s finished with exit code %d", action.ID, output.ExitCode),
+		MessageKey: "actions.exitCode",
+		MessageArgs: map[string]any{
+			"action": string(action.ID),
+			"code":   output.ExitCode,
+		},
+		Output: output.Combined(),
 		Data: map[string]any{
 			"exit_code": output.ExitCode,
 			"stdout":    output.Stdout,
@@ -360,9 +403,13 @@ func normaliseResult(
 ) *domain.GameActionResult {
 	if result == nil {
 		return &domain.GameActionResult{
-			Success: true,
-			Message: fmt.Sprintf("%s finished", action.ID),
-			Output:  textOf(logger),
+			Success:    true,
+			Message:    fmt.Sprintf("%s finished", action.ID),
+			MessageKey: "actions.finished",
+			MessageArgs: map[string]any{
+				"action": string(action.ID),
+			},
+			Output: textOf(logger),
 		}
 	}
 
@@ -372,6 +419,8 @@ func normaliseResult(
 
 	if result.Message == "" {
 		result.Message = fmt.Sprintf("%s finished", action.ID)
+		result.MessageKey = "actions.finished"
+		result.MessageArgs = map[string]any{"action": string(action.ID)}
 	}
 
 	return result

@@ -48,6 +48,7 @@ var boolConfigFields = map[string]bool{
 	"ui.compact_mode":                    false,
 	"advanced.enable_experimental":       true,
 	"logging.compress":                   true,
+	"security.allow_action_commands":     false,
 }
 
 // intConfigFields maps each numeric setting to the value it should read back as.

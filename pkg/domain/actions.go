@@ -226,14 +226,23 @@ type ActionOpener interface {
 	OpenURL(ctx context.Context, rawURL string) error
 }
 
+// CommandStarter starts an external command without waiting for it to exit.
+type CommandStarter func(ctx context.Context, command ActionCommand) error
+
 // ActionContext is everything a handler is allowed to depend on.
 type ActionContext struct {
-	Game         GameDefinition
-	Opener       ActionOpener
-	Logger       ActionLogger
-	Args         map[string]any
-	Platform     Platform
-	GameID       string
+	Game     GameDefinition
+	Opener   ActionOpener
+	Logger   ActionLogger
+	Args     map[string]any
+	Platform Platform
+	GameID   string
+	// Action is the running action's full id, for messages about it.
+	Action ActionID
+	// CommandsAllowed reflects the "Allow actions to execute commands" setting.
+	CommandsAllowed bool
+	// StartCommand is nil when the runner has no command runner.
+	StartCommand CommandStarter
 	InstallPath  string
 	ModsPath     string
 	WorkingDir   string

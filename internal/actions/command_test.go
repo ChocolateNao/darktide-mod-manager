@@ -84,6 +84,23 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 	assert.Equal(t, "oops", strings.TrimSpace(out.Stderr), "stderr = %q", out.Stderr)
 }
 
+func TestExecRunnerDoesNotWaitForADetachedProgram(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no portable failing command on windows")
+	}
+
+	runner := NewExecRunner()
+
+	// The command fails after it starts; a waiter would surface that exit code.
+	out, err := runner.Run(context.Background(), CommandSpec{
+		Path:     "sh",
+		Args:     []string{"-c", "sleep 0.2; exit 17"},
+		Detached: true,
+	})
+	require.NoError(t, err, "detached run: %v", err)
+	assert.Equal(t, 0, out.ExitCode, "detached run waited: %+v", out)
+}
+
 func TestExecRunnerReportsAMissingProgram(t *testing.T) {
 	runner := NewExecRunner()
 

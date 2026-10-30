@@ -103,7 +103,7 @@ func (c *Client) SourceConfig(
 }
 
 // GetConfigValue reads one setting by dotted key. An absent key reports
-// ErrCodeNotFound rather than an empty string, so unset is distinguishable from
+// ErrCodeNotFound, not an empty string, so unset is distinguishable from
 // set-to-nothing. An api_key is deliberately not readable — see SetConfigValue.
 func (c *Client) GetConfigValue(ctx context.Context, key string) (string, error) {
 	cfg, err := c.GetConfig(ctx)
@@ -145,7 +145,7 @@ func (c *Client) SetConfigValue(ctx context.Context, key, value string) error {
 	return nil
 }
 
-// configField is one addressable setting. A table rather than reflection: the set
+// configField is one addressable setting. A table, not reflection: the set
 // of settings is fixed and small, reflection would make "is this key real?" a
 // runtime question, and a table makes the accepted keys greppable.
 type configField struct {
@@ -325,8 +325,6 @@ var configFields = []configField{
 		set:  boolSetter(func(c *Config) *bool { return &c.UI.CompactMode }),
 	},
 
-	// The logging block is listed before advanced.log_level, which stays settable so
-	// an existing script does not break — it is read only as a fallback (see migrateLevel).
 	{
 		key:  "logging.level",
 		help: "verbosity: trace, debug, info, warn or error",
@@ -379,17 +377,18 @@ var configFields = []configField{
 		get:  func(c *Config) string { return strconv.FormatBool(c.Advanced.EnableExperimental) },
 		set:  boolSetter(func(c *Config) *bool { return &c.Advanced.EnableExperimental }),
 	},
+
 	{
-		key:  "advanced.log_level",
-		help: "deprecated: use logging.level",
-		get:  func(c *Config) string { return c.Advanced.LogLevel },
+		key:  "security.allow_action_commands",
+		help: "let game actions start external programs",
+		get:  func(c *Config) string { return strconv.FormatBool(c.Security.AllowsActionCommands()) },
 		set: func(c *Config, v string) error {
-			level, err := parseLogLevel(v)
+			parsed, err := parseConfigBool(v)
 			if err != nil {
 				return err
 			}
 
-			c.Advanced.LogLevel = level
+			c.Security.AllowActionCommands = &parsed
 
 			return nil
 		},
@@ -612,7 +611,7 @@ func SetConfigValue(cfg *Config, key, value string) error {
 }
 
 // setField applies one field's setter and, on failure, says which field failed. The
-// key is added here rather than in every setter: twenty-odd setters each repeating
+// key is added here, not in every setter: twenty-odd setters each repeating
 // it would be twenty-odd chances to forget one.
 func setField(field configField, cfg *Config, value string) error {
 	if err := field.set(cfg, value); err != nil {
@@ -623,7 +622,7 @@ func setField(field configField, cfg *Config, value string) error {
 }
 
 // nameKeyError restates a parse failure with the key it belongs to. The cause is
-// deliberately dropped rather than wrapped: there is no sentinel to match against,
+// deliberately dropped, not wrapped: there is no sentinel to match against,
 // and wrapping would render the code twice with the useful half buried.
 func nameKeyError(err error, key string) error {
 	return appErrors.New(appErrors.CodeOf(err), "cannot set %s: %s", key, appErrors.Message(err))
@@ -677,7 +676,7 @@ func splitSourceKey(key string) (sourceID, field string, ok bool) {
 }
 
 // sourceValue reads one field of one source block. An unknown source id is an
-// error rather than a default: answering "enabled: true" for a typo would be worse
+// error, not a default: answering "enabled: true" for a typo would be worse
 // than failing.
 func sourceValue(cfg *Config, sourceID, field string) (string, error) {
 	block, ok := cfg.SourceConfigFor(sourceID)
@@ -793,7 +792,7 @@ func splitGameKey(key string) (gameID, field string, ok bool) {
 
 // registeredGame looks up a game's definition by config id, answering nil when the
 // id names a game this build does not have. Callers treat nil as "no preference to
-// report" rather than an error, since a configuration may describe a removed game.
+// report", not an error, since a configuration may describe a removed game.
 func registeredGame(gameID string) domain.GameDefinition {
 	def, ok := games.Get(strings.TrimSpace(gameID))
 	if !ok {
@@ -804,7 +803,7 @@ func registeredGame(gameID string) domain.GameDefinition {
 }
 
 // gameValue reads one field of one game's settings. A game with no entry yet answers
-// with the defaults rather than an error: asking about a game never pointed at a path
+// with the defaults, not an error: asking about a game never pointed at a path
 // is a normal question, and the defaults are truthful.
 func gameValue(cfg *Config, gameID, field string) (string, error) {
 	settings, ok := cfg.GameSettingsFor(gameID)
@@ -822,8 +821,9 @@ func gameValue(cfg *Config, gameID, field string) (string, error) {
 	case "auto_detect":
 		return strconv.FormatBool(settings.AutoDetect), nil
 	case "install_method":
-		// An unset override reads as the game's own preference: not an empty string:
-		// blank would answer "what happens if I never touch this?" with nothing.
+		// An unset override reads as the game's own preference, never an empty
+		// string: blank would answer "what happens if I never touch this?" with
+		// nothing.
 		if method := settings.InstallMethodOrDefault(registeredGame(gameID)); method != "" {
 			return method, nil
 		}
@@ -871,8 +871,8 @@ func setGameValue(cfg *Config, gameID, field, value string) error {
 
 		settings.InstallMethod = value
 	case "icon":
-		// Not a checked-in enum: the values are lucide icon names the frontend may
-		// change, and an unknown one falls back to the generic pad (not an error).
+		// Not a checked-in enum: a built-in choice or a data URL image the frontend
+		// validates, and an unknown one falls back to the generic pad (not an error).
 		settings.Icon = strings.TrimSpace(value)
 	default:
 		return appErrors.New(appErrors.ErrCodeNotFound,
@@ -1027,6 +1027,13 @@ func (s permissionScope) write(cfg *Config, value string) error {
 	s.store(cfg, key, block)
 
 	return nil
+}
+
+// DefaultPaths are the platform folders the manager falls back to when the
+// stored configuration leaves storage or cache empty. Read-only.
+type DefaultPaths struct {
+	Storage string `json:"storage"`
+	Cache   string `json:"cache"`
 }
 
 // store writes the block back into its scope, creating the map when the

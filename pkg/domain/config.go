@@ -20,6 +20,20 @@ type Config struct {
 	CloudSharing CloudSharingConfig      `json:"cloud_sharing"`
 	Sharing      SharingConfig           `json:"sharing"`
 	Logging      LoggingConfig           `json:"logging"`
+	Security     SecurityConfig          `json:"security"`
+}
+
+// SecurityConfig groups the switches that widen what the manager may do on the
+// user's machine.
+type SecurityConfig struct {
+	// AllowActionCommands lets game actions start external programs. nil means
+	// enabled, so configurations written before this switch existed keep working.
+	AllowActionCommands *bool `json:"allow_action_commands,omitempty"`
+}
+
+// AllowsActionCommands reports whether game actions may start external programs.
+func (s SecurityConfig) AllowsActionCommands() bool {
+	return s.AllowActionCommands == nil || *s.AllowActionCommands
 }
 
 // ScriptPermissions is the capability set one hook script runs with. A capability
@@ -209,7 +223,10 @@ type LoggingConfig struct {
 
 // DefaultConfig returns the configuration the manager uses when nothing is set.
 func DefaultConfig() Config {
+	allowCommands := true
+
 	return Config{
+		Security: SecurityConfig{AllowActionCommands: &allowCommands},
 		Storage: StorageConfig{
 			BackupRetentionDays: 7,
 		},
@@ -267,6 +284,11 @@ func (c *Config) ApplyDefaults() {
 	}
 
 	d := DefaultConfig()
+
+	if c.Security.AllowActionCommands == nil {
+		allowed := *d.Security.AllowActionCommands
+		c.Security.AllowActionCommands = &allowed
+	}
 
 	if c.Games == nil {
 		c.Games = map[string]GameSettings{}
@@ -462,6 +484,11 @@ func (c *Config) Clone() *Config {
 	// Redact is a slice: a shallow copy would let a caller edit the live config.
 	if c.Logging.Redact != nil {
 		out.Logging.Redact = append([]string(nil), c.Logging.Redact...)
+	}
+
+	if c.Security.AllowActionCommands != nil {
+		allowed := *c.Security.AllowActionCommands
+		out.Security.AllowActionCommands = &allowed
 	}
 
 	if c.CloudSharing.FallbackProviders != nil {

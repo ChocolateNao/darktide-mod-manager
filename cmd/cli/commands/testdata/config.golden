@@ -79,6 +79,9 @@ o   "max_size_mb": 10,
 o   "max_backups": 5,
 o   "max_age_days": 30,
 o   "compress": true
+o   },
+o   "security": {
+o   "allow_action_commands": true
 o   }
 o }
 ! exit 0

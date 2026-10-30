@@ -286,6 +286,68 @@ func scriptAction(commands ...domain.ActionCommand) domain.GameAction {
 	return action
 }
 
+func TestRunRefusesCommandActionsWhenPermissionIsOff(t *testing.T) {
+	commands := &recordingCommandRunner{output: CommandOutput{}}
+	runner := newTestRunner(t, scriptAction(domain.ActionCommand{Path: "run.sh"}),
+		func(d *RunnerDeps) {
+			d.Commands = commands
+			d.AllowCommands = func() bool { return false }
+		})
+
+	result, err := runner.Run(context.Background(), "test:do", nil)
+	require.NoError(t, err, "run")
+	require.NotNil(t, result, "result")
+	assert.False(t, result.Success, "result was successful")
+	assert.Equal(t, "actions.commandsDisabled", result.MessageKey, "message key")
+	assert.Empty(t, commands.specs, "command ran despite the permission")
+}
+
+func TestRunGivesHandlersADetachedCommandStarter(t *testing.T) {
+	commands := &recordingCommandRunner{}
+	action := domain.GameAction{
+		ID:       "test:start",
+		GameID:   "test",
+		Platform: domain.ActionPlatformUniversal,
+		Handler: func(ctx context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
+			return &domain.GameActionResult{Success: true}, actx.StartCommand(
+				ctx, domain.ActionCommand{Path: "game"})
+		},
+	}
+
+	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
+
+	result, err := runner.Run(context.Background(), "test:start", nil)
+	require.NoError(t, err, "run")
+	require.NotNil(t, result, "result")
+	assert.True(t, result.Success, "handler failed: %+v", result)
+	require.Len(t, commands.specs, 1, "ran %d commands", len(commands.specs))
+	assert.Equal(t, "game", commands.specs[0].Path)
+	assert.True(t, commands.specs[0].Detached, "handler command was not detached")
+}
+
+func TestRunTellsHandlersWhetherCommandsAreAllowed(t *testing.T) {
+	var allowed bool
+
+	action := domain.GameAction{
+		ID:       "test:check",
+		GameID:   "test",
+		Platform: domain.ActionPlatformUniversal,
+		Handler: func(_ context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
+			allowed = actx.CommandsAllowed
+
+			return &domain.GameActionResult{Success: true}, nil
+		},
+	}
+
+	runner := newTestRunner(t, action, func(d *RunnerDeps) {
+		d.AllowCommands = func() bool { return false }
+	})
+
+	_, err := runner.Run(context.Background(), "test:check", nil)
+	require.NoError(t, err, "run")
+	assert.False(t, allowed, "handler saw commands as allowed")
+}
+
 func TestRunExecutesTheMatchingScript(t *testing.T) {
 	commands := &recordingCommandRunner{output: CommandOutput{Stdout: "done", ExitCode: 0}}
 	action := scriptAction(
