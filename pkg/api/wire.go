@@ -43,8 +43,7 @@ type Bundle struct {
 	// Wails bindings) can tail the file, read the level and change it without building
 	// a second log service. Never nil after a successful wire.
 	Logging *logging.Service
-	// Cleanups release everything that was opened, in acquisition order. A Bundle does not
-	// own them: the caller decides when to run them, so Client.Close is not the only option.
+	// Cleanups release resources in acquisition order. Caller manages lifecycle outside Client.Close.
 	Cleanups []func() error
 }
 
@@ -80,12 +79,13 @@ func (b *Bundle) Close() error {
 
 // NewClient wires the whole manager and wraps it in a client. The order is load-bearing:
 // platform directories give every path a default, the configuration loads and options are
-// applied on top (a validated game path fails construction rather than the first install),
+// applied on top (a validated game path is a construction failure, not a
+// discovery made mid-download),
 // then database, cache and deployer open, and the enabled sources register.
 //
 // Only source registration can fail partially, and it deliberately does not: bundled
 // sources announce themselves via their packages' init functions, so a source with
-// half-filled credentials is listed unauthenticated rather than absent.
+// half-filled credentials shows as unauthenticated; absent ones are omitted.
 func NewClient(ctx context.Context, opts ...Option) (*Client, error) {
 	set, err := applyOptions(opts)
 	if err != nil {
@@ -134,7 +134,7 @@ func NewBundle(ctx context.Context, opts ...Option) (*Bundle, error) {
 func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if ctx == nil {
 		// A nil context is a start-up-time caller mistake; treating it as Background
-		// keeps it diagnosable rather than a panic mid-wiring.
+		// keeps it diagnosable during wiring; a panic would bury step failures.
 		ctx = context.Background()
 	}
 
@@ -157,7 +157,7 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
-	// Wrap the store rather than fix up the loaded copy: every later reader goes through
+	// Wrap the store: every later reader goes through
 	// the same store, so a configuration only the wiring path healed would still be broken.
 	store := services.NewGameStore(storage.NewConfigStore(configPath))
 
@@ -165,9 +165,6 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Before defaults, so a config written before the logging block existed
-	// keeps its advanced.log_level instead of silently reverting to info.
-	migrateLevel(cfg)
 	cfg.ApplyDefaults()
 
 	// An explicit WithGame wins over the file, but only for a registered id: a command-line
@@ -266,12 +263,12 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 
 	// The registry is built before the cache because the cache's downloader is the registry:
 	// a mod's bytes come from whichever source owns it. WithConfig hands it the merged cfg
-	// rather than letting it reload the file — source overrides are never written back, so
+	// instead of letting it reload the file — source overrides are never written back, so
 	// reloading would report a deliberately declined source as enabled.
 	gameDef, ok := games.Get(cfg.ActiveGame)
 	if !ok {
 		// The store resolved ActiveGame to a registered id while loading, so failure here
-		// means the registry lost its builtins: refuse rather than build for the wrong game.
+		// means the registry lost its builtins.
 		_ = joinAll(cleanups)
 
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
@@ -338,17 +335,16 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	})
 
 	// The one construction of the sandbox's providers: every runner reaches the
-	// manager through exactly these four bridges and nothing else.
+	// manager through exactly these bridges and nothing else.
 	providers := host.Providers{
 		Config:  hookConfigAccess{store: store},
 		Storage: hookStorageAccess{index: index, storageRoot: storageRoot},
 		TempDir: os.TempDir(),
-		Logger:  hookLogFunc(logService.Logger()),
 	}
 
 	if err := hooks.RegisterAll(hookExecutor, providers); err != nil {
 		// A hook runner that will not register means no lifecycle can run
-		// safely, which is fatal rather than a degraded source.
+		// safely, which is fatal, not a degraded source.
 		_ = joinAll(cleanups)
 		return nil, err
 	}
@@ -399,9 +395,17 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		Definitions: games.Lookup{},
 		Games:       locator,
 		Opener:      urlLauncher,
-		Commands:    actions.NewExecRunner(),
+		Commands:    &actions.ExecRunner{Logger: logService.Logger()},
+		AllowCommands: func() bool {
+			current, loadErr := store.Load()
+			if loadErr != nil || current == nil {
+				return false
+			}
+
+			return current.Security.AllowsActionCommands()
+		},
 		// An action runs somebody else's program; its output belongs in the log
-		// next to the rest of the run, not only in the panel that triggered it.
+		// next to the rest of the run; not exclusive to the triggering panel.
 		Echo:     logging.ActionOutput(),
 		Platform: platformName,
 	})
@@ -441,6 +445,14 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 
 		return nil
 	}}, cleanups...)
+
+	logService.Logger().Info().
+		Str("op", "wire").
+		Str("game", gameDef.ID()).
+		Str("database", databasePath).
+		Str("storage_root", storageRoot).
+		Str("cache_root", cacheRoot).
+		Msg("manager graph wired")
 
 	return &Bundle{
 		Deps: ClientDeps{
@@ -532,7 +544,7 @@ func buildLogging(
 }
 
 // persistGamePath validates a caller-supplied game path and stores it. Validation is up
-// front so a bad path is a construction failure rather than a discovery made mid-download.
+// front so a bad path is a construction failure, not a discovery made mid-download.
 func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string) error {
 	gameID := strings.TrimSpace(cfg.ActiveGame)
 	if gameID == "" {
@@ -548,7 +560,7 @@ func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string
 	if err != nil {
 		return err
 	}
-	// Store the cleaned path the detector confirmed rather than the caller's
+	// Store the cleaned path the detector confirmed, not the caller's
 	// spelling, so the file and the value the locator will probe agree.
 	cfg.UpdateActiveSettings(func(settings *domain.GameSettings) {
 		settings.Path = install.Path
@@ -565,7 +577,7 @@ func persistGamePath(cfg *domain.Config, store services.ConfigStore, path string
 }
 
 // homeDir resolves the home directory, tolerating the failure that leaves the
-// detector with fewer candidate locations rather than failing the wiring.
+// detector with fewer candidate locations, not failing the wiring.
 func homeDir() string {
 	home, err := platform.HomeDir(domain.CurrentPlatform(), platform.OSEnv())
 	if err != nil {
@@ -576,8 +588,7 @@ func homeDir() string {
 }
 
 // configuredGamePath reads the stored game path, returning "" when it cannot be read.
-// It runs on every hook, so an unreadable configuration degrades to "no game folder"
-// rather than failing the hook with an error the mod author cannot act on.
+// It runs on every hook.
 func configuredGamePath(store services.ConfigStore) string {
 	if store == nil {
 		return ""

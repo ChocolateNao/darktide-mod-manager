@@ -624,6 +624,42 @@ func TestBundleCloseOnANilBundleIsHarmless(t *testing.T) {
 	require.NoError(t, bundle.Close(), "closing a nil bundle")
 }
 
+func TestInspectDroppedFolderInstallsAnArchiveOutsideConfiguredPaths(t *testing.T) {
+	w := newWireWorkspace(t)
+	w.makeGame(t)
+	w.saveConfig(t, func(cfg *domain.Config) {
+		cfg.UpdateActiveSettings(func(gs *domain.GameSettings) { gs.Path = w.gameDir })
+		cfg.Sources["local"] = domain.SourceConfig{Enabled: true, Paths: []string{w.localDir}}
+	})
+
+	archive := w.writeModArchive(t, "Better UI 1.2.0.zip")
+	dropDir := filepath.Join(t.TempDir(), "Dropped Better UI")
+	require.NoError(t, os.MkdirAll(dropDir, 0o755), "create %s", dropDir)
+	require.NoError(
+		t,
+		os.Rename(archive, filepath.Join(dropDir, filepath.Base(archive))),
+		"move archive out of the configured source path",
+	)
+
+	client, err := NewClient(context.Background(), w.options()...)
+	require.NoError(t, err, "new client")
+
+	t.Cleanup(func() { _ = client.Close() })
+
+	ctx := context.Background()
+
+	dropped, recognised, err := client.InspectDroppedPath(ctx, dropDir)
+	require.NoError(t, err, "inspect")
+	require.True(t, recognised, "the dropped folder holds one archive but was not recognised")
+	assert.Equal(t, "local", dropped.SourceID, "source")
+	assert.Equal(t, "betterui", dropped.ModID, "mod id")
+
+	mod, err := client.InstallMod(ctx, dropped.SourceID, dropped.ModID)
+	require.NoError(t, err, "install the inspected dropped archive")
+
+	assert.Equal(t, "betterui", mod.ID, "installed mod")
+}
+
 func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	w := newWireWorkspace(t)
 	w.makeGame(t)
