@@ -440,7 +440,10 @@ func (c *CacheManager) downloadOnce(
 		Dur("duration", time.Since(start)).
 		Msg("archive downloaded")
 
-	c.publish(Event{Type: EventCacheDownloaded, ModID: mod.ID, SourceID: mod.SourceID, Data: dest})
+	c.publish(Event{
+		Type: EventCacheDownloaded, ModID: mod.ID, ModName: mod.Name,
+		SourceID: mod.SourceID, Data: dest,
+	})
 
 	return dest, nil
 }
