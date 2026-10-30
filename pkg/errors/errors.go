@@ -34,6 +34,7 @@ const (
 	ErrCodeHookInvalid       Code = "HOOK_INVALID"
 	ErrCodeInstallFailed     Code = "INSTALL_FAILED"
 	ErrCodeUninstallFailed   Code = "UNINSTALL_FAILED"
+	ErrCodeTrashUnavailable  Code = "TRASH_UNAVAILABLE"
 	ErrCodeOperationCanceled Code = "OPERATION_CANCELED"
 	ErrCodeNoStoragePath     Code = "NO_STORAGE_PATH"
 

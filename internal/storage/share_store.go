@@ -104,6 +104,12 @@ func (s *ShareStore) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+// DeleteAll removes every share record, used by the factory reset.
+func (s *ShareStore) DeleteAll(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM shares`)
+	return err
+}
+
 func (s *ShareStore) GetByLink(
 	ctx context.Context,
 	link domain.ShareLink,

@@ -131,6 +131,20 @@ func TestShareStoreDelete(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrShareNotFound)
 }
 
+func TestShareStoreDeleteAll(t *testing.T) {
+	store := newShareStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, store.Save(ctx, shareRecord("s1", "darktide")))
+	require.NoError(t, store.Save(ctx, shareRecord("s2", "darktide")))
+
+	require.NoError(t, store.DeleteAll(ctx))
+
+	shares, err := store.List(ctx)
+	require.NoError(t, err, "list after delete all")
+	assert.Empty(t, shares, "every share must be gone")
+}
+
 func TestShareStoreGetByLink(t *testing.T) {
 	store := newShareStore(t)
 	ctx := context.Background()
