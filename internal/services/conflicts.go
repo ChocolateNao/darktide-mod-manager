@@ -17,11 +17,9 @@ import (
 const requiredVersionsKey = "required_versions"
 
 // DetectConflicts reports every conflict it can find among the installed mods.
-// Only enabled mods are examined: a disabled mod's files are not in the game
-// folder, so reporting a collision with one is noise the user cannot act on
-// without enabling it first. The result is ordered by type and mod id so a CLI
-// listing and a UI list agree, and one unreadable inventory narrows the report
-// instead of aborting the sweep.
+// File and declaration checks look at enabled mods only: a disabled mod's files
+// are not in the game folder, so a collision with one is noise. Dependency checks
+// include disabled mods because a missing requirement still needs installing.
 func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictReport, error) {
 	if err := checkInitialized(s); err != nil {
 		return nil, err
@@ -52,8 +50,8 @@ func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictRepo
 	reports = append(reports, s.declaredConflicts(enabled)...)
 	inventories := s.inventories(ctx, enabled)
 	reports = append(reports, fileOverlapConflicts(enabled, inventories)...)
-	reports = append(reports, dependencyConflicts(ctx, s.deps.Index, enabled, byID)...)
-	reports = append(reports, versionMismatchConflicts(enabled, byID)...)
+	reports = append(reports, dependencyConflicts(ctx, s.deps.Index, mods, byID)...)
+	reports = append(reports, versionMismatchConflicts(mods, byID)...)
 
 	stampReportIDs(reports)
 	sortReports(reports)
@@ -62,9 +60,9 @@ func (s *ModService) DetectConflicts(ctx context.Context) ([]domain.ConflictRepo
 }
 
 // stampReportIDs fills the identity field on every report the detectors produced.
-// One stamp site: not one per detector, because the identity is derived
-// a detector that set it by hand and one that forgot would differ only in whether
-// the frontend's "resolve" button works.
+// All detectors share one derivation: the identity comes from the report itself,
+// and a detector that set it by hand beside one that forgot would differ only
+// in whether the frontend's "resolve" button works.
 func stampReportIDs(reports []domain.ConflictReport) {
 	for i := range reports {
 		reports[i].ID = reports[i].Identity()
@@ -112,7 +110,7 @@ func (s *ModService) duplicateIDConflicts(mods []domain.Mod) []domain.ConflictRe
 		collided := quoteJoin(prev.ids)
 		if prev.used {
 			// Already reported against this folder; a third mod folding into it
-			// gets its own report against the first rather than extending the pair.
+			// gets its own report against the first, not extending the pair.
 			out = append(out, domain.ConflictReport{
 				Type:     domain.ConflictDuplicateID,
 				ModA:     &prev.first,
@@ -222,7 +220,7 @@ func (s *ModService) inventories(
 // fileOverlapConflicts finds enabled mods that expose the same file name into
 // the game's mods folder. The comparison is on the top-level entry name, since
 // that is what lands in the game folder whatever the contents are; one report per
-// colliding pair rather than per file keeps the list readable.
+// colliding pair, not per file keeps the list readable.
 func fileOverlapConflicts(
 	mods []domain.Mod,
 	inventories map[string][]domain.ModFile,
@@ -293,7 +291,7 @@ func fileOverlapConflicts(
 			Severity: domain.SeverityWarning,
 			Details:  overlapDetails(files),
 			// Whichever file wins is decided by load order, which the user
-			// controls; a warning rather than an error, since mods share files.
+			// controls; a warning, not an error, since mods share files.
 			Recommendation: "disable one mod or give the shared file a unique name",
 		})
 	}
@@ -330,17 +328,19 @@ func dependencyConflicts(
 	byID map[string]domain.Mod,
 ) []domain.ConflictReport {
 	enabledIDs := make(map[string]bool, len(mods))
-	for _, m := range mods {
-		enabledIDs[m.ID] = true
-	}
+	enabled := make([]domain.Mod, 0, len(mods))
 
-	enabled := make([]domain.Mod, len(mods))
-	copy(enabled, mods)
+	for _, m := range mods {
+		if m.Enabled {
+			enabledIDs[m.ID] = true
+			enabled = append(enabled, m)
+		}
+	}
 
 	var out []domain.ConflictReport
 
-	for i := range enabled {
-		m := enabled[i]
+	for i := range mods {
+		m := mods[i]
 		for _, dep := range m.Dependencies {
 			dep = strings.TrimSpace(dep)
 			if dep == "" {
@@ -582,7 +582,7 @@ func versionMismatchConflicts(
 }
 
 // requiredVersions extracts the dependency → version expression map from a mod's
-// source data. A malformed entry is skipped rather than reported: the value came
+// source data. A malformed entry is skipped, not reported: the value came
 // from a third-party API, and refusing to scan a mod over it would be worse.
 func requiredVersions(data map[string]any) map[string]string {
 	if len(data) == 0 {
@@ -636,7 +636,7 @@ func sortReports(reports []domain.ConflictReport) {
 
 // ResolveConflict applies a resolution to a currently reported conflict. The
 // report is re-detected first, and one that no longer exists is reported as
-// ErrCodeNotFound rather than silently succeeding: the caller is working from a
+// ErrCodeNotFound, not silently succeeding: the caller is working from a
 // stale view, and a no-op would read as success.
 func (s *ModService) ResolveConflict(
 	ctx context.Context,
