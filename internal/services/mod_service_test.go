@@ -1034,6 +1034,78 @@ func TestDisableModUndeployFailureLeavesRecordEnabled(t *testing.T) {
 	}
 }
 
+func TestUninstallRemovesADirectoryModFromTheGameFolder(t *testing.T) {
+	h := newHarness(t, func(o *harnessOpts) {
+		o.locator.withLoadOrderFile("mods.txt")
+		o.deployer = platform.NewDeployer(domain.PlatformLinux)
+	})
+	mod := modFixture("better_ui", "1.2.0")
+	h.withArchive(t, mod, "BetterUI/BetterUI.mod", "BetterUI/scripts/init.lua")
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+		require.NoError(t, err, "install: %v", err)
+	}
+
+	deployed := filepath.Join(h.locator.modsPath, "BetterUI")
+
+	{
+		_, err := os.Stat(deployed)
+		require.NoError(t, err, "the mod should be deployed before uninstall")
+	}
+
+	{
+		err := h.svc.UninstallMod(context.Background(), "better_ui")
+		require.NoError(t, err, "uninstall: %v", err)
+	}
+
+	{
+		_, err := os.Stat(deployed)
+		assert.True(t, os.IsNotExist(err), "the deployed folder must be removed, stat gave %v", err)
+	}
+
+	mods, err := h.svc.ListMods(context.Background())
+	require.NoError(t, err, "list mods")
+
+	for _, m := range mods {
+		assert.False(t, m.External && m.ModFolderName == "BetterUI",
+			"uninstall left an external row for %q", m.ID)
+	}
+}
+
+func TestScanDoesNotResurrectAStaleMod(t *testing.T) {
+	h := newHarness(t, func(o *harnessOpts) {
+		o.locator.withLoadOrderFile("mods.txt")
+		o.deployer = platform.NewDeployer(domain.PlatformLinux)
+	})
+	mod := modFixture("better_ui", "1.2.0")
+	h.withArchive(t, mod, "BetterUI/BetterUI.mod", "BetterUI/scripts/init.lua")
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+		require.NoError(t, err, "install: %v", err)
+	}
+
+	stale := *h.installed(t, "better_ui")
+
+	{
+		err := h.svc.UninstallMod(context.Background(), "better_ui")
+		require.NoError(t, err, "uninstall: %v", err)
+	}
+
+	// A list call that read the record before the uninstall still holds this
+	// snapshot; reconciling it must not write the deleted row back.
+	out, err := h.svc.scanGameFolder(context.Background(), "", []domain.Mod{stale})
+	require.NoError(t, err, "scan")
+	assert.Empty(t, out, "scan returned the deleted mod")
+
+	{
+		_, err := h.index.GetByID(context.Background(), "better_ui")
+		assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeModNotFound),
+			"the deleted record was written back, got %v", err)
+	}
+}
+
 func TestUninstallRemovesEverything(t *testing.T) {
 	h := newHarness(t)
 	mod := modFixture("better_ui", "1.2.0")

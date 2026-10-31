@@ -133,6 +133,7 @@ func (s *ModService) scanGameFolder(
 	}
 
 	managed := make(map[string]bool, len(known))
+	dropped := make(map[string]bool)
 
 	for i := range known {
 		mod := &known[i]
@@ -147,15 +148,30 @@ func (s *ModService) scanGameFolder(
 			continue
 		}
 
-		mod.Enabled = enabled
-		mod.UpdatedAt = s.now()
-		if err := s.deps.Index.Save(ctx, mod); err != nil {
+		// UpdateEnabled, not Save: a list call can overlap an uninstall, and an
+		// upsert here would write the deleted record back as a disabled row.
+		if err := s.deps.Index.UpdateEnabled(ctx, mod.ID, enabled); err != nil {
+			if appErrors.IsAppError(err, appErrors.ErrCodeModNotFound) {
+				dropped[mod.ID] = true
+
+				continue
+			}
+
 			return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
 				"reconcile mod %q with the game folder", modLabel(mod))
 		}
+
+		mod.Enabled = enabled
+		mod.UpdatedAt = s.now()
 	}
 
-	out := known
+	out := make([]domain.Mod, 0, len(known))
+
+	for _, mod := range known {
+		if !dropped[mod.ID] {
+			out = append(out, mod)
+		}
+	}
 
 	for folder := range folders {
 		if managed[folder] {

@@ -1225,9 +1225,10 @@ type harness struct {
 }
 
 type harnessOpts struct {
-	locator *fakeLocator
-	config  *staticConfig
-	entries []string
+	locator  *fakeLocator
+	config   *staticConfig
+	deployer FileDeployer
+	entries  []string
 }
 
 func newHarness(t *testing.T, opts ...func(*harnessOpts)) *harness {
@@ -1279,13 +1280,18 @@ func newHarness(t *testing.T, opts ...func(*harnessOpts)) *harness {
 
 	h.sources.add("vortex", h.source)
 
+	deployer := FileDeployer(h.deployer)
+	if o.deployer != nil {
+		deployer = o.deployer
+	}
+
 	svc, err := NewModService(ModServiceDeps{
 		Sources:     h.sources,
 		Cache:       h.cache,
 		Index:       h.index,
 		Hooks:       h.hooks,
 		Locator:     h.locator,
-		Deployer:    h.deployer,
+		Deployer:    deployer,
 		Extractor:   storage.NewArchiveExtractor(),
 		Config:      h.config,
 		Events:      h.events,
