@@ -6,3 +6,6 @@ frontend/package.json.md5
 frontend/*.tsbuildinfo
 **/coverage
 build/windows/installer/tmp
+
+**/*.md
+!README.md
