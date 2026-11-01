@@ -216,10 +216,6 @@ export function useCacheInfoQuery() {
   return useQuery({ queryKey: queryKeys.cache(), queryFn: api.getCacheInfo });
 }
 
-/**
- * The Logs view owns these directly: its settings popover is the only editor
- * (§5.4), so a cached copy has nowhere else to be read from.
- */
 export function useLogSettingsQuery() {
   return useQuery({
     queryKey: queryKeys.logSettings(),

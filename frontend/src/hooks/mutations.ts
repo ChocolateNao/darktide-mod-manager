@@ -27,7 +27,7 @@ function failRunning(kind: "install" | "uninstall", error: unknown): void {
   }
 }
 
-/** The §7.2 invalidation map: a write moves more than the obvious query. */
+/** The invalidation map: a write moves more than the obvious query. */
 type Scope = Exclude<
   keyof typeof queryKeys,
   "modHooks" | "search" | "logTail" | "actions" | "linksForMod"

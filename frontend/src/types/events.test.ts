@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { NOTIFICATION_CATEGORIES } from "@/bridge/notifications";
 import { EVENT_TYPES, parseEvent, WEBVIEW_EVENT_NAME } from "@/types/events";
 
-/** §9's table row by row: the mapping lives in the router, so a row that stops firing shows up here. */
+/** The mapping lives in the router, a row that stops firing shows up here. */
 describe("event envelope", () => {
   it("names every type the backend publishes, share events included", () => {
     expect(EVENT_TYPES).toContain("share.progress");
@@ -44,7 +44,7 @@ describe("event envelope", () => {
 });
 
 describe("notification categories", () => {
-  it("covers every category §9's table maps an event to", () => {
+  it("covers every category table maps an event to", () => {
     expect([...NOTIFICATION_CATEGORIES].sort()).toEqual(
       ["cache", "errors", "hooks", "install", "sharing", "updates"].sort()
     );
