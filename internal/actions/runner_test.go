@@ -325,6 +325,39 @@ func TestRunGivesHandlersADetachedCommandStarter(t *testing.T) {
 	assert.True(t, commands.specs[0].Detached, "handler command was not detached")
 }
 
+func TestRunGivesHandlersACommandRunner(t *testing.T) {
+	commands := &recordingCommandRunner{
+		output: CommandOutput{Stdout: "patched", Stderr: "note", ExitCode: 0},
+	}
+	action := domain.GameAction{
+		ID:           "test:patch",
+		GameID:       "test",
+		Platform:     domain.ActionPlatformUniversal,
+		RequiresGame: true,
+		Handler: func(ctx context.Context, actx domain.ActionContext) (*domain.GameActionResult, error) {
+			output, err := actx.RunCommand(ctx, domain.ActionCommand{
+				Path: "dtkit-patch",
+				Args: []string{"--patch", "bundle"},
+			})
+
+			return &domain.GameActionResult{Success: true, Output: output.Output}, err
+		},
+	}
+
+	runner := newTestRunner(t, action, func(d *RunnerDeps) { d.Commands = commands })
+
+	result, err := runner.Run(context.Background(), "test:patch", nil)
+	require.NoError(t, err, "run")
+	require.NotNil(t, result, "result")
+	assert.True(t, result.Success, "handler failed: %+v", result)
+	assert.Equal(t, "patched\nnote", result.Output)
+
+	require.Len(t, commands.specs, 1, "ran %d commands", len(commands.specs))
+	assert.False(t, commands.specs[0].Detached, "handler command was detached")
+	assert.Equal(t, "/games/test", commands.specs[0].Dir)
+	assert.Equal(t, "test:patch", commands.specs[0].Action.String())
+}
+
 func TestRunTellsHandlersWhetherCommandsAreAllowed(t *testing.T) {
 	var allowed bool
 

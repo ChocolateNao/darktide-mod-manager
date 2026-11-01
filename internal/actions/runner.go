@@ -160,6 +160,23 @@ func (r *Runner) Run(
 		return err
 	}
 
+	actx.RunCommand = func(
+		ctx context.Context,
+		command domain.ActionCommand,
+	) (domain.ActionCommandResult, error) {
+		output, err := r.commands.Run(ctx, CommandSpec{
+			Path:   command.Path,
+			Args:   command.Args,
+			Dir:    actx.WorkingDir,
+			Action: action.ID,
+		})
+
+		return domain.ActionCommandResult{
+			Output:   output.Combined(),
+			ExitCode: output.ExitCode,
+		}, err
+	}
+
 	if action.Script != nil {
 		return r.runScript(ctx, action, actx)
 	}
