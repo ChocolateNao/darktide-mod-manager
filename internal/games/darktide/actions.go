@@ -3,12 +3,15 @@ package darktide
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
+	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 )
 
 // Action ids. They are code, not configuration: a game's actions are part of
@@ -19,6 +22,8 @@ const (
 	actionOpenModsFolder    = "open_mods_folder"
 	actionOpenWorkshop      = "open_workshop"
 	actionLaunchGame        = "launch_game"
+	actionSetModLoading     = "set_mod_loading"
+	actionInstallPatcher    = "install_patcher"
 )
 
 // Category names group actions in the UI and in the CLI's listing.
@@ -347,6 +352,243 @@ func launchGame(ctx context.Context, actx domain.ActionContext) (*domain.GameAct
 	}, nil
 }
 
+// dtkitPatchCommand finds the patcher that matches how the game was set up.
+// The native Linux build lives beside the Windows one in tools/; old DML
+// installs only have the .exe, which needs Wine.
+func dtkitPatchCommand(
+	actx domain.ActionContext,
+	flag string,
+	lookPath func(string) (string, error),
+) (domain.ActionCommand, bool) {
+	if native, ok := patcherPath(actx.InstallPath, "dtkit-patch"); ok {
+		return domain.ActionCommand{
+			Path: native,
+			Args: []string{flag, "bundle"},
+		}, true
+	}
+
+	exe, ok := patcherPath(actx.InstallPath, "dtkit-patch.exe")
+	if !ok {
+		return domain.ActionCommand{}, false
+	}
+
+	for _, candidate := range []string{"wine", "wine64"} {
+		wine, err := lookPath(candidate)
+		if err != nil {
+			continue
+		}
+
+		return domain.ActionCommand{
+			Path: wine,
+			Args: []string{exe, flag, "bundle"},
+		}, true
+	}
+
+	return domain.ActionCommand{}, false
+}
+
+// patcherPath looks in the tools folder first, then the game root.
+func patcherPath(installPath, name string) (string, bool) {
+	for _, dir := range []string{filepath.Join(installPath, "tools"), installPath} {
+		path := filepath.Join(dir, name)
+		if isFile(path) {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+// installedPatcher reports a patcher the game folder already holds.
+func installedPatcher(installPath string) (string, bool) {
+	for _, name := range []string{"dtkit-patch", "dtkit-patch.exe"} {
+		if path, ok := patcherPath(installPath, name); ok {
+			return path, true
+		}
+	}
+
+	return "", false
+}
+
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+
+	return err == nil && !info.IsDir()
+}
+
+// setModLoading patches or unpatches the bundle database so the game loads
+// mods. dtkit-patch prints what it did, so its output is kept for the result.
+func setModLoading(
+	ctx context.Context,
+	actx domain.ActionContext,
+) (*domain.GameActionResult, error) {
+	if !actx.CommandsAllowed {
+		return &domain.GameActionResult{
+			Success:     false,
+			Message:     fmt.Sprintf("%s needs permission to execute commands", actx.Action),
+			MessageKey:  "actions.commandsDisabled",
+			MessageArgs: map[string]any{"action": string(actx.Action)},
+		}, nil
+	}
+
+	if actx.RunCommand == nil {
+		return nil, fmt.Errorf("no command runner is available")
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(actx.ArgString("mode")))
+	if mode == "" {
+		mode = "enable"
+	}
+
+	flag := "--patch"
+	if mode == "disable" {
+		flag = "--unpatch"
+	}
+
+	command, ok := dtkitPatchCommand(actx, flag, exec.LookPath)
+	if !ok {
+		return &domain.GameActionResult{
+			Success:     false,
+			Message:     "dtkit-patch was not found in the game folder",
+			MessageKey:  "actions.darktide.setModLoading.missingTool",
+			MessageArgs: map[string]any{"path": filepath.Join(actx.InstallPath, "tools")},
+		}, nil
+	}
+
+	output, runErr := actx.RunCommand(ctx, command)
+
+	commandLine := strings.TrimSpace(command.Path + " " + strings.Join(command.Args, " "))
+	details := []domain.ActionDetail{{
+		LabelKey: "actions.darktide.setModLoading.command",
+		Label:    "Patch command",
+		Value:    commandLine,
+	}}
+
+	data := map[string]any{
+		"mode":      mode,
+		"command":   command.Path,
+		"args":      command.Args,
+		"exit_code": output.ExitCode,
+	}
+
+	if runErr != nil {
+		return &domain.GameActionResult{
+			Success:     false,
+			Message:     fmt.Sprintf("dtkit-patch failed to %s mod loading", mode),
+			MessageKey:  "actions.darktide.setModLoading.failed",
+			MessageArgs: map[string]any{"mode": mode},
+			Details:     details,
+			Output:      strings.TrimSpace(output.Output),
+			Data:        data,
+		}, nil
+	}
+
+	messageKey := "actions.darktide.setModLoading.enabled"
+	message := "mod loading enabled"
+
+	if flag == "--unpatch" {
+		messageKey = "actions.darktide.setModLoading.disabled"
+		message = "mod loading disabled"
+	}
+
+	return &domain.GameActionResult{
+		Success:    true,
+		Message:    message,
+		MessageKey: messageKey,
+		Details:    details,
+		Output:     strings.TrimSpace(output.Output),
+		Data:       data,
+	}, nil
+}
+
+// installPatcher puts the newest dtkit-patch release in the game's tools
+// folder. An existing patcher is reported and left alone, so a Wine-only setup
+// is not overwritten by accident.
+func installPatcher(
+	ctx context.Context,
+	actx domain.ActionContext,
+) (*domain.GameActionResult, error) {
+	if path, ok := installedPatcher(actx.InstallPath); ok {
+		return &domain.GameActionResult{
+			Success:     true,
+			Message:     fmt.Sprintf("dtkit-patch is already installed at %s", path),
+			MessageKey:  "actions.darktide.installPatcher.alreadyInstalled",
+			MessageArgs: map[string]any{"path": path},
+			Details: []domain.ActionDetail{{
+				LabelKey: "actions.darktide.installPatcher.path",
+				Label:    "Patcher path",
+				Value:    path,
+			}},
+			Data: map[string]any{"path": path, "installed": false},
+		}, nil
+	}
+
+	installer := newPatcherInstaller(actx.Platform)
+
+	release, err := installer.latest(ctx)
+	if errors.Is(err, errNoPatcherAsset) {
+		return &domain.GameActionResult{
+			Success:     false,
+			Message:     fmt.Sprintf("dtkit-patch has no release for %s/%s", actx.Platform, installer.arch),
+			MessageKey:  "actions.darktide.installPatcher.noAsset",
+			MessageArgs: map[string]any{"platform": string(actx.Platform), "arch": installer.arch},
+		}, nil
+	}
+
+	if err != nil {
+		return installPatcherFailure(ctx, err)
+	}
+
+	path, err := installer.install(ctx, release, filepath.Join(actx.InstallPath, "tools"))
+	if err != nil {
+		return installPatcherFailure(ctx, err)
+	}
+
+	return &domain.GameActionResult{
+		Success:     true,
+		Message:     fmt.Sprintf("dtkit-patch %s installed to %s", release.Version, path),
+		MessageKey:  "actions.darktide.installPatcher.installed",
+		MessageArgs: map[string]any{"version": release.Version, "path": path},
+		Details: []domain.ActionDetail{
+			{
+				LabelKey: "actions.darktide.installPatcher.version",
+				Label:    "Version",
+				Value:    release.Version,
+			},
+			{
+				LabelKey: "actions.darktide.installPatcher.path",
+				Label:    "Patcher path",
+				Value:    path,
+			},
+		},
+		Data: map[string]any{
+			"version":   release.Version,
+			"asset":     release.Asset,
+			"path":      path,
+			"installed": true,
+		},
+	}, nil
+}
+
+// installPatcherFailure keeps a cancelled run reported as cancelled rather than
+// as a failed download.
+func installPatcherFailure(
+	ctx context.Context,
+	err error,
+) (*domain.GameActionResult, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, appErrors.Wrap(ctxErr, appErrors.ErrCodeOperationCanceled,
+			"installing dtkit-patch was cancelled")
+	}
+
+	return &domain.GameActionResult{
+		Success:     false,
+		Message:     fmt.Sprintf("could not install dtkit-patch: %v", err),
+		MessageKey:  "actions.darktide.installPatcher.failed",
+		MessageArgs: map[string]any{"reason": err.Error()},
+	}, nil
+}
+
 // actions is the table every call to GameActions copies from.
 //
 // Building the slice per call keeps the definition stateless and keeps the
@@ -419,6 +661,46 @@ func actions() []domain.GameAction {
 			// installation; hiding the action would hide the answer too.
 			Platform: domain.ActionPlatformUniversal,
 			Handler:  launchGame,
+		},
+		{
+			ID:             domain.ActionID(ID + ":" + actionSetModLoading),
+			GameID:         ID,
+			DisplayName:    "Set Mod Loading",
+			DisplayNameKey: "actions.darktide.setModLoading.title",
+			Description:    "Enable or disable the game's mod-loading patch with dtkit-patch.",
+			DescriptionKey: "actions.darktide.setModLoading.description",
+			Category:       categoryGame,
+			CategoryKey:    "actions.darktide.category.game",
+			Icon:           "wrench",
+			RequiresGame:   true,
+			Platform:       domain.ActionPlatformLinux,
+			Options: []domain.ActionOption{
+				{
+					Name:           "mode",
+					Type:           domain.ActionOptionSelect,
+					Choices:        []string{"enable", "disable"},
+					Default:        "enable",
+					Label:          "Mod loading",
+					LabelKey:       "actions.darktide.setModLoading.mode.label",
+					Description:    "Enable patches the game; disable restores the vanilla bundle.",
+					DescriptionKey: "actions.darktide.setModLoading.mode.description",
+				},
+			},
+			Handler: setModLoading,
+		},
+		{
+			ID:             domain.ActionID(ID + ":" + actionInstallPatcher),
+			GameID:         ID,
+			DisplayName:    "Install dtkit-patch",
+			DisplayNameKey: "actions.darktide.installPatcher.title",
+			Description:    "Download the latest dtkit-patch release for this platform into the game's tools folder.",
+			DescriptionKey: "actions.darktide.installPatcher.description",
+			Category:       categoryGame,
+			CategoryKey:    "actions.darktide.category.game",
+			Icon:           "download",
+			RequiresGame:   true,
+			Platform:       domain.ActionPlatformUniversal,
+			Handler:        installPatcher,
 		},
 	}
 }

@@ -229,6 +229,18 @@ type ActionOpener interface {
 // CommandStarter starts an external command without waiting for it to exit.
 type CommandStarter func(ctx context.Context, command ActionCommand) error
 
+// ActionCommandResult is what a command run to completion produced.
+type ActionCommandResult struct {
+	Output   string
+	ExitCode int
+}
+
+// ActionCommandRunner runs a command and waits for it to exit.
+type ActionCommandRunner func(
+	ctx context.Context,
+	command ActionCommand,
+) (ActionCommandResult, error)
+
 // ActionContext is everything a handler is allowed to depend on.
 type ActionContext struct {
 	Game     GameDefinition
@@ -243,6 +255,8 @@ type ActionContext struct {
 	CommandsAllowed bool
 	// StartCommand is nil when the runner has no command runner.
 	StartCommand CommandStarter
+	// RunCommand waits for the program to exit and returns its output.
+	RunCommand   ActionCommandRunner
 	InstallPath  string
 	ModsPath     string
 	WorkingDir   string
