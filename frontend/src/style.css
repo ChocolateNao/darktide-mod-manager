@@ -1,0 +1,244 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+@custom-variant compact (&:is([data-compact="true"] *));
+
+/* shadcn's primitives read these names; the token set keeps them and layers the
+   manager's own palette underneath. */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-rail: var(--rail);
+  --color-rail-foreground: var(--rail-foreground);
+  --color-rail-active: var(--rail-active);
+  --color-game-accent: var(--game-accent);
+  --color-mod-on: var(--mod-on);
+  --color-mod-off: var(--mod-off);
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", monospace;
+}
+
+@font-face {
+  font-family: "Nunito";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
+}
+
+:root {
+  --radius: 0.5rem;
+  /* The palette is dark-first: the window chrome is navy, so a light theme that
+     ignores that reads as a different application. */
+  --background: oklch(0.97 0.008 250);
+  --foreground: oklch(0.22 0.03 252);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.03 252);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.03 252);
+  --primary: oklch(0.74 0.13 72);
+  --primary-foreground: oklch(0.2 0.03 252);
+  --secondary: oklch(0.93 0.015 250);
+  --secondary-foreground: oklch(0.28 0.03 252);
+  --muted: oklch(0.93 0.015 250);
+  --muted-foreground: oklch(0.52 0.025 252);
+  --accent: oklch(0.91 0.04 250);
+  --accent-foreground: oklch(0.25 0.03 252);
+  --destructive: oklch(0.58 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --success: oklch(0.6 0.13 155);
+  --success-foreground: oklch(0.98 0 0);
+  --warning: oklch(0.76 0.15 78);
+  --warning-foreground: oklch(0.2 0.03 252);
+  --info: oklch(0.62 0.12 235);
+  --info-foreground: oklch(0.98 0 0);
+  --border: oklch(0.88 0.012 250);
+  --border-strong: oklch(0.78 0.015 250);
+  --input: oklch(0.88 0.012 250);
+  --ring: oklch(0.74 0.13 72);
+  --rail: oklch(0.93 0.015 250);
+  --rail-foreground: oklch(0.4 0.025 252);
+  --rail-active: oklch(1 0 0);
+  --game-accent: #e0a458;
+  --code-bg: oklch(0.985 0.003 250);
+  --code-gutter: oklch(0.55 0.01 250);
+  --code-comment: oklch(0.52 0.02 250);
+  --code-keyword: #a35a00;
+  --code-string: #2f6f2f;
+  --code-number: #8a5a00;
+  --code-function: #1f5f8b;
+  --code-type: #7a3f9d;
+  --code-property: #3f4b5c;
+  --code-operator: #b1491f;
+  --mod-on: oklch(0.32 0.03 252);
+  --mod-off: oklch(0.58 0.02 252);
+}
+
+.dark {
+  /* rgb(27, 38, 54) — the window background main.go already asks for. */
+  --background: oklch(0.245 0.035 251);
+  --foreground: oklch(0.93 0.012 250);
+  --card: oklch(0.285 0.038 251);
+  --card-foreground: oklch(0.93 0.012 250);
+  --popover: oklch(0.27 0.036 251);
+  --popover-foreground: oklch(0.93 0.012 250);
+  --primary: oklch(0.76 0.13 74);
+  --primary-foreground: oklch(0.18 0.03 252);
+  --secondary: oklch(0.32 0.035 251);
+  --secondary-foreground: oklch(0.92 0.012 250);
+  --muted: oklch(0.31 0.033 251);
+  --muted-foreground: oklch(0.7 0.022 250);
+  --accent: oklch(0.36 0.04 251);
+  --accent-foreground: oklch(0.95 0.01 250);
+  --destructive: oklch(0.66 0.19 24);
+  --destructive-foreground: oklch(0.16 0.03 252);
+  --success: oklch(0.72 0.15 155);
+  --success-foreground: oklch(0.16 0.03 252);
+  --warning: oklch(0.8 0.14 80);
+  --warning-foreground: oklch(0.18 0.03 252);
+  --info: oklch(0.7 0.12 235);
+  --info-foreground: oklch(0.16 0.03 252);
+  --border: oklch(1 0 0 / 11%);
+  --border-strong: oklch(1 0 0 / 20%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.76 0.13 74);
+  --rail: oklch(0.205 0.032 251);
+  --rail-foreground: oklch(0.74 0.02 250);
+  --rail-active: oklch(0.3 0.04 251);
+  --game-accent: #e0a458;
+  /*
+    The hook editor paints from these tokens so it follows the app theme without
+    remounting, since two HighlightStyles do not merge; colours are chosen for
+    contrast on --code-bg.
+  */
+  --code-bg: oklch(0.175 0.022 251);
+  --code-gutter: oklch(0.45 0.02 250);
+  --code-comment: oklch(0.55 0.03 250);
+  --code-keyword: #e0a458;
+  --code-string: #9ccf8a;
+  --code-number: #e6c07b;
+  --code-function: #7fb3d5;
+  --code-type: #c9a0dc;
+  --code-property: #b8c4d4;
+  --code-operator: #d98b6a;
+  --mod-on: oklch(0.93 0.012 250);
+  --mod-off: oklch(0.5 0.02 250);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    /* The chrome is inert and only `data-selectable` data opts back in; an
+       unstyled <pre> in a future component would become a selection magnet. */
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* Typing is the one thing that cannot work without a selection. */
+  input,
+  textarea,
+  [contenteditable] {
+    user-select: text;
+  }
+
+  /* Opt-in data: log lines, paths, file lists, script output. Anything the user
+     might want to copy carries `data-selectable`, and nothing else does. */
+  [data-selectable] {
+    user-select: text;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--game-accent) 35%, transparent);
+    color: var(--foreground);
+  }
+}
+
+/*
+ * Overlay content has an open animation and no exit animation: Radix keeps a
+ * popper mounted one more frame so the click can land, and an exit animation
+ * draws during that frame.
+ */
+@layer components {
+  /* Compact mode only shrinks the row heights and paddings a long list depends
+     on, so a list stays readable at a denser pitch. */
+  [data-compact="true"] .density-row {
+    padding-block: 0.25rem;
+  }
+
+  [data-compact="true"] .density-cell {
+    padding-block: 0.2rem;
+  }
+}
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* One scrollbar everywhere: the platform-native ones differ enough to change
+   the table's rhythm between machines. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: var(--border-strong);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
