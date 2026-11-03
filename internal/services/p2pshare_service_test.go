@@ -390,3 +390,50 @@ func stagingOf(t *testing.T, service *P2PShareService, offerID string) string {
 
 	return record.stageDir
 }
+
+func TestValidateReceivedOfferEnforcesSizeLimits(t *testing.T) {
+	tests := []struct {
+		name    string
+		files   []domain.P2PSharedFile
+		wantErr bool
+	}{
+		{name: "empty offer"},
+		{name: "one small file", files: []domain.P2PSharedFile{{Name: "a.zip", Size: 1 << 20}}},
+		{
+			name:    "negative size",
+			files:   []domain.P2PSharedFile{{Name: "a.zip", Size: -1}},
+			wantErr: true,
+		},
+		{
+			name:    "file over the limit",
+			files:   []domain.P2PSharedFile{{Name: "a.zip", Size: maxReceivedFileBytes + 1}},
+			wantErr: true,
+		},
+		{
+			name: "total over the limit",
+			files: []domain.P2PSharedFile{
+				{Name: "a.zip", Size: maxReceivedFileBytes},
+				{Name: "b.zip", Size: maxReceivedFileBytes},
+				{Name: "c.zip", Size: maxReceivedFileBytes},
+				{Name: "d.zip", Size: maxReceivedFileBytes},
+				{Name: "e.zip", Size: maxReceivedFileBytes},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateReceivedOffer(domain.P2PShareOffer{Files: tt.files})
+			if tt.wantErr {
+				require.Error(t, err)
+				require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareInvalid),
+					"error = %v, want a share-invalid error", err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}

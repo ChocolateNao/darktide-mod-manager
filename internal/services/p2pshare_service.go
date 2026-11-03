@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
+	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/p2p"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/storage"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
@@ -27,6 +28,13 @@ import (
 const (
 	p2pRoleSender    = "sender"
 	p2pRoleRecipient = "recipient"
+)
+
+// Receive limits. The offer is authored by the sender, so without a cap a link
+// can stream until the disk is full. The totals match the extractor's limits.
+const (
+	maxReceivedFileBytes  = 4 << 30
+	maxReceivedTotalBytes = 16 << 30
 )
 
 // staging patterns for the two sides of a transfer, distinct so an operator
@@ -324,6 +332,10 @@ func (s *P2PShareService) PreviewOffer(
 		return nil, err
 	}
 
+	if err := validateReceivedOffer(link.Offer); err != nil {
+		return nil, err
+	}
+
 	preview := buildP2PPreview(link)
 
 	s.logger.Debug().
@@ -356,10 +368,20 @@ func (s *P2PShareService) AcceptOffer(
 		return nil, err
 	}
 
+	if err := validateReceivedOffer(link.Offer); err != nil {
+		return nil, err
+	}
+
 	destDir, err := os.MkdirTemp("", recipientStagingPattern)
 	if err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeInvalidArgument,
 			"create a staging folder for the received archives")
+	}
+
+	if err := requireFreeSpace(link.Offer, destDir); err != nil {
+		_ = os.RemoveAll(destDir)
+
+		return nil, err
 	}
 
 	cfg := s.config.Peer
@@ -689,6 +711,11 @@ func (s *P2PShareService) InstallShare(
 
 	for i := range rec.offer.Files {
 		file := rec.offer.Files[i]
+
+		if !p2p.ValidTransferName(file.Name) {
+			return nil, appErrors.New(appErrors.ErrCodeShareInvalid,
+				"offer names archive %q, which is not a plain name", file.Name)
+		}
 
 		shared, ok := sharedByArchive[file.Name]
 		if !ok {
@@ -1140,6 +1167,52 @@ func buildP2POffer(
 	}
 
 	return offer
+}
+
+// validateReceivedOffer bounds what an accepted offer may write.
+func validateReceivedOffer(offer domain.P2PShareOffer) error {
+	var total int64
+
+	for i := range offer.Files {
+		size := offer.Files[i].Size
+		if size < 0 || size > maxReceivedFileBytes {
+			return appErrors.New(appErrors.ErrCodeShareInvalid,
+				"offer file %q is %d bytes; the limit is %d",
+				offer.Files[i].Name, size, int64(maxReceivedFileBytes))
+		}
+
+		total += size
+	}
+
+	if total > maxReceivedTotalBytes {
+		return appErrors.New(appErrors.ErrCodeShareInvalid,
+			"offer totals %d bytes; the limit is %d",
+			total, int64(maxReceivedTotalBytes))
+	}
+
+	return nil
+}
+
+// requireFreeSpace refuses an offer that would not fit in the staging drive. A
+// free-space probe that fails must not block a share, since the write itself
+// would report the error.
+func requireFreeSpace(offer domain.P2PShareOffer, dir string) error {
+	var total int64
+	for i := range offer.Files {
+		total += offer.Files[i].Size
+	}
+
+	free, err := platform.FreeSpace(dir)
+	if err != nil {
+		return nil
+	}
+
+	if total > free {
+		return appErrors.New(appErrors.ErrCodeShareInvalid,
+			"offer needs %d bytes but only %d are free in %q", total, free, dir)
+	}
+
+	return nil
 }
 
 // buildP2PPreview renders an offer for the recipient.
