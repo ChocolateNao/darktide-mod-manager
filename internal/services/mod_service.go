@@ -41,6 +41,7 @@ func checkInitialized(s *ModService) error {
 		return appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"mod service is not initialised")
 	}
+
 	return nil
 }
 
@@ -469,6 +470,12 @@ func (s *ModService) Install(
 		return nil, err
 	}
 
+	// A reinstall or update replaces the archive this install held, so its
+	// reference goes before the new download takes one.
+	if existing != nil {
+		s.releaseArchive(ctx, existing)
+	}
+
 	root, err := s.storageRoot()
 	if err != nil {
 		return nil, err
@@ -534,6 +541,21 @@ func (s *ModService) place(
 ) error {
 	start := time.Now()
 
+	// Captured before the new inventory replaces it, so a failed deploy can put
+	// the previous record back exactly as it was.
+	var (
+		previousFiles []domain.ModFile
+		loadErr       error
+	)
+
+	if existing != nil {
+		previousFiles, loadErr = s.deps.Index.GetFilesByMod(ctx, existing.ID)
+		if loadErr != nil {
+			return appErrors.Wrap(loadErr, appErrors.ErrCodeInstallFailed,
+				"read the file inventory of the installed mod %q", modLabel(existing))
+		}
+	}
+
 	// Only mods deployed to the mods folder get a folder name; game root mods do
 	// not appear in mod_load_order.txt.
 	if installed.InstallMode != domain.InstallModeGameRoot {
@@ -577,6 +599,8 @@ func (s *ModService) place(
 	}
 
 	if err := s.deps.Index.SaveFiles(ctx, installed.ID, files); err != nil {
+		s.rollbackPlace(ctx, installed, existing, previousFiles, target)
+
 		return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
 			"record the file inventory of mod %q", installed.ID)
 	}
@@ -588,20 +612,26 @@ func (s *ModService) place(
 		}
 	}
 
+	var placeErr error
+
 	if wantEnabled {
-		if err := s.enableLocked(ctx, installed, true); err != nil {
-			return err
-		}
+		placeErr = s.enableLocked(ctx, installed, true)
 	} else if s.hasLoadOrderFile() && installed.InstallMode != domain.InstallModeGameRoot {
 		// A file-driven game switches a mods-folder mod by its line alone, so the
 		// payload must be on disk even while the mod is disabled. A game-root mod
 		// has no line; deploying it would enable it. A missing game folder leaves
 		// the mod disabled, as it does for a game without a load order file.
-		if _, err := s.modsPath(ctx); err == nil {
-			if _, err := s.deployPayload(ctx, installed); err != nil {
-				return err
+		if _, modsErr := s.modsPath(ctx); modsErr == nil {
+			if _, deployErr := s.deployPayload(ctx, installed); deployErr != nil {
+				placeErr = deployErr
 			}
 		}
+	}
+
+	if placeErr != nil {
+		s.rollbackPlace(ctx, installed, existing, previousFiles, target)
+
+		return placeErr
 	}
 
 	s.publish(Event{
@@ -628,6 +658,55 @@ func (s *ModService) place(
 	s.runHooksAdvisory(ctx, domain.PhasePostInstall, installed)
 
 	return nil
+}
+
+// rollbackPlace undoes a saved install whose enable or deploy failed. Without
+// it a transient failure leaves a record pointing at a payload the game never
+// got, and a retry answers "already installed".
+func (s *ModService) rollbackPlace(
+	ctx context.Context,
+	installed, existing *domain.Mod,
+	previousFiles []domain.ModFile,
+	target string,
+) {
+	rollback := func(op string, err error) {
+		if err != nil {
+			s.log.Warn().
+				Err(err).
+				Str("op", "install-rollback").
+				Str("rollback_op", op).
+				Str("mod", installed.ID).
+				Msg("could not finish rolling back a failed install")
+		}
+	}
+
+	s.releaseArchive(ctx, installed)
+
+	if existing == nil {
+		rollback("undeploy", s.undeploy(ctx, installed))
+		rollback("delete record", s.deps.Index.Delete(ctx, installed.ID))
+		rollback("remove payload", os.RemoveAll(target))
+
+		return
+	}
+
+	// The payload of the failed attempt never became the installed version.
+	if !domain.PathsEqual(existing.LocalPath, target) {
+		rollback("remove payload", os.RemoveAll(target))
+	}
+
+	rollback("restore record", s.deps.Index.Save(ctx, existing))
+	rollback("restore inventory", s.deps.Index.SaveFiles(ctx, existing.ID, previousFiles))
+
+	// Deploying may have replaced the game-folder copy before the save failed, so
+	// put the version the record names back.
+	if existing.Enabled && s.deps.Deployer != nil {
+		if _, err := s.deployPayload(ctx, existing); err != nil {
+			rollback("redeploy previous version", err)
+		}
+	}
+
+	rollback("sync load order", s.syncLoadOrderFile(ctx))
 }
 
 // InstallArchiveFromShare places a mod from a local archive that a share
@@ -797,6 +876,30 @@ func (s *ModService) discardArchive(ctx context.Context, mod *domain.Mod, key st
 	}
 }
 
+// releaseArchive drops the cache reference an installed mod holds. The blob
+// stays on disk until a prune reclaims it, which keeps an offline reinstall
+// possible.
+func (s *ModService) releaseArchive(ctx context.Context, mod *domain.Mod) {
+	if s.deps.Cache == nil {
+		return
+	}
+
+	key := cacheKeyFor(mod)
+	if key == "" {
+		return
+	}
+
+	if err := s.deps.Cache.Release(ctx, key); err != nil {
+		// The reference only gates pruning; a miss means a purge already ran.
+		s.log.Debug().
+			Err(err).
+			Str("op", "cache-release").
+			Str("mod", modLabel(mod)).
+			Str("key", key).
+			Msg("could not release the cached archive")
+	}
+}
+
 // unpack extracts the archive into destDir and returns the inventory to record.
 //
 // Extraction goes into a staging directory first and is moved into place only
@@ -956,6 +1059,7 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod, deploy b
 	}
 
 	dst := ""
+
 	if deploy {
 		var err error
 
@@ -984,6 +1088,7 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod, deploy b
 		Type: EventModEnabled, ModID: mod.ID, ModName: mod.Name, SourceID: mod.SourceID,
 		Data: installEventData{Version: mod.Version, Path: mod.LocalPath, Enabled: true},
 	})
+
 	logEvent := s.log.Debug().
 		Str("op", "enable").
 		Str("mod", mod.ID).
@@ -1199,6 +1304,8 @@ func (s *ModService) Uninstall(ctx context.Context, modID string, opts Uninstall
 
 	if opts.PurgeCache {
 		s.discardArchive(ctx, mod, cacheKeyFor(mod))
+	} else {
+		s.releaseArchive(ctx, mod)
 	}
 
 	if err := s.syncLoadOrderFile(ctx); err != nil {
@@ -1239,6 +1346,7 @@ func (s *ModService) DeleteAllMods(ctx context.Context) error {
 	// The locator only exposes the active game's install, so resolve the other
 	// games' folders before deleting their rows.
 	installsByGame := make(map[string]domain.GameInstallation)
+
 	if s.deps.Locator != nil {
 		installs, scanErr := s.deps.Locator.Installations(ctx)
 		if scanErr != nil {
@@ -1259,7 +1367,11 @@ func (s *ModService) DeleteAllMods(ctx context.Context) error {
 
 	for i := range mods {
 		mod := &mods[i]
-		if mod.Enabled {
+
+		// Undeploy every mod that can have files in the game folder. A disabled
+		// load-order mod still has its payload deployed. A disabled game-root mod
+		// never does, and removing its names would delete unrelated game files.
+		if mod.Enabled || mod.InstallMode != domain.InstallModeGameRoot {
 			switch {
 			case mod.GameID == activeGame || mod.GameID == "":
 				if err := s.undeploy(ctx, mod); err != nil && firstErr == nil {
@@ -1267,10 +1379,12 @@ func (s *ModService) DeleteAllMods(ctx context.Context) error {
 				}
 			case installsByGame[mod.GameID].Path != "":
 				install := installsByGame[mod.GameID]
+
 				dst := install.ModsPath
 				if mod.InstallMode == domain.InstallModeGameRoot {
 					dst = install.Path
 				}
+
 				if dst != "" {
 					if err := s.undeployAt(ctx, mod, dst); err != nil && firstErr == nil {
 						firstErr = err
@@ -1291,6 +1405,8 @@ func (s *ModService) DeleteAllMods(ctx context.Context) error {
 		if err := s.removePayload(mod); err != nil && firstErr == nil {
 			firstErr = err
 		}
+
+		s.releaseArchive(ctx, mod)
 	}
 
 	if err := s.syncLoadOrderFile(ctx); err != nil && firstErr == nil {
@@ -1857,6 +1973,7 @@ func (s *ModService) CheckModUpdates(ctx context.Context) ([]domain.ModUpdateInf
 
 	out := make([]domain.ModUpdateInfo, 0, len(mods))
 	updates := 0
+
 	for i := range mods {
 		if err := ctx.Err(); err != nil {
 			return nil, canceledError(err)
@@ -2014,9 +2131,18 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 	}
 	// The old payload has its own version folder, so retiring it here is what makes
 	// the retention setting mean anything. The cached archive is a separate
-	// decision and is left alone.
+	// decision and is left alone. LocalPath comes from the database, so it is only
+	// deleted when it is provably inside the storage root.
 	if !keepOld && oldPath != "" && !domain.PathsEqual(oldPath, updated.LocalPath) {
-		if err := os.RemoveAll(oldPath); err != nil {
+		root, rootErr := s.storageRoot()
+		if rootErr != nil || !domain.PathWithin(root, oldPath) {
+			s.log.Warn().
+				Err(rootErr).
+				Str("op", "update").
+				Str("mod", mod.ID).
+				Str("old_path", oldPath).
+				Msg("kept the superseded payload outside the storage root")
+		} else if err := os.RemoveAll(oldPath); err != nil {
 			s.log.Warn().
 				Err(err).
 				Str("op", "update").

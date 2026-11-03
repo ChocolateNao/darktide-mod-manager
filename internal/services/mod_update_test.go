@@ -1193,3 +1193,56 @@ func TestStagingDirectoriesAreCleanedUp(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyUpdateRollsBackWhenDeployingFails(t *testing.T) {
+	h := updateScenario(t)
+	before := h.installed(t, "better_ui")
+	h.deployer.deployErr = errBoom
+
+	{
+		_, err := h.svc.ApplyUpdate(context.Background(), "better_ui")
+		require.Error(t, err, "a deploy failure must fail the update")
+	}
+
+	after := h.installed(t, "better_ui")
+	assert.Equal(t, before.Version, after.Version, "a failed update advanced the record")
+	assert.Equal(t, before.LocalPath, after.LocalPath, "a failed update repointed the record")
+
+	{
+		_, err := os.Stat(before.LocalPath)
+		assert.NoError(t, err, "the previous payload must survive a failed update: %v", err)
+	}
+
+	{
+		_, err := os.Stat(h.payloadPath("better_ui", "2.0.0"))
+		assert.True(t, os.IsNotExist(err), "the failed update left the new payload behind: %v", err)
+	}
+}
+
+func TestApplyUpdateNeverRemovesAPayloadOutsideStorage(t *testing.T) {
+	cfg := domain.DefaultConfig()
+	cfg.Storage.Path = ""
+	cfg.Storage.BackupRetentionDays = 0
+
+	h := updateScenario(t, func(o *harnessOpts) {
+		o.config = newStaticConfig(&cfg)
+	})
+
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "keep.txt")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("keep"), 0o600), "write the outside file")
+
+	mod := h.installed(t, "better_ui")
+	mod.LocalPath = outside
+	require.NoError(t, h.index.Save(context.Background(), mod), "point the record outside storage")
+
+	{
+		_, err := h.svc.ApplyUpdate(context.Background(), "better_ui")
+		require.NoError(t, err, "ApplyUpdate")
+	}
+
+	{
+		_, err := os.Stat(outsideFile)
+		assert.NoError(t, err, "update removed a folder outside the storage root: %v", err)
+	}
+}

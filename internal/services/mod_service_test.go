@@ -2686,3 +2686,69 @@ func TestMultipleModsEnableDisableLoadOrder(t *testing.T) {
 		string(content),
 	)
 }
+
+func TestInstallRollsBackWhenDeployingFails(t *testing.T) {
+	h := newHarness(t)
+	mod := modFixture("broken_mod", "1.0.0")
+	h.withArchive(t, mod)
+	h.deployer.deployErr = errBoom
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", "broken_mod")
+		require.Error(t, err, "a deploy failure must fail the install")
+	}
+
+	{
+		_, err := h.index.GetByID(context.Background(), "broken_mod")
+		assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeModNotFound),
+			"the failed install left a record: %v", err)
+	}
+
+	{
+		_, err := os.Stat(h.payloadPath("broken_mod", "1.0.0"))
+		assert.True(t, os.IsNotExist(err), "the failed install left its payload: %v", err)
+	}
+}
+
+func TestDeleteAllModsUndeploysDisabledLoadOrderMods(t *testing.T) {
+	h := newHarness(t, func(o *harnessOpts) {
+		o.locator.withLoadOrderFile("mods.txt")
+	})
+	mod := modFixture("disabled_mod", "1.0.0")
+	h.withArchive(t, mod)
+
+	{
+		_, err := h.svc.Install(
+			context.Background(), "vortex", "disabled_mod",
+			InstallOptions{Enable: boolPtr(false)},
+		)
+		require.NoError(t, err, "install disabled mod: %v", err)
+	}
+
+	{
+		err := h.svc.DeleteAllMods(context.Background())
+		require.NoError(t, err, "delete all")
+	}
+
+	assert.Len(t, h.deployer.undeployCalls(), 1,
+		"a disabled mod stays deployed for load-order games and must be undeployed")
+}
+
+func TestUninstallReleasesTheCachedArchive(t *testing.T) {
+	h := newHarness(t)
+	h.withArchive(t, modFixture("better_ui", "1.2.0"))
+
+	{
+		_, err := h.svc.InstallMod(context.Background(), "vortex", "better_ui")
+		require.NoError(t, err, "install: %v", err)
+	}
+
+	{
+		err := h.svc.UninstallMod(context.Background(), "better_ui")
+		require.NoError(t, err, "uninstall: %v", err)
+	}
+
+	assert.Len(t, h.cache.releasedKeys(), 1,
+		"uninstall must drop the cache reference so a prune can reclaim the archive")
+	assert.Empty(t, h.cache.removedKeys(), "uninstall must not purge the archive unless asked")
+}
