@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ChocolateNao/darktide-mod-manager/internal/sharing/crypto"
@@ -287,6 +288,21 @@ func (r *receiver) expectManifest(ctx context.Context) error {
 	return nil
 }
 
+// ValidTransferName reports whether a sender-supplied name is a single file
+// name. The archive is written under it, so a separator or a volume escapes the
+// staging folder.
+func ValidTransferName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+
+	if strings.ContainsAny(name, `/\`) || filepath.VolumeName(name) != "" {
+		return false
+	}
+
+	return filepath.Base(name) == name
+}
+
 func compareInventory(want, got []domain.P2PSharedFile) error {
 	if len(got) != len(want) {
 		return fmt.Errorf("%w: manifest lists %d files, the offer listed %d",
@@ -294,7 +310,13 @@ func compareInventory(want, got []domain.P2PSharedFile) error {
 	}
 
 	for i := range want {
+		if !ValidTransferName(got[i].Name) {
+			return fmt.Errorf("%w: manifest names file %q, which is not a plain name",
+				ErrIntegrity, got[i].Name)
+		}
+
 		if got[i].FileID != want[i].FileID ||
+			got[i].Name != want[i].Name ||
 			got[i].Size != want[i].Size ||
 			got[i].HashSHA256 != want[i].HashSHA256 {
 			return fmt.Errorf(
@@ -398,6 +420,9 @@ func (r *receiver) onFileStart(payload []byte) error {
 	// 0600, so a staging file holding somebody else's unverified bytes is not
 	// world-readable in a shared temporary directory.
 	path := filepath.Join(r.destDir, expected.Name)
+	if !domain.PathWithin(r.destDir, path) {
+		return fmt.Errorf("%w: %q escapes the staging folder", ErrIntegrity, expected.Name)
+	}
 
 	handle, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {

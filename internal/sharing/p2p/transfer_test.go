@@ -530,3 +530,84 @@ func linkSecret() (string, error) {
 
 	return link.Secret, nil
 }
+
+func TestValidTransferNameRejectsPathTraversal(t *testing.T) {
+	tests := []struct {
+		name string
+		want bool
+	}{
+		{name: "mod.zip", want: true},
+		{name: "a b.zip", want: true},
+		{name: "", want: false},
+		{name: ".", want: false},
+		{name: "..", want: false},
+		{name: "../mod.zip", want: false},
+		{name: "sub/mod.zip", want: false},
+		{name: `sub\mod.zip`, want: false},
+		{name: `..\mod.zip`, want: false},
+		{name: `C:\mod.zip`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, p2p.ValidTransferName(tt.name), "ValidTransferName(%q)", tt.name)
+		})
+	}
+}
+
+func TestReceiveRejectsAnArchiveNameOutsideTheStagingFolder(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// The sender writes the archive one level above its staging folder to make
+	// the offer's "../evil.zip" resolvable on its side too.
+	root := t.TempDir()
+	stage := filepath.Join(root, "stage")
+	require.NoError(t, os.Mkdir(stage, 0o755), "create staging folder")
+
+	file := writeArchive(t, root, "evil.zip", 128)
+	file.FileID = "evil"
+	file.Name = "../evil.zip"
+
+	offer := domain.P2PShareOffer{
+		OfferID: "offer-traversal",
+		GameID:  "darktide",
+		Files:   []domain.P2PSharedFile{file},
+	}
+
+	secret, err := linkSecret()
+	require.NoError(t, err, "generate secret: %v", err)
+
+	senderPeer, receiverPeer := connectPeers(t, ctx)
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "dest")
+	require.NoError(t, os.Mkdir(dest, 0o755), "create destination")
+
+	victim := filepath.Join(parent, "evil.zip")
+	require.NoError(t, os.WriteFile(victim, []byte("keep me"), 0o600), "write the victim file")
+
+	receiveErr := make(chan error, 1)
+
+	go func() {
+		_ = p2p.Send(
+			ctx,
+			p2p.Session{Peer: senderPeer, Secret: secret, Offer: offer},
+			stage,
+			nil,
+		)
+	}()
+
+	go func() {
+		receiveErr <- p2p.Receive(ctx, p2p.Session{Peer: receiverPeer, Secret: secret, Offer: offer}, dest, nil)
+	}()
+
+	err = <-receiveErr
+	require.ErrorIs(t, err, p2p.ErrIntegrity, "Receive returned %v, want an integrity failure", err)
+
+	body, readErr := os.ReadFile(victim)
+	require.NoError(t, readErr, "read the file outside the staging folder")
+	assert.Equal(t, "keep me", string(body), "the transfer overwrote a file outside its staging folder")
+}
