@@ -914,3 +914,37 @@ func TestDetectorDetectedAtIsInjectable(t *testing.T) {
 		got.DetectedAt,
 	)
 }
+
+func TestParseLibraryFoldersReadsBothLayouts(t *testing.T) {
+	data := `"libraryfolders"
+{
+	"0"
+	{
+		"path"		"/home/u/.local/share/Steam"
+		"apps"
+		{
+			"730"		"123456"
+		}
+	}
+	"1"
+	{
+		"path"		"/mnt/games/SteamLibrary"
+	}
+	"2"		"/legacy/library"
+}`
+
+	got := parseLibraryFolders(data)
+	assert.Equal(t, []string{
+		"/home/u/.local/share/Steam",
+		"/mnt/games/SteamLibrary",
+		"/legacy/library",
+	}, got)
+}
+
+func TestSteamLibraryPathsIgnoresAMissingIndex(t *testing.T) {
+	assert.Empty(
+		t,
+		steamLibraryPaths(t.TempDir()),
+		"a root without an index has no extra libraries",
+	)
+}

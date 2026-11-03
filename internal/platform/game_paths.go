@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -67,10 +68,57 @@ func steamRoots(p domain.Platform, home string, getenv Env) []string {
 	}
 }
 
+// steamLibraryPaths lists the extra libraries a Steam root knows about. Steam
+// keeps them in steamapps/libraryfolders.vdf; without reading it, a game on a
+// second drive is invisible. A missing or unreadable file yields nothing.
+func steamLibraryPaths(root string) []string {
+	data, err := os.ReadFile(domain.JoinPath(root, "steamapps", "libraryfolders.vdf"))
+	if err != nil {
+		return nil
+	}
+
+	return parseLibraryFolders(string(data))
+}
+
+// parseLibraryFolders extracts library paths from either libraryfolders.vdf
+// layout: the current nested "path" keys and the old numbered string entries.
+func parseLibraryFolders(data string) []string {
+	// Splitting on quotes puts every value at an odd index.
+	parts := strings.Split(data, `"`)
+
+	var out []string
+
+	for i := 1; i+2 < len(parts); i += 2 {
+		key := strings.TrimSpace(parts[i])
+		value := strings.TrimSpace(parts[i+2])
+
+		if (key == "path" || isDigits(key)) && looksAbsolute(value) {
+			out = append(out, domain.CleanPath(value))
+		}
+	}
+
+	return out
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
+}
+
 // GameCandidates enumerates every location worth probing for an installation
 // of game on a platform, ordered from most likely to least. extras are
-// user-supplied paths, which are probed first. No filesystem is touched, so the
-// candidate list for any platform can be asserted from a test on any host.
+// user-supplied paths, which are probed first. Only Steam's library index is
+// read from disk; every other candidate is derived from the arguments, so the
+// list for any platform can be asserted from a test on any host.
 func GameCandidates(
 	game domain.GameDefinition,
 	p domain.Platform,
@@ -144,6 +192,23 @@ func GameCandidates(
 				Source: domain.GameSourceProton,
 				Notes:  "Steam Proton prefix",
 			})
+		}
+
+		// Extra libraries on other drives live in the root's index. The index is
+		// the only file this function reads.
+		for _, library := range steamLibraryPaths(root) {
+			out = append(out, Candidate{
+				Path:   domain.JoinPath(append([]string{library}, steamRelativeInstall...)...),
+				Source: domain.GameSourceSteam,
+				Notes:  "Steam library",
+			})
+			if !p.IsWindows() && hasSteam {
+				out = append(out, Candidate{
+					Path:   domain.JoinPath(append([]string{library}, protonRelativeInstall...)...),
+					Source: domain.GameSourceProton,
+					Notes:  "Steam Proton prefix",
+				})
+			}
 		}
 	}
 
