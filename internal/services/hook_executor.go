@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/rs/zerolog"
@@ -137,7 +135,6 @@ func (p HookContextPaths) Context(
 type HookExecutorDeps struct {
 	Events         EventSink
 	Clock          Clock
-	LookPath       platform.LookPath
 	GamePath       func() string
 	GameID         func() string
 	Context        HookContextFunc
@@ -151,7 +148,6 @@ type HookExecutorDeps struct {
 type HookExecutor struct {
 	events         EventSink
 	runners        map[domain.ScriptLanguage]HookRunner
-	lookPath       platform.LookPath
 	gamePath       func() string
 	gameID         func() string
 	context        HookContextFunc
@@ -173,11 +169,6 @@ func NewHookExecutor(deps HookExecutorDeps) *HookExecutor {
 		p = domain.CurrentPlatform()
 	}
 
-	look := deps.LookPath
-	if look == nil {
-		look = exec.LookPath
-	}
-
 	now := deps.Clock
 	if now == nil {
 		now = time.Now
@@ -188,7 +179,6 @@ func NewHookExecutor(deps HookExecutorDeps) *HookExecutor {
 		config:         cfg,
 		configProvider: deps.ConfigProvider,
 		platform:       p,
-		lookPath:       look,
 		gamePath:       deps.GamePath,
 		gameID:         deps.GameID,
 		context:        deps.Context,
@@ -643,15 +633,12 @@ func (h *HookExecutor) execute(
 // Runners receive one of these instead of the raw script so they never have to
 // re-implement the executor's security policy.
 type PreparedHook struct {
+	Output      func(lines []string, dropped int)
 	WorkingDir  string
 	Env         []string
 	Context     domain.HookContext
 	Script      domain.HookScript
 	Permissions domain.ScriptPermissions
-	// Output receives the run's buffered console lines plus the count dropped at
-	// the cap. The runner reports before returning, so a failing script keeps
-	// what it printed.
-	Output func(lines []string, dropped int)
 }
 
 // currentGamePath resolves the game folder, tolerating a nil provider.
@@ -737,8 +724,15 @@ func (h *HookExecutor) runOne(
 
 	runner, err := h.runner(script.Language)
 	if err != nil {
-		wrapped := appErrors.Wrap(err, appErrors.ErrCodeHookInvalid, "hook %d for mod %s", index, label)
+		wrapped := appErrors.Wrap(
+			err,
+			appErrors.ErrCodeHookInvalid,
+			"hook %d for mod %s",
+			index,
+			label,
+		)
 		publishFailure(wrapped)
+
 		return wrapped
 	}
 
@@ -910,9 +904,9 @@ type hookEventData struct {
 	Phase   string        `json:"phase"`
 	Type    string        `json:"type"`
 	Error   string        `json:"error,omitempty"`
+	Lines   []string      `json:"lines,omitempty"`
 	Index   int           `json:"index"`
 	Timeout time.Duration `json:"timeout,omitempty"`
-	Lines   []string      `json:"lines,omitempty"`
 	Dropped int           `json:"dropped,omitempty"`
 }
 

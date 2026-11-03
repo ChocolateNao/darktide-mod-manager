@@ -6,13 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	"github.com/rs/zerolog"
@@ -239,13 +237,6 @@ func TestNewHookExecutorHonoursEmptyPlatform(t *testing.T) {
 		"explicit platform overwritten: %q",
 		h.Platform(),
 	)
-}
-
-func TestNewHookExecutorNilLookPathIsReplaced(t *testing.T) {
-	// A nil LookPath must not panic on first use; GetShell/ResolveScriptRunner
-	// fall back to os/exec.LookPath themselves.
-	h := NewHookExecutor(HookExecutorDeps{})
-	require.NotNil(t, h.lookPath, "lookPath left nil")
 }
 
 func TestTimeoutUsesDefaultWhenUnset(t *testing.T) {
@@ -1576,13 +1567,18 @@ func TestHookScriptOutputIsLoggedOncePerAutomaticRun(t *testing.T) {
 	}
 
 	var automatic strings.Builder
+
 	logger := zerolog.New(&automatic)
 	h := NewHookExecutor(HookExecutorDeps{
 		Events: &collectingEvents{},
 		Logger: &logger,
 		GameID: func() string { return "darktide" },
 	})
-	require.NoError(t, h.Register(&recordingRunner{language: domain.LangLua, observe: output}), "register")
+	require.NoError(
+		t,
+		h.Register(&recordingRunner{language: domain.LangLua, observe: output}),
+		"register",
+	)
 
 	require.NoError(t, h.ExecutePhase(
 		context.Background(),
@@ -1591,16 +1587,27 @@ func TestHookScriptOutputIsLoggedOncePerAutomaticRun(t *testing.T) {
 		hookMod(modDir),
 	))
 
-	require.Equal(t, 1, strings.Count(automatic.String(), `"op":"hook.script"`), "automatic run logged %s", automatic.String())
+	require.Equal(
+		t,
+		1,
+		strings.Count(automatic.String(), `"op":"hook.script"`),
+		"automatic run logged %s",
+		automatic.String(),
+	)
 	assert.Contains(t, automatic.String(), `"lines":["hello","world"]`)
 	assert.Contains(t, automatic.String(), `"mod":"better_ui"`)
 	assert.Contains(t, automatic.String(), `"game":"darktide"`)
 	assert.Contains(t, automatic.String(), `"dropped":2`)
 
 	var editor strings.Builder
+
 	editorLogger := zerolog.New(&editor)
 	h = NewHookExecutor(HookExecutorDeps{Events: &collectingEvents{}, Logger: &editorLogger})
-	require.NoError(t, h.Register(&recordingRunner{language: domain.LangLua, observe: output}), "register")
+	require.NoError(
+		t,
+		h.Register(&recordingRunner{language: domain.LangLua, observe: output}),
+		"register",
+	)
 
 	require.NoError(t, h.Execute(
 		context.Background(),
@@ -1608,7 +1615,12 @@ func TestHookScriptOutputIsLoggedOncePerAutomaticRun(t *testing.T) {
 		hookMod(modDir),
 	))
 
-	assert.NotContains(t, editor.String(), `"op":"hook.script"`, "editor run must not duplicate its console output into the log")
+	assert.NotContains(
+		t,
+		editor.String(),
+		`"op":"hook.script"`,
+		"editor run must not duplicate its console output into the log",
+	)
 }
 
 func TestExecutePublishesFailed(t *testing.T) {
@@ -1817,15 +1829,4 @@ func TestPlatformIsFixedAtConstruction(t *testing.T) {
 		"platform = %q, want windows",
 		h.Platform(),
 	)
-}
-
-func TestLookPathIsUsable(t *testing.T) {
-	// The executor's default LookPath must resolve a real interpreter, otherwise
-	// every command hook fails at start with a confusing message.
-	h := newExecutor(t)
-
-	got := platform.GetShell(h.Platform(), h.lookPath)
-	require.True(t, got.Valid(), "shell %q is not usable", got)
-
-	assert.False(t, runtime.GOOS == "linux" && got.Name == "", "no shell resolved on linux")
 }
