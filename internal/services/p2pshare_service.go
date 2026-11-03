@@ -737,7 +737,17 @@ func (s *P2PShareService) InstallShare(
 			shareInstallOptions(opts),
 		)
 		if err != nil {
-			s.logger.Warn().Str("op", "p2p-share").Str("mod", mod.Name).Err(err).Msg("install from p2p share failed")
+			s.logger.Warn().Str(
+				"op",
+				"p2p-share",
+			).Str(
+				"mod",
+				mod.Name,
+			).Err(
+				err,
+			).Msg(
+				"install from p2p share failed",
+			)
 			return nil, err
 		}
 

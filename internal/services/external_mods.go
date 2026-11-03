@@ -137,7 +137,8 @@ func (s *ModService) scanGameFolder(
 
 	for i := range known {
 		mod := &known[i]
-		if mod.External || mod.InstallMode == domain.InstallModeGameRoot || mod.ModFolderName == "" {
+		if mod.External || mod.InstallMode == domain.InstallModeGameRoot ||
+			mod.ModFolderName == "" {
 			continue
 		}
 
@@ -299,7 +300,8 @@ func (s *ModService) reorderFile(ctx context.Context, gameID string, ids []strin
 		if mod, found := byID[id]; found {
 			managed = append(managed, id)
 
-			if !mod.Enabled || mod.InstallMode == domain.InstallModeGameRoot || mod.ModFolderName == "" {
+			if !mod.Enabled || mod.InstallMode == domain.InstallModeGameRoot ||
+				mod.ModFolderName == "" {
 				continue
 			}
 
@@ -407,7 +409,8 @@ func (s *ModService) syncFileFromFolder(ctx context.Context, gameID, loadOrderFi
 	})
 
 	for _, mod := range enabled {
-		if mod.InstallMode == domain.InstallModeGameRoot || mod.ModFolderName == "" || seen[mod.ModFolderName] {
+		if mod.InstallMode == domain.InstallModeGameRoot || mod.ModFolderName == "" ||
+			seen[mod.ModFolderName] {
 			continue
 		}
 

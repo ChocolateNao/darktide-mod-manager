@@ -112,7 +112,8 @@ func forwardEvents(ctx context.Context, client *api.Client) {
 // webviewEventName is the single Wails event channel the manager publishes on.
 const webviewEventName = "mod-manager:event"
 
-// startNotifications opens the native notification channel: InitializeNotifications establishes the connection the
+// startNotifications opens the native notification channel: InitializeNotifications establishes the
+// connection the
 // JavaScript side borrows.
 func startNotifications(ctx context.Context) {
 	if err := wailsruntime.InitializeNotifications(ctx); err != nil {

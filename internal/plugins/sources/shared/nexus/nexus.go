@@ -591,6 +591,7 @@ func (s *Source) modContext(ctx context.Context, scopedID string) (modContext, e
 	}
 
 	data := envelope.Data
+
 	thumbnailURL := ""
 	if data.PrimaryImage != nil {
 		thumbnailURL = strings.TrimSpace(data.PrimaryImage.ThumbnailURL)

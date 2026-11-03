@@ -149,7 +149,14 @@ func TestHooksCoverEveryPhase(t *testing.T) {
 		require.Len(t, scripts, 1, "phase %s", phase)
 
 		assert.Equal(t, 7, scripts[0].Timeout, "phase %s script = %+v", phase, scripts[0])
-		assert.Equal(t, domain.LangLua, scripts[0].Language, "phase %s script = %+v", phase, scripts[0])
+		assert.Equal(
+			t,
+			domain.LangLua,
+			scripts[0].Language,
+			"phase %s script = %+v",
+			phase,
+			scripts[0],
+		)
 	}
 }
 

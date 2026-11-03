@@ -241,7 +241,11 @@ func TestDeployCopyMode(t *testing.T) {
 
 	assert.Equal(t, os.FileMode(0), info.Mode()&os.ModeSymlink, "copy mode created a symlink")
 
-	assert.True(t, IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")), "nested directory not copied")
+	assert.True(
+		t,
+		IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")),
+		"nested directory not copied",
+	)
 
 	data, err := os.ReadFile(filepath.Join(f.gameMods, "textures", "hud.dds"))
 	assert.False(t, err != nil || string(data) != "DDS", "nested file content = %q, %v", data, err)
@@ -351,7 +355,11 @@ func TestUndeployEntries(t *testing.T) {
 
 	assert.False(t, IsDir(OSFS{}, filepath.Join(f.gameMods, "textures")), "textures still present")
 	// The manager's own payload must survive.
-	assert.True(t, IsFile(OSFS{}, filepath.Join(f.storage, "mod.json")), "storage payload was deleted")
+	assert.True(
+		t,
+		IsFile(OSFS{}, filepath.Join(f.storage, "mod.json")),
+		"storage payload was deleted",
+	)
 }
 
 func TestUndeployEntriesRejectsTraversal(t *testing.T) {
@@ -662,7 +670,14 @@ func TestDeployOverExistingRealFile(t *testing.T) {
 
 	data, err := os.ReadFile(filepath.Join(f.gameMods, "mod.json"))
 	assert.NoError(t, err, "content = %q, %v; want the payload", data, err)
-	assert.Equal(t, `{"id":"better_ui"}`, string(data), "content = %q, %v; want the payload", data, err)
+	assert.Equal(
+		t,
+		`{"id":"better_ui"}`,
+		string(data),
+		"content = %q, %v; want the payload",
+		data,
+		err,
+	)
 }
 
 func TestCanCreateSymlinks(t *testing.T) {

@@ -14,10 +14,9 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
 func patcherTarGz(t *testing.T, name string, payload []byte) []byte {
@@ -136,6 +135,7 @@ func TestInstallPatcherDownloadsTheLatestRelease(t *testing.T) {
 	server, hits := patcherServer(t, name, patcherTarGz(t, "dtkit-patch", payload))
 
 	patcherReleaseURL = server.URL + "/releases/latest"
+
 	t.Cleanup(func() { patcherReleaseURL = defaultPatcherReleaseURL })
 
 	game := t.TempDir()
@@ -179,6 +179,7 @@ func TestInstallPatcherReportsAMissingAsset(t *testing.T) {
 	server, _ := patcherServer(t, "dtkit-patch-0.1.8-x86_64-pc-windows-msvc.zip", nil)
 
 	patcherReleaseURL = server.URL + "/releases/latest"
+
 	t.Cleanup(func() { patcherReleaseURL = defaultPatcherReleaseURL })
 
 	result, err := installPatcher(context.Background(), domain.ActionContext{
@@ -194,7 +195,11 @@ func TestInstallPatcherReportsAMissingAsset(t *testing.T) {
 func TestPatcherPayloadFindsTheWindowsBinary(t *testing.T) {
 	payload := []byte("MZ")
 
-	got, err := patcherPayload("release.zip", patcherZip(t, "dtkit-patch.exe", payload), "dtkit-patch.exe")
+	got, err := patcherPayload(
+		"release.zip",
+		patcherZip(t, "dtkit-patch.exe", payload),
+		"dtkit-patch.exe",
+	)
 	require.NoError(t, err, "unzip")
 	assert.Equal(t, payload, got)
 }

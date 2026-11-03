@@ -559,6 +559,7 @@ func (c *Client) Download(
 		// Drain a bounded amount so the connection can be reused, but do not let
 		// a huge error body be buffered.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, snippetLimit))
+
 		return 0, statusError(KindDownload, resp.StatusCode, rawURL, nil)
 	}
 

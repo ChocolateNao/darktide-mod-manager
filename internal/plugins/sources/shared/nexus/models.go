@@ -26,26 +26,26 @@ import (
 // The endpoint is the one place a mod's author, description, category, tags and
 // stats come from; the trending feed only has a subset for entries it lists.
 type modScoped struct {
-	ID            string            `json:"id"`
-	GameScopedID  string            `json:"game_scoped_id"`
-	GameID        string            `json:"game_id"`
+	Uploader      *modUploader      `json:"uploader"`
+	PrimaryImage  *modImage         `json:"primary_image"`
+	Category      *modCategory      `json:"category"`
 	Name          string            `json:"name"`
 	Description   string            `json:"description"`
 	Version       string            `json:"version"`
 	Author        string            `json:"author"`
-	AdultContent  bool              `json:"adult_content"`
-	Uploader      *modUploader      `json:"uploader"`
-	Category      *modCategory      `json:"category"`
-	Stats         modStats          `json:"stats"`
-	Tags          []modTag          `json:"tags"`
+	ID            string            `json:"id"`
+	GameID        string            `json:"game_id"`
 	Status        string            `json:"status"`
-	PrimaryImage  *modImage         `json:"primary_image"`
+	GameScopedID  string            `json:"game_scoped_id"`
+	Tags          []modTag          `json:"tags"`
 	GalleryImages []modGalleryImage `json:"gallery_images"`
+	Stats         modStats          `json:"stats"`
+	AdultContent  bool              `json:"adult_content"`
 }
 
 type modUploader struct {
-	ID   string  `json:"id"`
 	Name *string `json:"name"`
+	ID   string  `json:"id"`
 }
 
 type modCategory struct {
@@ -276,24 +276,24 @@ type modsBatchRequest struct {
 // version responses name no mod, so the name comes from the mod fetch and is
 // threaded through, not rediscovered.
 type modContext struct {
-	scopedID      string // game-scoped id: the number in a mod page URL and an nxm link
-	uid           string // composite Mod.id
-	gameID        string
-	gameDomain    string
+	category      *modCategory
+	primaryImage  *modImage
+	uploader      *modUploader
 	name          string
+	gameID        string
 	summary       string
 	author        string
 	thumbnailURL  string
 	description   string
 	apiVersion    string
-	adultContent  bool
+	uid           string
 	status        string
-	category      *modCategory
-	uploader      *modUploader
-	stats         modStats
+	gameDomain    string
+	scopedID      string
 	apiTags       []modTag
-	primaryImage  *modImage
 	galleryImages []modGalleryImage
+	stats         modStats
+	adultContent  bool
 }
 
 // pageURL renders the canonical mod page address, the same form an nxm link is

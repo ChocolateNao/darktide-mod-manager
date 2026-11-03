@@ -209,8 +209,10 @@ func TestTheWriterStackProducesJSONLines(t *testing.T) {
 
 	for i, record := range records {
 		var fields map[string]any
+
 		parseErr := json.Unmarshal(record, &fields)
 		assert.NoError(t, parseErr, "record %d is not valid JSON: %v\n%s", i, parseErr, record)
+
 		if parseErr != nil {
 			continue
 		}
@@ -878,7 +880,13 @@ func TestListFilesAndCleanLeaveOtherFilesAlone(t *testing.T) {
 	info, err := os.Stat(filepath.Join(dir, LogFileName))
 	require.NoError(t, err, "Clean --all removed the active log file: %v", err)
 
-	assert.Equal(t, int64(0), info.Size(), "Clean --all left %d bytes behind; want an empty file", info.Size())
+	assert.Equal(
+		t,
+		int64(0),
+		info.Size(),
+		"Clean --all left %d bytes behind; want an empty file",
+		info.Size(),
+	)
 }
 
 func TestParseLineTellsALogLineFromAStrayByteRange(t *testing.T) {

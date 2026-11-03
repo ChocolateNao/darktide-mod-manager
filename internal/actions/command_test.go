@@ -75,7 +75,12 @@ func TestExecRunnerReportsANonZeroExit(t *testing.T) {
 	})
 	require.Error(t, err, "a failing command reported success")
 
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeActionFailed), "error = %v, want ACTION_FAILED", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeActionFailed),
+		"error = %v, want ACTION_FAILED",
+		err,
+	)
 
 	// The exit code has to survive: a missing file and a bad flag are different
 	// problems.
@@ -105,14 +110,24 @@ func TestExecRunnerReportsAMissingProgram(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(context.Background(), CommandSpec{Path: "dmm-does-not-exist-anywhere"})
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeRunnerNotFound), "error = %v, want RUNNER_NOT_FOUND", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeRunnerNotFound),
+		"error = %v, want RUNNER_NOT_FOUND",
+		err,
+	)
 }
 
 func TestExecRunnerRefusesAnEmptyPath(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(context.Background(), CommandSpec{})
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument), "error = %v, want INVALID_ARGUMENT", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT",
+		err,
+	)
 }
 
 // A UI handler has no request context; nil must behave like a background one.
@@ -139,7 +154,12 @@ func TestExecRunnerHonoursACancelledContext(t *testing.T) {
 	runner := NewExecRunner()
 
 	_, err := runner.Run(ctx, CommandSpec{Path: "sleep", Args: []string{"10"}})
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled), "error = %v, want OPERATION_CANCELED", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeOperationCanceled),
+		"error = %v, want OPERATION_CANCELED",
+		err,
+	)
 }
 
 func TestExecRunnerUsesTheInjectedLookup(t *testing.T) {
@@ -179,7 +199,14 @@ func TestCaptureLoggerBoundsTheBuffer(t *testing.T) {
 	}
 
 	text := logger.Text()
-	assert.LessOrEqual(t, len(text), captureLogLimit, "captured %d bytes, want at most %d", len(text), captureLogLimit)
+	assert.LessOrEqual(
+		t,
+		len(text),
+		captureLogLimit,
+		"captured %d bytes, want at most %d",
+		len(text),
+		captureLogLimit,
+	)
 
 	assert.Contains(t, text, "output truncated", "the truncation was not announced")
 

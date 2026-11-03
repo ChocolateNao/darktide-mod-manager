@@ -112,12 +112,24 @@ func TestP2PShareRoundTrip(t *testing.T) {
 
 	require.Greater(t, preview.TotalSize, int64(0), "preview reported %d bytes", preview.TotalSize)
 
-	require.True(t, len(preview.SourceLinks) > 0 && preview.SourceLinks[0].HasURL(), "preview carried no source link: %+v", preview.SourceLinks)
+	require.True(
+		t,
+		len(preview.SourceLinks) > 0 && preview.SourceLinks[0].HasURL(),
+		"preview carried no source link: %+v",
+		preview.SourceLinks,
+	)
 
 	answer, err := recipient.AcceptOffer(ctx, link.Link, "friend")
 	require.NoError(t, err, "accept: %v", err)
 
-	require.Equal(t, link.Offer.OfferID, answer.OfferID, "answer is for %q, offer was %q", answer.OfferID, link.Offer.OfferID)
+	require.Equal(
+		t,
+		link.Offer.OfferID,
+		answer.OfferID,
+		"answer is for %q, offer was %q",
+		answer.OfferID,
+		link.Offer.OfferID,
+	)
 
 	// Both halves run at once: neither can finish before the other starts.
 	sendErr := make(chan error, 1)
@@ -136,9 +148,23 @@ func TestP2PShareRoundTrip(t *testing.T) {
 		session, err := who.GetShareSession(ctx, link.Offer.OfferID)
 		require.NoError(t, err, "session: %v", err)
 
-		require.Equal(t, domain.P2PShareStateCompleted, session.State, "session state = %q (%s)", session.State, session.FailReason)
+		require.Equal(
+			t,
+			domain.P2PShareStateCompleted,
+			session.State,
+			"session state = %q (%s)",
+			session.State,
+			session.FailReason,
+		)
 
-		require.Equal(t, session.TotalSize, session.TransferredBytes, "transferred %d of %d bytes", session.TransferredBytes, session.TotalSize)
+		require.Equal(
+			t,
+			session.TotalSize,
+			session.TransferredBytes,
+			"transferred %d of %d bytes",
+			session.TransferredBytes,
+			session.TotalSize,
+		)
 	}
 
 	installed, err := recipient.InstallShare(ctx, answer.OfferID, domain.InstallOptions{})
@@ -148,7 +174,14 @@ func TestP2PShareRoundTrip(t *testing.T) {
 
 	require.NotEmpty(t, installer.archives[0], "the installer was handed an empty archive path")
 
-	require.Equal(t, mod.GameID, installed[0].GameID, "installed mod is for %q, not %q", installed[0].GameID, mod.GameID)
+	require.Equal(
+		t,
+		mod.GameID,
+		installed[0].GameID,
+		"installed mod is for %q, not %q",
+		installed[0].GameID,
+		mod.GameID,
+	)
 
 	// The installed mod keeps the upstream link, which is the whole fallback story.
 	require.NotEmpty(t, installed[0].SourceURL, "installed mod lost its source: %+v", installed[0])
@@ -176,7 +209,13 @@ func TestP2PShareRejectReachesTheSender(t *testing.T) {
 	require.NoError(t, err, "reject: %v", err)
 
 	require.NotEmpty(t, answer.Link, "refusal produced no usable answer: %+v", answer)
-	require.Equal(t, link.Offer.OfferID, answer.OfferID, "refusal produced no usable answer: %+v", answer)
+	require.Equal(
+		t,
+		link.Offer.OfferID,
+		answer.OfferID,
+		"refusal produced no usable answer: %+v",
+		answer,
+	)
 
 	// The refusal goes out in the background; the sender has to answer first.
 	sendErr := make(chan error, 1)
@@ -194,11 +233,23 @@ func TestP2PShareRejectReachesTheSender(t *testing.T) {
 	session, err := sender.GetShareSession(ctx, link.Offer.OfferID)
 	require.NoError(t, err, "session: %v", err)
 
-	require.Equal(t, domain.P2PShareStateRejected, session.State, "state = %q, want rejected", session.State)
+	require.Equal(
+		t,
+		domain.P2PShareStateRejected,
+		session.State,
+		"state = %q, want rejected",
+		session.State,
+	)
 
 	// The sender has to be told what the recipient said, not merely that the
 	// connection failed.
-	require.Contains(t, session.FailReason, p2p.ReasonUntrusted, "the sender was told %q", session.FailReason)
+	require.Contains(
+		t,
+		session.FailReason,
+		p2p.ReasonUntrusted,
+		"the sender was told %q",
+		session.FailReason,
+	)
 
 	require.Empty(t, installer.archives, "a refused share installed something")
 }
@@ -250,13 +301,28 @@ func TestP2PShareRefusesAnExpiredLink(t *testing.T) {
 	require.NoError(t, err, "create: %v", err)
 
 	_, err = recipient.PreviewOffer(ctx, link.Link)
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareExpired), "preview error = %v, want SHARE_EXPIRED", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeShareExpired),
+		"preview error = %v, want SHARE_EXPIRED",
+		err,
+	)
 
 	_, err = recipient.AcceptOffer(ctx, link.Link, "")
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareExpired), "accept error = %v, want SHARE_EXPIRED", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeShareExpired),
+		"accept error = %v, want SHARE_EXPIRED",
+		err,
+	)
 
 	_, err = recipient.RejectOffer(ctx, link.Link, "")
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareExpired), "reject error = %v, want SHARE_EXPIRED", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeShareExpired),
+		"reject error = %v, want SHARE_EXPIRED",
+		err,
+	)
 }
 
 // TestP2PShareRefusesAGameItDoesNotKnow: the far side could not accept it either.
@@ -269,7 +335,12 @@ func TestP2PShareRefusesAGameItDoesNotKnow(t *testing.T) {
 	mod.GameID = "not-a-game"
 
 	_, err := sender.CreateShare(ctx, []domain.Mod{mod}, domain.P2PCreateOptions{})
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeGameNotRegistered), "error = %v, want GAME_NOT_REGISTERED", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeGameNotRegistered),
+		"error = %v, want GAME_NOT_REGISTERED",
+		err,
+	)
 }
 
 func TestP2PShareRefusesMixedGames(t *testing.T) {
@@ -333,10 +404,20 @@ func TestP2PShareSessionLookup(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := recipient.GetShareSession(ctx, "nope")
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareNotFound), "error = %v, want SHARE_NOT_FOUND", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeShareNotFound),
+		"error = %v, want SHARE_NOT_FOUND",
+		err,
+	)
 
 	err = recipient.AwaitRejection(ctx, "nope")
-	require.True(t, appErrors.IsAppError(err, appErrors.ErrCodeShareNotFound), "error = %v, want SHARE_NOT_FOUND", err)
+	require.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeShareNotFound),
+		"error = %v, want SHARE_NOT_FOUND",
+		err,
+	)
 
 	got := recipient.ListShareSessions(ctx)
 	require.Empty(t, got, "a fresh service listed %d sessions", len(got))

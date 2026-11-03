@@ -51,8 +51,8 @@ func nameRank(name string) int {
 type Location struct {
 	Name   string
 	Path   string
-	Depth  int
 	Others []string
+	Depth  int
 }
 
 // Locate finds the manifest a mod folder is read from, looking through its whole
@@ -113,6 +113,7 @@ func Locate(dir string) (Location, bool) {
 	})
 
 	chosen := matches[0]
+
 	others := make([]string, 0, len(matches)-1)
 	for _, other := range matches[1:] {
 		others = append(others, other.path)
@@ -167,7 +168,12 @@ func Read(dir string) (*Manifest, error) {
 
 	data, err := os.ReadFile(location.Path)
 	if err != nil {
-		return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "read manifest %q", location.Path)
+		return nil, appErrors.Wrap(
+			err,
+			appErrors.ErrCodeConfigIO,
+			"read manifest %q",
+			location.Path,
+		)
 	}
 
 	var m Manifest

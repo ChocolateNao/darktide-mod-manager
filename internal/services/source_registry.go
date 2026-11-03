@@ -449,6 +449,7 @@ func (r *SourceRegistry) Unregister(id string) bool {
 			Str("source", key).
 			Msg("mod source unregistered")
 	}
+
 	return live
 }
 

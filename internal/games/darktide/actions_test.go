@@ -7,10 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 )
 
 func TestLaunchCommandFollowsTheInstallation(t *testing.T) {

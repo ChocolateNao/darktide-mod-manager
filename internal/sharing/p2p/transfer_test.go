@@ -182,7 +182,15 @@ func TestTransferRoundTrip(t *testing.T) {
 		got, err := hashFile(filepath.Join(dest, file.Name))
 		require.NoError(t, err, "hash received %s: %v", file.Name, err)
 
-		assert.Equal(t, file.HashSHA256, got, "received %s hashes %s, the offer published %s", file.Name, got, file.HashSHA256)
+		assert.Equal(
+			t,
+			file.HashSHA256,
+			got,
+			"received %s hashes %s, the offer published %s",
+			file.Name,
+			got,
+			file.HashSHA256,
+		)
 	}
 
 	// The sender streams the files in offer order; anything else would mean the
@@ -197,7 +205,16 @@ func TestTransferRoundTrip(t *testing.T) {
 		gotInfo, err := os.Stat(got)
 		require.NoError(t, err, "stat %s: %v", got, err)
 
-		assert.Equal(t, wantInfo.Size(), gotInfo.Size(), "file %d (%s) arrived %d bytes, expected %d", i, file.Name, gotInfo.Size(), wantInfo.Size())
+		assert.Equal(
+			t,
+			wantInfo.Size(),
+			gotInfo.Size(),
+			"file %d (%s) arrived %d bytes, expected %d",
+			i,
+			file.Name,
+			gotInfo.Size(),
+			wantInfo.Size(),
+		)
 	}
 }
 
@@ -509,7 +526,13 @@ func TestDefaultSTUNServers(t *testing.T) {
 
 	servers := p2p.DefaultSTUNServers()
 
-	assert.Equal(t, []string{"stun:stun.l.google.com:19302"}, servers, "default STUN servers are %v, want [stun:stun.l.google.com:19302]", servers)
+	assert.Equal(
+		t,
+		[]string{"stun:stun.l.google.com:19302"},
+		servers,
+		"default STUN servers are %v, want [stun:stun.l.google.com:19302]",
+		servers,
+	)
 }
 
 func hashFile(path string) (string, error) {
@@ -550,7 +573,13 @@ func TestValidTransferNameRejectsPathTraversal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, p2p.ValidTransferName(tt.name), "ValidTransferName(%q)", tt.name)
+			assert.Equal(
+				t,
+				tt.want,
+				p2p.ValidTransferName(tt.name),
+				"ValidTransferName(%q)",
+				tt.name,
+			)
 		})
 	}
 }
@@ -609,5 +638,10 @@ func TestReceiveRejectsAnArchiveNameOutsideTheStagingFolder(t *testing.T) {
 
 	body, readErr := os.ReadFile(victim)
 	require.NoError(t, readErr, "read the file outside the staging folder")
-	assert.Equal(t, "keep me", string(body), "the transfer overwrote a file outside its staging folder")
+	assert.Equal(
+		t,
+		"keep me",
+		string(body),
+		"the transfer overwrote a file outside its staging folder",
+	)
 }

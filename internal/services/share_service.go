@@ -204,7 +204,17 @@ func (s *ShareService) CreateShare(
 
 		if provider.SupportsAuth() {
 			if err := provider.ValidateCredentials(ctx); err != nil {
-				s.logger.Warn().Str("op", "cloud-share").Str("provider", pid).Err(err).Msg("provider auth failed, skipping")
+				s.logger.Warn().Str(
+					"op",
+					"cloud-share",
+				).Str(
+					"provider",
+					pid,
+				).Err(
+					err,
+				).Msg(
+					"provider auth failed, skipping",
+				)
 				errs = append(errs, fmt.Errorf("provider %q: %w", pid, err))
 
 				continue
@@ -238,7 +248,17 @@ func (s *ShareService) CreateShare(
 		if _, err := provider.CreateShareLink(ctx, uploaded.References, domain.ShareOptions{
 			Expiry: deadlineOrZero(expiry),
 		}); err != nil {
-			s.logger.Warn().Str("op", "cloud-share").Str("provider", pid).Err(err).Msg("provider share link ignored")
+			s.logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"provider",
+				pid,
+			).Err(
+				err,
+			).Msg(
+				"provider share link ignored",
+			)
 		}
 
 		link, err := s.encodeLink(pid, gameID, uploaded.References, sharedMod, expiry)
@@ -479,7 +499,17 @@ func (s *ShareService) InstallShare(
 			shareInstallOptions(opts),
 		)
 		if err != nil {
-			s.logger.Warn().Str("op", "cloud-share").Str("mod", mod.Name).Err(err).Msg("install from share failed")
+			s.logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"mod",
+				mod.Name,
+			).Err(
+				err,
+			).Msg(
+				"install from share failed",
+			)
 			return nil, err
 		}
 
@@ -704,13 +734,39 @@ func (s *ShareService) RevokeShare(ctx context.Context, shareID string) error {
 	for _, link := range record.Links {
 		provider, err := s.registry.Get(link.ProviderID)
 		if err != nil {
-			s.logger.Warn().Str("op", "cloud-share").Str("share_id", shareID).Str("provider", link.ProviderID).Err(err).Msg("provider for share link unavailable, skipping")
+			s.logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"share_id",
+				shareID,
+			).Str(
+				"provider",
+				link.ProviderID,
+			).Err(
+				err,
+			).Msg(
+				"provider for share link unavailable, skipping",
+			)
 			continue
 		}
 
 		files, err := provider.ResolveShareLink(ctx, link)
 		if err != nil {
-			s.logger.Warn().Str("op", "cloud-share").Str("share_id", shareID).Str("provider", link.ProviderID).Err(err).Msg("share link could not be resolved, skipping")
+			s.logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"share_id",
+				shareID,
+			).Str(
+				"provider",
+				link.ProviderID,
+			).Err(
+				err,
+			).Msg(
+				"share link could not be resolved, skipping",
+			)
 			continue
 		}
 

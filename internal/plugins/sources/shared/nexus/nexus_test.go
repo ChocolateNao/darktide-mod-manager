@@ -948,7 +948,11 @@ func TestGetModCarriesTheModDetails(t *testing.T) {
 
 	images, ok := mod.SourceData["gallery_images"].([]map[string]any)
 	if !ok || len(images) != 1 || images[0]["title"] != "Screenshot" {
-		assert.Fail(t, "gallery_images = %#v, want the API's gallery", mod.SourceData["gallery_images"])
+		assert.Fail(
+			t,
+			"gallery_images = %#v, want the API's gallery",
+			mod.SourceData["gallery_images"],
+		)
 	}
 
 	assert.Equal(

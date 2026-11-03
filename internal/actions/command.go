@@ -18,14 +18,11 @@ import (
 // CommandSpec is one external program invocation: directly, through an
 // interpreter, or from a working directory.
 type CommandSpec struct {
-	Path  string
-	Dir   string
-	Stdin string
-	Args  []string
-	// Action is the game action that requested this command, when there is one.
-	Action domain.ActionID
-	// Detached starts the process and returns without waiting for it, so a game
-	// outlives the action that launched it.
+	Path     string
+	Dir      string
+	Stdin    string
+	Action   domain.ActionID
+	Args     []string
 	Detached bool
 }
 

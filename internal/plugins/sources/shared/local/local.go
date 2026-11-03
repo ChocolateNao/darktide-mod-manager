@@ -55,14 +55,10 @@ const maxScannedMods = 5000
 
 // Source is the local-folder mod provider.
 type Source struct {
-	paths []string
-	// maxDepth is the scan depth; zero means defaultMaxScanDepth. It is settable
-	// so a test (or a future "deep scan" toggle) does not need a real tree.
-	maxDepth int
-	// inspected remembers paths the user dropped. Install resolves a mod by id
-	// through GetMod, and a dropped path is usually outside the configured roots.
-	mu        sync.Mutex
 	inspected map[string]*domain.Mod
+	paths     []string
+	maxDepth  int
+	mu        sync.Mutex
 }
 
 // Option customises a Source.

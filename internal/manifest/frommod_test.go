@@ -73,7 +73,13 @@ func TestFromModCarriesEverythingTheManifestCanHold(t *testing.T) {
 
 	assert.Equal(t, "1.0.3", m.Mod.GameVersion, "game version = %q", m.Mod.GameVersion)
 
-	assert.Equal(t, []string{"core_libs"}, m.Mod.Dependencies, "dependencies = %v", m.Mod.Dependencies)
+	assert.Equal(
+		t,
+		[]string{"core_libs"},
+		m.Mod.Dependencies,
+		"dependencies = %v",
+		m.Mod.Dependencies,
+	)
 
 	assert.Equal(t, []string{"ugly_ui"}, m.Mod.ConflictsWith, "conflicts = %v", m.Mod.ConflictsWith)
 
@@ -101,7 +107,13 @@ func TestFromModLeavesMachineLocalStateOut(t *testing.T) {
 	for _, leaked := range []string{
 		"deadbeef", "/games/darktide", "enabled", "priority", "game_root", "installed_at",
 	} {
-		assert.False(t, containsString(string(data), leaked), "the manifest contains %q:\n%s", leaked, data)
+		assert.False(
+			t,
+			containsString(string(data), leaked),
+			"the manifest contains %q:\n%s",
+			leaked,
+			data,
+		)
 	}
 }
 
@@ -119,13 +131,32 @@ func TestFromModHooksSurviveTheRoundTrip(t *testing.T) {
 
 	original := installedMod().Hooks
 
-	assert.Equal(t, original.Count(), hooks.Count(), "hook count = %d, want %d", hooks.Count(), original.Count())
+	assert.Equal(
+		t,
+		original.Count(),
+		hooks.Count(),
+		"hook count = %d, want %d",
+		hooks.Count(),
+		original.Count(),
+	)
 
 	scripts := hooks.For(domain.PhasePostInstall)
 	require.Len(t, scripts, 1, "post-install scripts = %d", len(scripts))
 
-	assert.Equal(t, "print('installed')", scripts[0].Content, "post-install script = %+v", scripts[0])
-	assert.Equal(t, "{{install_path}}", scripts[0].WorkingDir, "post-install script = %+v", scripts[0])
+	assert.Equal(
+		t,
+		"print('installed')",
+		scripts[0].Content,
+		"post-install script = %+v",
+		scripts[0],
+	)
+	assert.Equal(
+		t,
+		"{{install_path}}",
+		scripts[0].WorkingDir,
+		"post-install script = %+v",
+		scripts[0],
+	)
 
 	assert.Equal(t, 30, scripts[0].Timeout, "post-install script details = %+v", scripts[0])
 	require.Len(t, scripts[0].Env, 1, "post-install script details = %+v", scripts[0])
@@ -153,7 +184,13 @@ func TestFromModSourceLinksSurviveTheRoundTrip(t *testing.T) {
 	assert.NotEmpty(t, back.Mod.UpdateURL, "source links = %+v", back.Mod)
 
 	assert.Equal(t, "12", back.Mod.SourceData["mod_id"], "source data = %v", back.Mod.SourceData)
-	assert.Equal(t, "true", back.Mod.SourceData["verified"], "source data = %v", back.Mod.SourceData)
+	assert.Equal(
+		t,
+		"true",
+		back.Mod.SourceData["verified"],
+		"source data = %v",
+		back.Mod.SourceData,
+	)
 }
 
 func TestWriteKeepsTheExistingManifestName(t *testing.T) {
@@ -192,7 +229,12 @@ func TestWriteRefusesAFileAsAFolder(t *testing.T) {
 	require.NoError(t, err, "write file: %v", err)
 
 	_, err = Write(file, FromMod(installedMod()))
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidMod), "error = %v, want INVALID_MOD", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeInvalidMod),
+		"error = %v, want INVALID_MOD",
+		err,
+	)
 }
 
 func TestWriteRefusesABlankFolder(t *testing.T) {
@@ -205,7 +247,12 @@ func TestWriteRefusesABlankFolder(t *testing.T) {
 
 func TestEncodeRefusesNothing(t *testing.T) {
 	_, err := Encode(nil)
-	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument), "error = %v, want INVALID_ARGUMENT", err)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"error = %v, want INVALID_ARGUMENT",
+		err,
+	)
 }
 
 func TestFromModTolerantOfNothing(t *testing.T) {
@@ -234,7 +281,15 @@ func TestSourceDataStringsRendersEveryShape(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := SourceDataValue(tc.value)
-			assert.Equal(t, tc.want, got, "SourceDataValue(%v) = %q, want %q", tc.value, got, tc.want)
+			assert.Equal(
+				t,
+				tc.want,
+				got,
+				"SourceDataValue(%v) = %q, want %q",
+				tc.value,
+				got,
+				tc.want,
+			)
 		})
 	}
 }
@@ -249,7 +304,12 @@ func TestSourceDataValueFallsBackForUnmarshalableValues(t *testing.T) {
 func TestSourceDataStringsDropsAnEmptyMap(t *testing.T) {
 	assert.Nil(t, SourceDataStrings(nil), "SourceDataStrings(nil) = %v", SourceDataStrings(nil))
 
-	assert.Nil(t, SourceDataStrings(map[string]any{}), "SourceDataStrings(empty) = %v", SourceDataStrings(map[string]any{}))
+	assert.Nil(
+		t,
+		SourceDataStrings(map[string]any{}),
+		"SourceDataStrings(empty) = %v",
+		SourceDataStrings(map[string]any{}),
+	)
 }
 
 // A hook with no language cannot be written; skipping it keeps Write from

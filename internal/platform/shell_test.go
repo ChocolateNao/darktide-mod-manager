@@ -184,7 +184,13 @@ func TestResolveScriptRunnerUnix(t *testing.T) {
 	got, err := ResolveScriptRunner(domain.PlatformLinux, shScript, lookPathSet())
 	require.NoError(t, err, "ResolveScriptRunner")
 
-	assert.True(t, got.Equal(Shell{Name: "/bin/sh"}), "ResolveScriptRunner = %+v, want %+v", got, Shell{Name: "/bin/sh"})
+	assert.True(
+		t,
+		got.Equal(Shell{Name: "/bin/sh"}),
+		"ResolveScriptRunner = %+v, want %+v",
+		got,
+		Shell{Name: "/bin/sh"},
+	)
 
 	envScript := filepath.Join(dir, "hook.py")
 	err = os.WriteFile(envScript, []byte("#!/usr/bin/env python3\nprint(1)\n"), 0o755)

@@ -591,7 +591,13 @@ func TestSplitStatements(t *testing.T) {
 }
 
 func TestFormatAndParseTime(t *testing.T) {
-	assert.Equal(t, "", formatTime(time.Time{}), "formatTime(zero) = %q, want the empty string", formatTime(time.Time{}))
+	assert.Equal(
+		t,
+		"",
+		formatTime(time.Time{}),
+		"formatTime(zero) = %q, want the empty string",
+		formatTime(time.Time{}),
+	)
 
 	instant := time.Date(2024, 5, 17, 8, 30, 15, 123456789, time.UTC)
 

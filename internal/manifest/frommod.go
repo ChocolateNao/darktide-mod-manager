@@ -219,7 +219,18 @@ func Write(dir string, m *Manifest) (string, error) {
 		return "", appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "write manifest %s", path)
 	}
 
-	zlog.Info().Str("op", "manifest-write").Str("path", path).Int("bytes", len(data)).Msg("manifest written")
+	zlog.Info().Str(
+		"op",
+		"manifest-write",
+	).Str(
+		"path",
+		path,
+	).Int(
+		"bytes",
+		len(data),
+	).Msg(
+		"manifest written",
+	)
 
 	return path, nil
 }

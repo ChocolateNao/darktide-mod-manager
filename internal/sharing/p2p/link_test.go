@@ -54,14 +54,31 @@ func TestLinkOfferRoundTrips(t *testing.T) {
 	link, err := p2p.LinkOffer(offer, sdp)
 	require.NoError(t, err, "link: %v", err)
 
-	assert.True(t, p2p.IsOfferLink(link.Link), "the link does not announce itself as an offer: %q", link.Link)
+	assert.True(
+		t,
+		p2p.IsOfferLink(link.Link),
+		"the link does not announce itself as an offer: %q",
+		link.Link,
+	)
 
 	assert.False(t, p2p.IsAnswerLink(link.Link), "an offer link was mistaken for an answer link")
 
 	assert.False(t, strings.ContainsAny(link.Link, " \t\n\r"), "the link contains whitespace")
 
-	assert.Equal(t, offer.OfferID, link.Offer.OfferID, "the link did not keep the offer it was given: %+v", link.Offer)
-	assert.Equal(t, offer.GameID, link.Offer.GameID, "the link did not keep the offer it was given: %+v", link.Offer)
+	assert.Equal(
+		t,
+		offer.OfferID,
+		link.Offer.OfferID,
+		"the link did not keep the offer it was given: %+v",
+		link.Offer,
+	)
+	assert.Equal(
+		t,
+		offer.GameID,
+		link.Offer.GameID,
+		"the link did not keep the offer it was given: %+v",
+		link.Offer,
+	)
 
 	assert.Equal(t, sdp, link.SDP, "sdp = %q", link.SDP)
 
@@ -80,14 +97,16 @@ func TestLinkOfferRoundTrips(t *testing.T) {
 
 	assert.True(
 		t,
-		len(opened.Offer.Files) == 1 && opened.Offer.Files[0].HashSHA256 == offer.Files[0].HashSHA256,
+		len(opened.Offer.Files) == 1 &&
+			opened.Offer.Files[0].HashSHA256 == offer.Files[0].HashSHA256,
 		"files = %+v",
 		opened.Offer.Files,
 	)
 
 	assert.True(
 		t,
-		len(opened.Offer.SourceLinks) == 1 && opened.Offer.SourceLinks[0].SourceURL == offer.SourceLinks[0].SourceURL,
+		len(opened.Offer.SourceLinks) == 1 &&
+			opened.Offer.SourceLinks[0].SourceURL == offer.SourceLinks[0].SourceURL,
 		"source links = %+v",
 		opened.Offer.SourceLinks,
 	)
@@ -124,7 +143,12 @@ func TestLinkOfferWithoutAnExpiryIsPermanent(t *testing.T) {
 	opened, err := p2p.OpenOffer(link.Link)
 	require.NoError(t, err, "open: %v", err)
 
-	assert.Nil(t, opened.Offer.ExpiresAt, "the round trip invented an expiry: %v", opened.Offer.ExpiresAt)
+	assert.Nil(
+		t,
+		opened.Offer.ExpiresAt,
+		"the round trip invented an expiry: %v",
+		opened.Offer.ExpiresAt,
+	)
 }
 
 func TestLinkIsExpired(t *testing.T) {
@@ -141,7 +165,11 @@ func TestLinkIsExpired(t *testing.T) {
 
 	assert.True(t, link.IsExpired(deadline), "the link survived its own deadline")
 
-	assert.True(t, link.IsExpired(deadline.Add(time.Hour)), "the link survived an hour past its deadline")
+	assert.True(
+		t,
+		link.IsExpired(deadline.Add(time.Hour)),
+		"the link survived an hour past its deadline",
+	)
 }
 
 func TestOpenOfferRefusesAnAnswer(t *testing.T) {
@@ -172,7 +200,12 @@ func TestLinkAnswerRoundTrips(t *testing.T) {
 	answer, err := p2p.LinkAnswer("offer-1", "v=0\r\n", secret, "medic")
 	require.NoError(t, err, "answer: %v", err)
 
-	assert.True(t, p2p.IsAnswerLink(answer.Link), "the link does not announce itself as an answer: %q", answer.Link)
+	assert.True(
+		t,
+		p2p.IsAnswerLink(answer.Link),
+		"the link does not announce itself as an answer: %q",
+		answer.Link,
+	)
 
 	assert.Equal(t, "offer-1", answer.OfferID, "answer = %+v", answer)
 	assert.Equal(t, secret, answer.Secret, "answer = %+v", answer)
@@ -324,7 +357,12 @@ func TestSessionKeyIsNotTheEnvelopeKey(t *testing.T) {
 	other, err := p2p.SessionKeyFor(secretFor(t))
 	require.NoError(t, err, "other session key: %v", err)
 
-	assert.NotEqual(t, string(other), string(sessionKey), "two secrets produced the same session key")
+	assert.NotEqual(
+		t,
+		string(other),
+		string(sessionKey),
+		"two secrets produced the same session key",
+	)
 }
 
 // TestIsOfferLinkIsCaseInsensitive covers the scheme alone changing case.

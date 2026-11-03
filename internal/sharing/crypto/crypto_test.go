@@ -83,7 +83,14 @@ func TestOpenShortBlob(t *testing.T) {
 
 	for _, size := range []int{0, 1, 11} {
 		_, err := crypto.Open(make([]byte, size), secret)
-		assert.ErrorIs(t, err, crypto.ErrMalformed, "Open of a %d-byte blob returned %v, want ErrMalformed", size, err)
+		assert.ErrorIs(
+			t,
+			err,
+			crypto.ErrMalformed,
+			"Open of a %d-byte blob returned %v, want ErrMalformed",
+			size,
+			err,
+		)
 	}
 }
 
@@ -92,13 +99,31 @@ func TestEmptyPassphrase(t *testing.T) {
 	t.Parallel()
 
 	_, err := crypto.Seal([]byte("x"), "")
-	assert.ErrorIs(t, err, crypto.ErrEmptyPassphrase, "Seal with an empty secret returned %v, want ErrEmptyPassphrase", err)
+	assert.ErrorIs(
+		t,
+		err,
+		crypto.ErrEmptyPassphrase,
+		"Seal with an empty secret returned %v, want ErrEmptyPassphrase",
+		err,
+	)
 
 	_, err = crypto.Open([]byte("0123456789abcdef0123456789abcdef"), "")
-	assert.ErrorIs(t, err, crypto.ErrEmptyPassphrase, "Open with an empty secret returned %v, want ErrEmptyPassphrase", err)
+	assert.ErrorIs(
+		t,
+		err,
+		crypto.ErrEmptyPassphrase,
+		"Open with an empty secret returned %v, want ErrEmptyPassphrase",
+		err,
+	)
 
 	_, err = crypto.DeriveKey("", crypto.LabelSession)
-	assert.ErrorIs(t, err, crypto.ErrEmptyPassphrase, "DeriveKey with an empty secret returned %v, want ErrEmptyPassphrase", err)
+	assert.ErrorIs(
+		t,
+		err,
+		crypto.ErrEmptyPassphrase,
+		"DeriveKey with an empty secret returned %v, want ErrEmptyPassphrase",
+		err,
+	)
 }
 
 // TestGenerateSecretRejectsNonPositiveSize covers the guard on a token that would decode empty.
@@ -140,7 +165,12 @@ func TestMACSeparatesParts(t *testing.T) {
 	joined := crypto.MAC(key, []byte("ab"), []byte("c"))
 	split := crypto.MAC(key, []byte("a"), []byte("bc"))
 
-	assert.NotEqual(t, joined, split, "MAC is ambiguous about where one part ends and the next begins")
+	assert.NotEqual(
+		t,
+		joined,
+		split,
+		"MAC is ambiguous about where one part ends and the next begins",
+	)
 }
 
 // TestEncodeJSONRoundTrip covers the full link token path.
@@ -160,7 +190,12 @@ func TestEncodeJSONRoundTrip(t *testing.T) {
 	token, err := crypto.EncodeJSON(want, secret)
 	require.NoError(t, err, "EncodeJSON: %v", err)
 
-	assert.False(t, strings.ContainsAny(token, "+/="), "token %q is not URL-safe and padding-free", token)
+	assert.False(
+		t,
+		strings.ContainsAny(token, "+/="),
+		"token %q is not URL-safe and padding-free",
+		token,
+	)
 
 	var got payload
 
@@ -179,7 +214,13 @@ func TestDecodeJSONRejectsBadTokens(t *testing.T) {
 	var out map[string]any
 
 	err := crypto.DecodeJSON("!!! not base64 !!!", secret, &out)
-	assert.ErrorIs(t, err, crypto.ErrMalformed, "DecodeJSON of non-base64 returned %v, want ErrMalformed", err)
+	assert.ErrorIs(
+		t,
+		err,
+		crypto.ErrMalformed,
+		"DecodeJSON of non-base64 returned %v, want ErrMalformed",
+		err,
+	)
 
 	token, err := crypto.EncodeJSON(map[string]string{"k": "v"}, "another secret")
 	require.NoError(t, err, "EncodeJSON: %v", err)
@@ -239,7 +280,6 @@ func TestDecompressBoundsOutput(t *testing.T) {
 
 	_, err = crypto.Decompress(bomb)
 	require.Error(t, err, "Decompress expanded past its ceiling without complaining")
-
 }
 
 // TestCompressRoundTrip covers the usual input: verbose, repetitive ASCII.
@@ -257,7 +297,14 @@ func TestCompressRoundTrip(t *testing.T) {
 	packed, err := crypto.Compress(original)
 	require.NoError(t, err, "Compress: %v", err)
 
-	assert.Less(t, len(packed), len(original)/4, "repetitive input compressed to %d bytes from %d", len(packed), len(original))
+	assert.Less(
+		t,
+		len(packed),
+		len(original)/4,
+		"repetitive input compressed to %d bytes from %d",
+		len(packed),
+		len(original),
+	)
 
 	unpacked, err := crypto.Decompress(packed)
 	require.NoError(t, err, "Decompress: %v", err)
@@ -271,9 +318,17 @@ func TestEqualConstantTime(t *testing.T) {
 
 	a := []byte("0123456789abcdef0123456789abcdef")
 
-	assert.True(t, crypto.EqualConstantTime(a, bytes.Clone(a)), "identical digests compared unequal")
+	assert.True(
+		t,
+		crypto.EqualConstantTime(a, bytes.Clone(a)),
+		"identical digests compared unequal",
+	)
 
-	assert.False(t, crypto.EqualConstantTime(a, []byte("short")), "digests of different lengths compared equal")
+	assert.False(
+		t,
+		crypto.EqualConstantTime(a, []byte("short")),
+		"digests of different lengths compared equal",
+	)
 
 	flipped := bytes.Clone(a)
 	flipped[0] ^= 0xff

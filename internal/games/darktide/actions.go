@@ -106,8 +106,12 @@ func validateLoadOrder(
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &domain.GameActionResult{
-				Success:    true,
-				Message:    fmt.Sprintf("no %s in %s; the game loads mods in directory order", actx.Game.LoadOrderFile(), actx.ModsPath),
+				Success: true,
+				Message: fmt.Sprintf(
+					"no %s in %s; the game loads mods in directory order",
+					actx.Game.LoadOrderFile(),
+					actx.ModsPath,
+				),
 				MessageKey: "actions.darktide.validate.missing",
 				MessageArgs: map[string]any{
 					"file": actx.Game.LoadOrderFile(),
@@ -528,8 +532,12 @@ func installPatcher(
 	release, err := installer.latest(ctx)
 	if errors.Is(err, errNoPatcherAsset) {
 		return &domain.GameActionResult{
-			Success:     false,
-			Message:     fmt.Sprintf("dtkit-patch has no release for %s/%s", actx.Platform, installer.arch),
+			Success: false,
+			Message: fmt.Sprintf(
+				"dtkit-patch has no release for %s/%s",
+				actx.Platform,
+				installer.arch,
+			),
 			MessageKey:  "actions.darktide.installPatcher.noAsset",
 			MessageArgs: map[string]any{"platform": string(actx.Platform), "arch": installer.arch},
 		}, nil

@@ -243,24 +243,20 @@ type ActionCommandRunner func(
 
 // ActionContext is everything a handler is allowed to depend on.
 type ActionContext struct {
-	Game     GameDefinition
-	Opener   ActionOpener
-	Logger   ActionLogger
-	Args     map[string]any
-	Platform Platform
-	GameID   string
-	// Action is the running action's full id, for messages about it.
-	Action ActionID
-	// CommandsAllowed reflects the "Allow actions to execute commands" setting.
+	Game            GameDefinition
+	Opener          ActionOpener
+	Logger          ActionLogger
+	RunCommand      ActionCommandRunner
+	StartCommand    CommandStarter
+	Args            map[string]any
+	Platform        Platform
+	GameID          string
+	Action          ActionID
+	InstallPath     string
+	ModsPath        string
+	WorkingDir      string
+	GameSettings    GameSettings
 	CommandsAllowed bool
-	// StartCommand is nil when the runner has no command runner.
-	StartCommand CommandStarter
-	// RunCommand waits for the program to exit and returns its output.
-	RunCommand   ActionCommandRunner
-	InstallPath  string
-	ModsPath     string
-	WorkingDir   string
-	GameSettings GameSettings
 }
 
 // ArgString reads a string option, falling back to the empty string. A missing
@@ -340,11 +336,11 @@ type GameActionHandler func(ctx context.Context, actx ActionContext) (*GameActio
 // parse prose.
 type GameActionResult struct {
 	Data        any
+	MessageArgs map[string]any
 	Message     string
 	MessageKey  string
-	MessageArgs map[string]any
-	Details     []ActionDetail
 	Output      string
+	Details     []ActionDetail
 	Success     bool
 }
 

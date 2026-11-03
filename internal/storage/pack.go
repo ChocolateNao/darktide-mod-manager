@@ -10,10 +10,9 @@ import (
 	"path/filepath"
 	"time"
 
-	zlog "github.com/rs/zerolog/log"
-
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // PackEntry is one file to place into a share archive. Name is the path the file

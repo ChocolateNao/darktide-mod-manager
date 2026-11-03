@@ -91,6 +91,7 @@ func (m *Mod) Clone() *Mod {
 	out.ConflictsWith = cloneStrings(m.ConflictsWith)
 
 	out.Tags = cloneStrings(m.Tags)
+
 	out.Issues = cloneStrings(m.Issues)
 	if m.SourceData != nil {
 		out.SourceData = make(map[string]any, len(m.SourceData))

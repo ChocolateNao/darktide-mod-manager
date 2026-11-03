@@ -43,7 +43,8 @@ type Bundle struct {
 	// Wails bindings) can tail the file, read the level and change it without building
 	// a second log service. Never nil after a successful wire.
 	Logging *logging.Service
-	// Cleanups release resources in acquisition order. Caller manages lifecycle outside Client.Close.
+	// Cleanups release resources in acquisition order. Caller manages lifecycle outside
+	// Client.Close.
 	Cleanups []func() error
 }
 
@@ -165,6 +166,7 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	cfg.ApplyDefaults()
 
 	// An explicit WithGame wins over the file, but only for a registered id: a command-line

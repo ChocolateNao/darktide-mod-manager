@@ -16,11 +16,10 @@ import (
 	"strings"
 	"time"
 
-	zlog "github.com/rs/zerolog/log"
-
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // ExtractionLimits bounds what a single archive may write to disk. Mod archives
@@ -558,6 +557,7 @@ func (s *extractState) zip(ctx context.Context, archivePath string) error {
 			zlog.Warn().Str("op", "archive-extract").
 				Str("entry", entry.Name).Msg("archive entry could not be read, skipped")
 			s.skip(entry.Name, "entry could not be read")
+
 			continue
 		}
 

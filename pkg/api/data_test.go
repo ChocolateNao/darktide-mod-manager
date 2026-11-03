@@ -16,7 +16,12 @@ func TestDeleteDataRejectsAnEmptySelection(t *testing.T) {
 
 	err = client.DeleteData(context.Background(), DeleteDataOptions{})
 	require.Error(t, err, "DeleteData with nothing selected returned no error")
-	assert.True(t, IsAppError(err, ErrCodeInvalidArgument), "DeleteData returned %v, want an invalid-argument error", err)
+	assert.True(
+		t,
+		IsAppError(err, ErrCodeInvalidArgument),
+		"DeleteData returned %v, want an invalid-argument error",
+		err,
+	)
 }
 
 func TestDeleteDataWithModDataNeedsAModService(t *testing.T) {
@@ -25,7 +30,12 @@ func TestDeleteDataWithModDataNeedsAModService(t *testing.T) {
 
 	err = client.DeleteData(context.Background(), DeleteDataOptions{ModData: true})
 	require.Error(t, err, "DeleteData without a mod service returned no error")
-	assert.True(t, IsAppError(err, ErrCodeInvalidArgument), "DeleteData returned %v, want an invalid-argument error", err)
+	assert.True(
+		t,
+		IsAppError(err, ErrCodeInvalidArgument),
+		"DeleteData returned %v, want an invalid-argument error",
+		err,
+	)
 }
 
 func TestDeleteDataConfigOnlyRewritesTheDefaults(t *testing.T) {
@@ -38,7 +48,11 @@ func TestDeleteDataConfigOnlyRewritesTheDefaults(t *testing.T) {
 	client, err := NewClientFromServices(ClientDeps{Config: store, ActiveConfig: &active})
 	require.NoError(t, err, "NewClientFromServices")
 
-	require.NoError(t, client.DeleteData(context.Background(), DeleteDataOptions{Config: true}), "DeleteData")
+	require.NoError(
+		t,
+		client.DeleteData(context.Background(), DeleteDataOptions{Config: true}),
+		"DeleteData",
+	)
 
 	want := domain.DefaultConfig()
 	services.ResolveActiveGame(&want)

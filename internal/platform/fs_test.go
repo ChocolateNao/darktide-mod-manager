@@ -196,7 +196,11 @@ func TestAtomicWriteFile(t *testing.T) {
 	assert.Equal(t, fs.FileMode(0o600), runtime, "mode = %v, want 0600", runtime)
 
 	// Overwriting must replace the file without leaving temporaries behind.
-	require.NoError(t, AtomicWriteFile(target, []byte(`{"a":2}`), 0o644), "AtomicWriteFile overwrite")
+	require.NoError(
+		t,
+		AtomicWriteFile(target, []byte(`{"a":2}`), 0o644),
+		"AtomicWriteFile overwrite",
+	)
 
 	got, _ = os.ReadFile(target)
 	assert.Equal(t, `{"a":2}`, string(got), "content after overwrite = %q", got)

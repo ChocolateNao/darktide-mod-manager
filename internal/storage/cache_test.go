@@ -86,8 +86,15 @@ func TestNormalizeCacheKeyRejectsEverythingThatIsNotADigest(t *testing.T) {
 	for _, tc := range cases {
 		_, err := NormalizeCacheKey(tc.in)
 		assert.Error(t, err, "%s: NormalizeCacheKey(%q) succeeded, want an error", tc.name, tc.in)
-		assert.Equal(t, appErrors.ErrCodeInvalidArgument, appErrors.CodeOf(err),
-			"%s: code = %s, want %s", tc.name, appErrors.CodeOf(err), appErrors.ErrCodeInvalidArgument)
+		assert.Equal(
+			t,
+			appErrors.ErrCodeInvalidArgument,
+			appErrors.CodeOf(err),
+			"%s: code = %s, want %s",
+			tc.name,
+			appErrors.CodeOf(err),
+			appErrors.ErrCodeInvalidArgument,
+		)
 	}
 }
 
@@ -500,7 +507,11 @@ func TestCacheIndexPutReplacesAnExistingRow(t *testing.T) {
 	ctx := context.Background()
 
 	k := key("put")
-	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/a", SizeBytes: 1, Refs: 3}), "Put")
+	require.NoError(
+		t,
+		idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/a", SizeBytes: 1, Refs: 3}),
+		"Put",
+	)
 
 	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: k, Path: "/tmp/b", SizeBytes: 2, Refs: 1}),
 		"second Put")
@@ -534,13 +545,24 @@ func TestCacheIndexListIsOrderedByLastAccessThenHash(t *testing.T) {
 	older, sameTime, newer := key("o"), key("s"), key("n")
 	require.NoError(
 		t,
-		idx.Put(ctx, &CacheEntry{Hash: newer, Path: "/n", LastAccess: fixedTime.Add(2 * time.Hour)}),
+		idx.Put(
+			ctx,
+			&CacheEntry{Hash: newer, Path: "/n", LastAccess: fixedTime.Add(2 * time.Hour)},
+		),
 		"Put",
 	)
 
-	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: older, Path: "/o", LastAccess: fixedTime}), "Put")
+	require.NoError(
+		t,
+		idx.Put(ctx, &CacheEntry{Hash: older, Path: "/o", LastAccess: fixedTime}),
+		"Put",
+	)
 
-	require.NoError(t, idx.Put(ctx, &CacheEntry{Hash: sameTime, Path: "/s", LastAccess: fixedTime}), "Put")
+	require.NoError(
+		t,
+		idx.Put(ctx, &CacheEntry{Hash: sameTime, Path: "/s", LastAccess: fixedTime}),
+		"Put",
+	)
 
 	entries, err := idx.List(ctx)
 	require.NoError(t, err, "List")

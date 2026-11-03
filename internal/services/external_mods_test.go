@@ -110,8 +110,8 @@ func TestExternalModCannotBeEnabledOrDisabled(t *testing.T) {
 	addModFolder(t, h, "external_mod")
 
 	for _, call := range []struct {
-		name string
 		run  func() error
+		name string
 	}{
 		{"enable", func() error { return h.svc.EnableMod(context.Background(), "external:external_mod") }},
 		{"disable", func() error { return h.svc.DisableMod(context.Background(), "external:external_mod") }},
@@ -129,7 +129,12 @@ func TestEnablingKnownModOnlyEditsLoadOrderFile(t *testing.T) {
 	h.withArchive(t, modFixture("known", "1.0.0"), "known_mod/file.txt")
 
 	disabled := false
-	_, err := h.svc.Install(context.Background(), "vortex", "known", InstallOptions{Enable: &disabled})
+	_, err := h.svc.Install(
+		context.Background(),
+		"vortex",
+		"known",
+		InstallOptions{Enable: &disabled},
+	)
 	require.NoError(t, err)
 
 	deploys := len(h.deployer.deployCalls)
@@ -239,7 +244,10 @@ func TestUninstallExternalModDeletesFolderAndLoadOrderLine(t *testing.T) {
 	folder := addModFolder(t, h, "external_mod")
 	writeLoadOrderFile(t, h, "external_mod")
 
-	require.NoError(t, h.svc.Uninstall(context.Background(), "external:external_mod", UninstallOptions{}))
+	require.NoError(
+		t,
+		h.svc.Uninstall(context.Background(), "external:external_mod", UninstallOptions{}),
+	)
 
 	_, err := os.Stat(folder)
 	assert.True(t, os.IsNotExist(err), "the external folder must be gone")

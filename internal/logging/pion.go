@@ -48,5 +48,15 @@ func emit(level zerolog.Level, msg string, args []any) {
 		return
 	}
 
-	zlog.Logger.WithLevel(level).Str("app", appName).Str("op", "p2p-share").Msg(fmt.Sprintf(msg, args...))
+	zlog.Logger.WithLevel(
+		level,
+	).Str(
+		"app",
+		appName,
+	).Str(
+		"op",
+		"p2p-share",
+	).Msg(
+		fmt.Sprintf(msg, args...),
+	)
 }

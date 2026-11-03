@@ -877,6 +877,7 @@ func TestDownloadIgnoresClientTotalTimeout(t *testing.T) {
 		_, _ = w.Write([]byte("first"))
 		w.(http.Flusher).Flush()
 		time.Sleep(120 * time.Millisecond)
+
 		_, _ = w.Write([]byte("second"))
 	}))
 	defer srv.Close()

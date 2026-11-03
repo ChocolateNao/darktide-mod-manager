@@ -97,6 +97,7 @@ func moveToRecycleBin(path string, look LookPath) error {
 // quote is its escape.
 func windowsTrashScript(path string, isDir bool) string {
 	quoted := "'" + strings.ReplaceAll(path, "'", "''") + "'"
+
 	method := "DeleteFile"
 	if isDir {
 		method = "DeleteDirectory"
@@ -145,6 +146,7 @@ func moveToTrash(path, filesDir, infoDir string, now time.Time) error {
 		}
 
 		infoPath = filepath.Join(infoDir, name+".trashinfo")
+
 		info := fmt.Sprintf(
 			"[Trash Info]\nPath=%s\nDeletionDate=%s\n",
 			(&url.URL{Path: abs}).EscapedPath(),

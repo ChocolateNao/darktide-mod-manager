@@ -8,19 +8,19 @@ import (
 // Config is the complete user configuration. Every field has a usable default so
 // that a zero Config is still valid; ApplyDefaults fills in anything unset.
 type Config struct {
-	Hooks        HooksConfig             `json:"hooks"`
+	Security     SecurityConfig          `json:"security"`
 	Sources      map[string]SourceConfig `json:"sources"`
 	Games        map[string]GameSettings `json:"games,omitempty"`
 	ActiveGame   string                  `json:"active_game"`
 	UI           UIConfig                `json:"ui"`
-	Advanced     AdvancedConfig          `json:"advanced"`
 	Storage      StorageConfig           `json:"storage"`
 	AutoUpdate   AutoUpdateConfig        `json:"auto_update"`
-	Cache        CacheConfig             `json:"cache"`
 	CloudSharing CloudSharingConfig      `json:"cloud_sharing"`
 	Sharing      SharingConfig           `json:"sharing"`
+	Hooks        HooksConfig             `json:"hooks"`
+	Cache        CacheConfig             `json:"cache"`
 	Logging      LoggingConfig           `json:"logging"`
-	Security     SecurityConfig          `json:"security"`
+	Advanced     AdvancedConfig          `json:"advanced"`
 }
 
 // SecurityConfig groups the switches that widen what the manager may do on the

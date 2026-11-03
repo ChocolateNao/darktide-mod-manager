@@ -64,12 +64,32 @@ func RegisterConfigured(
 	for id, opts := range cfg.Providers {
 		provider, err := Build(id, opts)
 		if err != nil {
-			logger.Warn().Str("op", "cloud-share").Str("provider", id).Err(err).Msg("cloud provider not built")
+			logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"provider",
+				id,
+			).Err(
+				err,
+			).Msg(
+				"cloud provider not built",
+			)
 			continue
 		}
 
 		if err := registry.Register(provider); err != nil {
-			logger.Warn().Str("op", "cloud-share").Str("provider", id).Err(err).Msg("cloud provider not registered")
+			logger.Warn().Str(
+				"op",
+				"cloud-share",
+			).Str(
+				"provider",
+				id,
+			).Err(
+				err,
+			).Msg(
+				"cloud provider not registered",
+			)
 			continue
 		}
 

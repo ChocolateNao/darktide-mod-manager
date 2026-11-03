@@ -154,7 +154,13 @@ func TestRunSynthesisesResultWhenHandlerReturnsNil(t *testing.T) {
 
 	require.True(t, result.Success, "result was not successful")
 
-	require.Equalf(t, "working\n", result.Output, "Output = %q, want the captured log", result.Output)
+	require.Equalf(
+		t,
+		"working\n",
+		result.Output,
+		"Output = %q, want the captured log",
+		result.Output,
+	)
 }
 
 func TestRunCapturesOutputAndEchoesIt(t *testing.T) {

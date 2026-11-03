@@ -60,7 +60,7 @@ type base struct {
 }
 
 // newBase normalises the dependencies and creates the initial scope, parented
-// to context.Background()
+// to context.Background().
 func newBase(deps Deps) *base {
 	timeout := deps.timeout()
 	b := &base{client: deps.Client, logger: deps.Logger, logging: deps.Logging, timeout: timeout}

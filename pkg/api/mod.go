@@ -51,7 +51,7 @@ const (
 )
 
 // ParseConflictResolution turns the textual form of a resolution back into the value,
-// reporting false for anything it does not recognise — including the zero value. 
+// reporting false for anything it does not recognise — including the zero value.
 // It is re-exported here because both entry
 // points that need it work in terms of this package: the GUI passes a resolution as a
 // JSON string over the Wails bridge and the CLI takes it as a flag argument. It

@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
-	zlog "github.com/rs/zerolog/log"
-
 	manifestpkg "github.com/ChocolateNao/darktide-mod-manager/internal/manifest"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // DeployMode selects how a mod folder is exposed to the game.
