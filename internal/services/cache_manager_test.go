@@ -2012,3 +2012,31 @@ func TestInflightBookkeepingIsReleasedOnEveryPath(t *testing.T) {
 		assert.NoError(t, err, "the index became unusable: %v", err)
 	}
 }
+
+func TestPruneKeepsReferencedEntries(t *testing.T) {
+	m, _ := newRealCache(t)
+	ctx := context.Background()
+
+	held := seedEntry(t, m, "held", 10, cacheNow.Add(-40*24*time.Hour))
+	{
+		_, err := m.cache.Index().Acquire(ctx, held.Hash, cacheNow)
+		require.NoError(t, err, "Acquire: %v", err)
+	}
+
+	free := seedEntry(t, m, "free", 10, cacheNow.Add(-40*24*time.Hour))
+
+	{
+		err := m.Prune(ctx, 0, 30)
+		require.NoError(t, err, "Prune: %v", err)
+	}
+
+	{
+		_, err := m.cache.Index().Get(ctx, held.Hash)
+		assert.NoError(t, err, "a referenced archive was pruned: %v", err)
+	}
+	{
+		_, err := m.cache.Index().Get(ctx, free.Hash)
+		assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeCacheMiss),
+			"an unreferenced archive survived: %v", err)
+	}
+}

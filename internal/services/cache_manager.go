@@ -783,7 +783,7 @@ func (c *CacheManager) Remove(ctx context.Context, hash string) error {
 // least-recently-accessed first, which is the point of tracking last_access: the
 // archive someone just installed is the last thing that should disappear. Age is
 // checked before size so a single ancient archive goes even when the cache is
-// well under its limit.
+// well under its limit. Referenced entries are never pruned.
 func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -823,6 +823,12 @@ func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) err
 			return canceledError(err)
 		}
 
+		// An installed mod still holds its archive: deleting it would force a
+		// download before the next reinstall. Uninstall releases the reference.
+		if e.Refs > 0 {
+			continue
+		}
+
 		expired := maxAgeDays > 0 && !e.LastAccess.IsZero() && now.Sub(e.LastAccess) > maxAge
 
 		overBudget := maxBytes > 0 && total > maxBytes
@@ -837,6 +843,7 @@ func (c *CacheManager) Prune(ctx context.Context, maxSizeGB, maxAgeDays int) err
 				Str("key", e.Hash).
 				Err(err).
 				Msg("could not prune an entry")
+
 			continue
 		}
 
