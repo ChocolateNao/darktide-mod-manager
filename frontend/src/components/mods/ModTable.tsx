@@ -281,12 +281,7 @@ export function ModTable() {
       {selection.length > 0 && (
         <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5 text-xs">
           <span>{t("mods.selected", { count: selection.length })}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6"
-            onClick={clearSelection}
-          >
+          <Button variant="ghost" size="xs" onClick={clearSelection}>
             {t("common.clear")}
           </Button>
 
@@ -294,8 +289,7 @@ export function ModTable() {
             {toEnable.length > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6"
+                size="xs"
                 onClick={() => setBulkAction("enable")}
               >
                 {t("mods.bulkEnable", { count: toEnable.length })}
@@ -304,8 +298,7 @@ export function ModTable() {
             {toDisable.length > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6"
+                size="xs"
                 onClick={() => setBulkAction("disable")}
               >
                 {t("mods.bulkDisable", { count: toDisable.length })}
@@ -314,8 +307,8 @@ export function ModTable() {
             {known.length > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 text-destructive"
+                size="xs"
+                className="text-destructive"
                 onClick={() => setBulkAction("delete")}
               >
                 {t("mods.bulkDelete", { count: known.length })}
@@ -324,8 +317,8 @@ export function ModTable() {
             {external.length > 0 && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 text-destructive"
+                size="xs"
+                className="text-destructive"
                 onClick={() => setBulkAction("deleteExternal")}
               >
                 {t("mods.bulkDeleteExternal", { count: external.length })}
@@ -487,7 +480,7 @@ function SortHead({ label, column, sort, onSort, className }: SortHeadProps) {
       <button
         type="button"
         className={cn(
-          "flex items-center gap-1 focus-visible:outline-none",
+          "flex items-center gap-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
           active && "font-semibold text-foreground"
         )}
         onClick={() =>

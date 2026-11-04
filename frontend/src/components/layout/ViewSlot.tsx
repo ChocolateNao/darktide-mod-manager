@@ -4,7 +4,7 @@ import {
   ActionDialogHost,
   ActionPalette,
 } from "@/components/actions/ActionPalette";
-import { EmptyState } from "@/components/common/Surfaces";
+import { LoadingState } from "@/components/common/Surfaces";
 import { GameRail } from "@/components/layout/GameRail";
 import { Header } from "@/components/layout/Header";
 import { NavTabs } from "@/components/layout/NavTabs";
@@ -12,7 +12,6 @@ import { StatusBar } from "@/components/layout/StatusBar";
 import { ModDrawer } from "@/components/mods/ModDrawer";
 import { DropOverlay } from "@/components/sources/DropOverlay";
 import { Toaster } from "@/components/ui/sonner";
-import { t } from "@/lib/i18n";
 import { useUiStore } from "@/stores/ui.store";
 import AddModView from "@/views/AddModView";
 import ModsView from "@/views/ModsView";
@@ -45,13 +44,9 @@ export function ViewSlot({ ready }: ViewSlotProps) {
         <main className="min-h-0 flex-1 overflow-hidden">
           {/* A view mounted against an empty store would show "no mods", so wait for the first config load. */}
           {!ready ? (
-            <EmptyState title={t("common.loading")} className="h-full" />
+            <LoadingState className="h-full" />
           ) : (
-            <Suspense
-              fallback={
-                <EmptyState title={t("common.loading")} className="h-full" />
-              }
-            >
+            <Suspense fallback={<LoadingState className="h-full" />}>
               {view === "mods" && <ModsView />}
               {view === "add-mod" && <AddModView />}
               {view === "share" && <ShareView />}

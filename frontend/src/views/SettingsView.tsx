@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { PageHeader } from "@/components/layout/PageHeader";
 import { AdvancedTab } from "@/components/settings/AdvancedTab";
 import { AppTab } from "@/components/settings/AppTab";
 import { CacheTab } from "@/components/settings/CacheTab";
@@ -15,8 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { t } from "@/lib/i18n";
 
 /**
- * Ten tabs, an explicit list: each tab is a *decision about what a user changes
- * together*, so "Sharing" and "Mod updates" stand on their own — a settings key
+ * Ten tabs in an explicit list. Each tab groups the settings a user changes
+ * together, so "Sharing" and "Mod updates" get their own entry; a settings key
  * without a home is a setting nobody finds.
  */
 const TABS = [
@@ -61,18 +62,20 @@ export default function SettingsView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <PageHeader title={t("settings.title")} />
+
       <Tabs
         value={tab}
         onValueChange={setTab}
         className="flex min-h-0 flex-1 flex-col"
       >
         <ScrollArea className="w-full shrink-0 border-b">
-          <TabsList className="h-10 w-max justify-start rounded-none border-b-0 bg-transparent px-4">
+          <TabsList className="h-10 w-max justify-start rounded-none bg-transparent px-4">
             {TABS.map((entry) => (
               <TabsTrigger
                 key={entry.id}
                 value={entry.id}
-                className="data-[state=active]:border-b-2"
+                className="border-b-2 border-transparent data-[state=active]:border-(--game-accent)"
               >
                 {t(entry.label)}
               </TabsTrigger>

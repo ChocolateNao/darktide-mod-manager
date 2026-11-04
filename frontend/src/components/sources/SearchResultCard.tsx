@@ -51,7 +51,7 @@ export function SearchResultCard({
             <button
               type="button"
               onClick={() => openLink(mod.sourceUrl!)}
-              className="inline-flex min-w-0 items-center gap-1 truncate underline-offset-2 hover:text-foreground hover:underline"
+              className="inline-flex min-w-0 items-center gap-1 truncate rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               <ExternalLink className="size-3 shrink-0" />
               <span className="truncate">{mod.sourceUrl}</span>

@@ -78,7 +78,7 @@ export function LogTail({ lines, filter, onPick }: LogTailProps) {
             <button
               key={row.key}
               type="button"
-              className={`absolute left-0 flex w-full items-baseline gap-2 px-2 text-left hover:bg-muted/40 ${
+              className={`absolute left-0 flex w-full items-baseline gap-2 px-2 text-left hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset ${
                 matches ? "" : "opacity-30"
               }`}
               style={{

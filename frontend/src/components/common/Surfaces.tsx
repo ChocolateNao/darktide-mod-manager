@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { AlertCircle, Inbox, Info } from "lucide-react";
+import { AlertCircle, Inbox, Info, Loader2 } from "lucide-react";
 
 import { describeBridgeFailure } from "@/bridge/dialogs";
 import {
@@ -11,9 +11,8 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 /**
- * The three states every data-backed surface can be in, in one place.
- *
- * As components they keep "nothing here" written once across nine views.
+ * Shared states for a data-backed surface: empty, error and loading.
+ * Defined once so every view writes "nothing here" the same way.
  */
 
 interface EmptyStateProps {
@@ -53,9 +52,34 @@ export function EmptyState({
 }
 
 /**
- * An error worth showing in place, with the bridge's own message and Go error
- * code so nothing is guessed or hidden.
+ * A pending surface. The spinner and label occupy the space the empty or error
+ * state will use, so a view does not need a separate layout while it waits.
  */
+interface LoadingStateProps {
+  label?: string;
+  className?: string;
+}
+
+export function LoadingState({ label, className }: LoadingStateProps) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-2 p-10 text-center",
+        className
+      )}
+    >
+      <Loader2
+        aria-hidden
+        className="size-5 animate-spin text-muted-foreground"
+      />
+      <p className="text-sm text-muted-foreground">
+        {label ?? t("common.loading")}
+      </p>
+    </div>
+  );
+}
+
+/** Shows the bridge's own message and Go error code, so nothing is guessed or hidden. */
 interface ErrorNoteProps {
   error: unknown;
   onRetry?: () => void;
@@ -79,7 +103,7 @@ export function ErrorNote({ error, onRetry, className }: ErrorNoteProps) {
         <button
           type="button"
           onClick={onRetry}
-          className="shrink-0 underline underline-offset-2 hover:no-underline"
+          className="shrink-0 rounded-sm underline underline-offset-2 hover:no-underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {t("common.retry")}
         </button>

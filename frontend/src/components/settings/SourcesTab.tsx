@@ -3,7 +3,12 @@ import { Eye, EyeOff, Plug, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { PathField } from "@/components/common/PathField";
-import { FieldRow, FormSection, Hint } from "@/components/common/Surfaces";
+import {
+  FieldRow,
+  FormSection,
+  Hint,
+  LoadingState,
+} from "@/components/common/Surfaces";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,9 +220,7 @@ export function SourcesTab() {
       >
         {sources.data?.map((source) => (
           <SourceCard key={source.id} source={source} />
-        )) ?? (
-          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
-        )}
+        )) ?? <LoadingState className="items-start p-0" />}
       </FormSection>
     </div>
   );

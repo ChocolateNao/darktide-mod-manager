@@ -17,7 +17,10 @@ vi.mock("@/components/sources/DropOverlay", () => ({
   DropOverlay: () => null,
 }));
 vi.mock("@/components/ui/sonner", () => ({ Toaster: () => null }));
-vi.mock("@/components/common/Surfaces", () => ({ EmptyState: () => null }));
+vi.mock("@/components/common/Surfaces", () => ({
+  EmptyState: () => null,
+  LoadingState: () => null,
+}));
 vi.mock("@/views/ModsView", () => ({ default: () => null }));
 vi.mock("@/views/AddModView", () => ({ default: () => null }));
 

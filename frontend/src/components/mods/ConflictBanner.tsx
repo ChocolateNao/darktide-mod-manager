@@ -101,8 +101,8 @@ export function ConflictBanner() {
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 text-destructive hover:text-destructive"
+            size="xs"
+            className="text-destructive hover:text-destructive"
           >
             <AlertTriangle className="size-4" />
             {t("conflicts.summary", { count: conflicts.length, errors })}
@@ -118,9 +118,8 @@ export function ConflictBanner() {
       </Popover>
 
       <Button
-        size="sm"
+        size="xs"
         variant="ghost"
-        className="h-7"
         loading={detect.isPending}
         onClick={() => detect.mutate()}
       >

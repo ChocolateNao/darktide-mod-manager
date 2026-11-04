@@ -14,6 +14,7 @@ import {
   FormSection,
   Hint,
 } from "@/components/common/Surfaces";
+import { PageHeader } from "@/components/layout/PageHeader";
 import {
   ApiKeyPrompt,
   needsCredential,
@@ -93,9 +94,7 @@ export default function AddModView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b px-4 py-2">
-        <h1 className="text-sm font-semibold">{t("add.title")}</h1>
-      </div>
+      <PageHeader title={t("add.title")} />
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
@@ -182,8 +181,8 @@ export default function AddModView() {
               </Button>
             </div>
 
-            {/* Nexus has no search endpoint — its API offers a five-entry
-                trending feed only — so queries there match against that. */}
+            {/* Nexus has no search endpoint. Its API offers a five-entry
+                trending feed only, so queries there match against that feed. */}
             {(sourceId === "nexus" ||
               (sourceId === ALL_SOURCES &&
                 (sources.data ?? []).some(
@@ -259,7 +258,7 @@ export default function AddModView() {
   );
 }
 
-/** One field — under the react-hook-form threshold — so it stays `useState`. */
+/** One field, so `useState` is cheaper than a form library. */
 interface LinkPanelProps {
   link: string;
   onLinkChange: (value: string) => void;

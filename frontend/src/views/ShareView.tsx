@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Download, Plus, Share2 } from "lucide-react";
 
 import { EmptyState } from "@/components/common/Surfaces";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { CreateShareDialog } from "@/components/sharing/CreateShareDialog";
 import { ReceivePanel } from "@/components/sharing/ReceivePanel";
 import { SendPanel } from "@/components/sharing/SendPanel";
@@ -37,76 +38,80 @@ export default function ShareView() {
   const recipientSession = active?.role === "recipient" ? active : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 p-4">
-      <p className="max-w-3xl text-sm text-muted-foreground">
-        {t("share.bothEnds")}
-      </p>
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader title={t("share.title")} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
-        <section
-          className={`flex min-h-0 flex-col gap-3 rounded-lg border p-3 ${
-            focus === "send" ? "border-game-accent" : ""
-          }`}
-          onFocus={() => setFocus("send")}
-        >
-          <header className="flex items-center justify-between gap-2">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Share2 className="size-4" />
-              {t("share.send")}
-            </h2>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setCreating(true)}
-            >
-              <Plus className="size-3.5" />
-              {t("share.create")}
-            </Button>
-          </header>
-          <ScrollArea className="min-h-0 flex-1">
-            {/* The draft link is shown before its session arrives, because the
+      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
+        <p className="max-w-3xl text-sm text-muted-foreground">
+          {t("share.bothEnds")}
+        </p>
+
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-4">
+          <section
+            className={`flex min-h-0 flex-col gap-3 rounded-lg border p-3 ${
+              focus === "send" ? "border-game-accent" : ""
+            }`}
+            onFocus={() => setFocus("send")}
+          >
+            <header className="flex items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Share2 className="size-4" />
+                {t("share.send")}
+              </h2>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCreating(true)}
+              >
+                <Plus className="size-3.5" />
+                {t("share.create")}
+              </Button>
+            </header>
+            <ScrollArea className="min-h-0 flex-1">
+              {/* The draft link is shown before its session arrives, because the
                 session only appears once the created event lands. */}
-            <SendPanel
-              session={senderSession}
-              link={senderSession?.link ?? draftOfferLink}
-            />
+              <SendPanel
+                session={senderSession}
+                link={senderSession?.link ?? draftOfferLink}
+              />
+            </ScrollArea>
+          </section>
+
+          <section
+            className={`flex min-h-0 flex-col gap-3 rounded-lg border p-3 ${
+              focus === "receive" ? "border-game-accent" : ""
+            }`}
+            onFocus={() => setFocus("receive")}
+          >
+            <header className="flex items-center gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Download className="size-4" />
+                {t("share.receive")}
+              </h2>
+            </header>
+            <ScrollArea className="min-h-0 flex-1">
+              <ReceivePanel session={recipientSession} />
+            </ScrollArea>
+          </section>
+        </div>
+
+        <section className="flex min-h-0 flex-col gap-2">
+          <h3 className="text-sm font-semibold">{t("share.sessions")}</h3>
+          <ScrollArea className="h-48">
+            {sessions.length > 0 ? (
+              <div className="flex flex-col gap-2 pr-3">
+                {sessions.map((session) => (
+                  <SessionRow key={session.offerId} session={session} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState title={t("share.noSessions")} />
+            )}
           </ScrollArea>
         </section>
 
-        <section
-          className={`flex min-h-0 flex-col gap-3 rounded-lg border p-3 ${
-            focus === "receive" ? "border-game-accent" : ""
-          }`}
-          onFocus={() => setFocus("receive")}
-        >
-          <header className="flex items-center gap-2">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Download className="size-4" />
-              {t("share.receive")}
-            </h2>
-          </header>
-          <ScrollArea className="min-h-0 flex-1">
-            <ReceivePanel session={recipientSession} />
-          </ScrollArea>
-        </section>
+        <CreateShareDialog open={creating} onOpenChange={setCreating} />
       </div>
-
-      <section className="flex min-h-0 flex-col gap-2">
-        <h3 className="text-sm font-semibold">{t("share.sessions")}</h3>
-        <ScrollArea className="h-48">
-          {sessions.length > 0 ? (
-            <div className="flex flex-col gap-2 pr-3">
-              {sessions.map((session) => (
-                <SessionRow key={session.offerId} session={session} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState title={t("share.noSessions")} />
-          )}
-        </ScrollArea>
-      </section>
-
-      <CreateShareDialog open={creating} onOpenChange={setCreating} />
     </div>
   );
 }

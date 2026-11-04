@@ -3,6 +3,7 @@ import { FolderOpen, ScrollText, Settings as SettingsIcon } from "lucide-react";
 
 import { revealPath } from "@/bridge/dialogs";
 import { Hint } from "@/components/common/Surfaces";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { LogDetail } from "@/components/logs/LogDetail";
 import { LogFilesPanel } from "@/components/logs/LogFilesPanel";
 import { LogSettingsPopover } from "@/components/logs/LogSettingsPopover";
@@ -31,12 +32,12 @@ const ALL_LEVELS = "__all__";
 
 /**
  * `TailLogs` re-parses the log file on every call, so it is the one query with
- * no background floor — the `log` event already drives the tail, and a timer
+ * no background floor: the `log` event already drives the tail, and a timer
  * would re-read the file for nothing.
  */
 export default function LogsView() {
-  /* TailLogs takes a minimum level, so a floor cannot show warn and error
-     while hiding debug — levels are selected directly. */
+  /* TailLogs takes a minimum level, so a floor cannot show warn and error while
+     hiding debug. Select the levels directly instead. */
   const [levels, setLevels] = useState<Set<string>>(() => new Set(logLevels));
   const [filter, setFilter] = useState("");
   const [picked, setPicked] = useState<LogLine | null>(null);
@@ -51,77 +52,76 @@ export default function LogsView() {
       : lines.filter((line) => levels.has(line.level));
 
   return (
-    <div className="flex h-full min-h-0 flex-col p-4">
-      <header className="flex items-center justify-between gap-2">
-        <h1 className="text-sm font-semibold">{t("logs.title")}</h1>
-        <div className="flex items-center gap-2">
-          <LogFilter value={filter} onChange={setFilter} />
-          <LevelFilter levels={levels} onChange={setLevels} />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              const directory = settings.data?.directory;
-              if (directory) void revealPath(directory);
-            }}
-            disabled={!settings.data?.directory}
-          >
-            <FolderOpen className="size-4" />
-            {t("logs.openDirectory")}
-          </Button>
-          <LogSettingsPopover settings={settings.data} />
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader title={t("logs.title")}>
+        <LogFilter value={filter} onChange={setFilter} />
+        <LevelFilter levels={levels} onChange={setLevels} />
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            const directory = settings.data?.directory;
+            if (directory) void revealPath(directory);
+          }}
+          disabled={!settings.data?.directory}
+        >
+          <FolderOpen className="size-4" />
+          {t("logs.openDirectory")}
+        </Button>
+        <LogSettingsPopover settings={settings.data} />
+      </PageHeader>
+
+      <div className="flex min-h-0 flex-1 flex-col p-4">
+        <p className="text-xs text-muted-foreground">
+          {t("logs.records", { count: lines.length })}
+          {levels.size === logLevels.length
+            ? ""
+            : ` · ${t("logs.showing", { count: visible.length })}`}
+          {lines.length >= TAIL_LINES
+            ? ` · ${t("logs.tailStops", { count: TAIL_LINES })}`
+            : ""}
+        </p>
+
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem] gap-3">
+          <Tabs defaultValue="tail" className="flex min-h-0 flex-col">
+            <TabsList>
+              <TabsTrigger value="tail">
+                <ScrollText className="size-3.5" />
+                {t("logs.title")}
+              </TabsTrigger>
+              <TabsTrigger value="files">
+                <SettingsIcon className="size-3.5" />
+                {t("logs.files")}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent
+              value="tail"
+              className="min-h-0 flex-1 rounded-md border"
+            >
+              <LogTail lines={visible} filter={filter} onPick={setPicked} />
+            </TabsContent>
+
+            <TabsContent
+              value="files"
+              className="min-h-0 flex-1 overflow-auto rounded-md border"
+            >
+              <LogFilesPanel files={files.data ?? []} />
+            </TabsContent>
+          </Tabs>
+
+          <aside className="min-h-0 overflow-hidden rounded-md border">
+            <LogDetail line={picked} />
+          </aside>
         </div>
-      </header>
 
-      <p className="mt-1 text-xs text-muted-foreground">
-        {t("logs.records", { count: lines.length })}
-        {levels.size === logLevels.length
-          ? ""
-          : ` · ${t("logs.showing", { count: visible.length })}`}
-        {lines.length >= TAIL_LINES
-          ? ` · ${t("logs.tailStops", { count: TAIL_LINES })}`
-          : ""}
-      </p>
-
-      <div className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_20rem] gap-3">
-        <Tabs defaultValue="tail" className="flex min-h-0 flex-col">
-          <TabsList>
-            <TabsTrigger value="tail">
-              <ScrollText className="size-3.5" />
-              {t("logs.title")}
-            </TabsTrigger>
-            <TabsTrigger value="files">
-              <SettingsIcon className="size-3.5" />
-              {t("logs.files")}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent
-            value="tail"
-            className="min-h-0 flex-1 rounded-md border"
-          >
-            <LogTail lines={visible} filter={filter} onPick={setPicked} />
-          </TabsContent>
-
-          <TabsContent
-            value="files"
-            className="min-h-0 flex-1 overflow-auto rounded-md border"
-          >
-            <LogFilesPanel files={files.data ?? []} />
-          </TabsContent>
-        </Tabs>
-
-        <aside className="min-h-0 overflow-hidden rounded-md border">
-          <LogDetail line={picked} />
-        </aside>
+        <Hint>{t("logs.levelHint")}</Hint>
       </div>
-
-      <Hint>{t("logs.levelHint")}</Hint>
     </div>
   );
 }
 
-/** "All" is a real option — turning everything off happens, and this is the way back. */
+/** "All" is a real option: turning everything off happens, and this is the way back. */
 interface LevelFilterProps {
   levels: Set<string>;
   onChange: (levels: Set<string>) => void;

@@ -1,6 +1,7 @@
 import { PackagePlus } from "lucide-react";
 
-import { EmptyState } from "@/components/common/Surfaces";
+import { EmptyState, LoadingState } from "@/components/common/Surfaces";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { ConflictBanner } from "@/components/mods/ConflictBanner";
 import { ModTable } from "@/components/mods/ModTable";
 import { Button } from "@/components/ui/button";
@@ -23,24 +24,16 @@ export default function ModsView() {
     <div className="flex h-full flex-col">
       <ConflictBanner />
 
-      <div className="flex items-center gap-2 border-b px-4 py-2">
-        <h1 className="text-sm font-semibold">{t("mods.title")}</h1>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="ml-auto"
-          onClick={() => setView("add-mod")}
-        >
+      <PageHeader title={t("mods.title")}>
+        <Button size="sm" variant="ghost" onClick={() => setView("add-mod")}>
           <PackagePlus className="size-4" />
           {t("nav.addMod")}
         </Button>
-      </div>
+      </PageHeader>
 
       <div className="min-h-0 flex-1">
         {isPending && activeGameId !== null ? (
-          <div className="p-4 text-sm text-muted-foreground">
-            {t("common.loading")}
-          </div>
+          <LoadingState className="h-full" />
         ) : activeGameId === null ? (
           <EmptyState
             icon={PackagePlus}

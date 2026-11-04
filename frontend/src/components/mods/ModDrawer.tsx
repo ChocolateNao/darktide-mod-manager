@@ -15,7 +15,7 @@ import {
   describeBridgeFailure,
   revealPath,
 } from "@/bridge/dialogs";
-import { EmptyState } from "@/components/common/Surfaces";
+import { EmptyState, LoadingState } from "@/components/common/Surfaces";
 import { ModHooksEditor } from "@/components/mods/ModHooksEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -438,7 +438,7 @@ function FilesTab({ mod }: FilesTabProps) {
           {t("mods.files.contained")}
         </h3>
         {files.isPending ? (
-          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
+          <LoadingState className="items-start p-0" />
         ) : (files.data ?? []).length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {t("mods.files.containedEmpty")}
@@ -524,9 +524,7 @@ function DrawerBody({ mod }: DrawerBodyProps) {
         </TabsContent>
         <TabsContent value="hooks" className="h-full">
           {hooks.isPending ? (
-            <p className="text-sm text-muted-foreground">
-              {t("common.loading")}
-            </p>
+            <LoadingState className="items-start p-0" />
           ) : (
             <ModHooksEditor modId={mod.id} />
           )}

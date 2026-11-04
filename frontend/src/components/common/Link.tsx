@@ -17,7 +17,7 @@ export function Link({ href, children, className }: LinkProps) {
       target="_blank"
       rel="noreferrer"
       className={cn(
-        "underline underline-offset-2 transition-colors hover:text-primary",
+        "rounded-sm underline underline-offset-2 transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         className
       )}
       onClick={(event) => {
