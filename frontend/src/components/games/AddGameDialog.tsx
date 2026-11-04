@@ -22,9 +22,8 @@ import { selectGames, useGamesStore } from "@/stores/games.store";
 type Step = "pick" | "detect" | "configure";
 
 /**
- * The rail's `+`, as a wizard. List,
- * detect, validate, set — each only possible after the previous produced
- * something.
+ * The rail's `+`, as a wizard. List, detect, validate and set are separate
+ * steps because each one needs the result of the previous step.
  */
 interface AddGameDialogProps {
   open: boolean;
@@ -45,8 +44,7 @@ export function AddGameDialog({ open, onOpenChange }: AddGameDialogProps) {
   const [probing, setProbing] = useState(false);
   const [probeError, setProbeError] = useState<unknown>(null);
 
-  // A reused dialog must not remember the previous game's path, so state
-  // resets on close — a remembered path silently reconfigures the wrong one.
+  // Reset on close: a remembered path would silently reconfigure the wrong game.
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setStep("pick");
@@ -118,9 +116,10 @@ export function AddGameDialog({ open, onOpenChange }: AddGameDialogProps) {
               <ul className="max-h-72 divide-y overflow-y-auto rounded-md border">
                 {visible.map((game) => (
                   <li key={game.id}>
-                    <button
+                    <Button
                       type="button"
-                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-accent"
+                      variant="ghost"
+                      className="flex h-auto w-full flex-col items-start justify-start gap-0.5 rounded-none px-3 py-2 text-left font-normal whitespace-normal transition-none hover:bg-accent hover:text-inherit dark:hover:bg-accent dark:hover:text-inherit"
                       onClick={() => {
                         setGameId(game.id);
                         setStep("detect");
@@ -146,7 +145,7 @@ export function AddGameDialog({ open, onOpenChange }: AddGameDialogProps) {
                           ))}
                         </span>
                       ) : null}
-                    </button>
+                    </Button>
                   </li>
                 ))}
                 {visible.length === 0 && (

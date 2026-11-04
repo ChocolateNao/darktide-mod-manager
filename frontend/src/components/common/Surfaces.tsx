@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 import { AlertCircle, Inbox, Info, Loader2 } from "lucide-react";
 
 import { describeBridgeFailure } from "@/bridge/dialogs";
+import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
@@ -100,13 +101,15 @@ export function ErrorNote({ error, onRetry, className }: ErrorNoteProps) {
         {describeBridgeFailure(error)}
       </span>
       {onRetry && (
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="xs"
           onClick={onRetry}
-          className="shrink-0 rounded-sm underline underline-offset-2 hover:no-underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="h-auto shrink-0 rounded-sm p-0 font-normal text-current underline underline-offset-2 hover:no-underline focus-visible:ring-2 focus-visible:ring-ring"
         >
           {t("common.retry")}
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -186,13 +189,15 @@ export function FieldRow({
           {details ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-xs"
                   aria-label={details}
-                  className="rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  className="size-auto rounded-full p-0 text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-transparent"
                 >
                   <Info className="size-3.5" />
-                </button>
+                </Button>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">{details}</TooltipContent>
             </Tooltip>

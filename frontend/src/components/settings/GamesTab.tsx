@@ -11,11 +11,11 @@ import { FieldRow, FormSection, Hint } from "@/components/common/Surfaces";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Toggle } from "@/components/ui/toggle";
 import { useSetConfigValue, useSwitchGame } from "@/hooks/mutations";
 import { GAME_ICON_CHOICES } from "@/lib/gameAccent";
 import { t } from "@/lib/i18n";
 import { isCustomIcon, RailIconError, readRailIcon } from "@/lib/railIcon";
-import { cn } from "@/lib/utils";
 import { useConfigStore } from "@/stores/config.store";
 import { selectGames, useGamesStore } from "@/stores/games.store";
 import { useUiStore } from "@/stores/ui.store";
@@ -30,6 +30,10 @@ const gamesSchema = z.object({
 });
 
 type GamesValues = z.infer<typeof gamesSchema>;
+
+/** Square swatch shared by the preset and custom-icon pickers. */
+const iconToggleClass =
+  "size-9 min-w-9 border border-current p-0 shadow-none transition-colors hover:bg-accent/60 hover:text-current focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:border-(--game-accent)";
 
 export function GamesTab() {
   const config = useConfigStore((state) => state.config);
@@ -199,52 +203,41 @@ export function GamesTab() {
                         const Icon = choice.icon;
 
                         return (
-                          <button
+                          <Toggle
                             key={choice.id}
-                            type="button"
                             id={
                               choice.id === GAME_ICON_CHOICES[0].id
                                 ? `icon-${id}`
                                 : undefined
                             }
                             aria-label={choice.label}
-                            aria-pressed={chosen}
                             title={choice.label}
-                            onClick={() =>
+                            pressed={chosen}
+                            onPressedChange={(pressed) =>
                               form.setValue(
                                 `entries.${id}.icon`,
-                                chosen ? "" : choice.id,
+                                pressed ? choice.id : "",
                                 {
                                   shouldDirty: true,
                                 }
                               )
                             }
-                            className={cn(
-                              "flex size-9 items-center justify-center rounded-md border transition-colors",
-                              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                              chosen
-                                ? "border-(--game-accent) bg-accent text-accent-foreground"
-                                : "hover:bg-accent/60"
-                            )}
+                            variant="outline"
+                            className={iconToggleClass}
                           >
                             <Icon className="size-4" />
-                          </button>
+                          </Toggle>
                         );
                       })}
 
-                      <button
+                      <Toggle
                         type="button"
                         aria-label={t("settings.games.customIcon")}
-                        aria-pressed={customChosen}
                         title={t("settings.games.customIcon")}
+                        pressed={customChosen}
                         onClick={() => chooseCustomIcon(id)}
-                        className={cn(
-                          "flex size-9 items-center justify-center rounded-md border transition-colors",
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                          customChosen
-                            ? "border-(--game-accent) bg-accent text-accent-foreground"
-                            : "hover:bg-accent/60"
-                        )}
+                        variant="outline"
+                        className={iconToggleClass}
                       >
                         {customChosen ? (
                           <GameIcon
@@ -255,7 +248,7 @@ export function GamesTab() {
                         ) : (
                           <ImagePlus className="size-4" />
                         )}
-                      </button>
+                      </Toggle>
                     </div>
                     <Hint>{t("settings.games.iconHint")}</Hint>
                   </div>

@@ -1,6 +1,6 @@
 import { Download, ExternalLink } from "lucide-react";
 
-import { openLink } from "@/bridge/dialogs";
+import { Link } from "@/components/common/Link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
@@ -48,14 +48,13 @@ export function SearchResultCard({
             </span>
           ) : null}
           {mod.sourceUrl ? (
-            <button
-              type="button"
-              onClick={() => openLink(mod.sourceUrl!)}
-              className="inline-flex min-w-0 items-center gap-1 truncate rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            <Link
+              href={mod.sourceUrl}
+              className="inline-flex min-w-0 items-center gap-1 truncate no-underline hover:text-foreground hover:underline"
             >
               <ExternalLink className="size-3 shrink-0" />
               <span className="truncate">{mod.sourceUrl}</span>
-            </button>
+            </Link>
           ) : null}
         </div>
 

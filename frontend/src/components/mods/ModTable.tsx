@@ -477,10 +477,12 @@ function SortHead({ label, column, sort, onSort, className }: SortHeadProps) {
 
   return (
     <TableHead className={className}>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         className={cn(
-          "flex items-center gap-1 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          "h-auto gap-1 rounded-sm p-0 font-medium hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring has-[svg]:px-0 dark:hover:bg-transparent dark:hover:text-foreground",
           active && "font-semibold text-foreground"
         )}
         onClick={() =>
@@ -489,7 +491,7 @@ function SortHead({ label, column, sort, onSort, className }: SortHeadProps) {
       >
         {label}
         {SORTABLE.has(column) && <ArrowUpDown className="size-3 opacity-50" />}
-      </button>
+      </Button>
     </TableHead>
   );
 }

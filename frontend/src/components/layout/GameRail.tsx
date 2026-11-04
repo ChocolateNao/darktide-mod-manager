@@ -46,8 +46,8 @@ export function GameRail() {
 
   const switchGame = useSwitchGame();
 
-  // `CheckModUpdates` answers for the active game only — it has no game column
-  // to attribute a result to — so the dot appears on that one game alone.
+  // `CheckModUpdates` answers for the active game only. It has no game column
+  // to attribute a result to, so the dot appears on that one game alone.
   const activeHasUpdates =
     activeGameId !== null && updates.some((info) => info.available);
 
@@ -70,16 +70,19 @@ export function GameRail() {
         return (
           <Tooltip key={game.id}>
             <TooltipTrigger asChild>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-lg"
                 aria-current={active ? "true" : undefined}
                 aria-label={game.displayName}
                 disabled={switchGame.isPending}
                 onClick={() => choose(game.id)}
                 className={cn(
-                  "relative flex size-11 items-center justify-center rounded-md transition-colors",
-                  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-                  active ? "bg-rail-active" : "hover:bg-rail-active/60"
+                  "size-11 rounded-md transition-colors hover:text-inherit focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-100 dark:hover:text-inherit",
+                  active
+                    ? "bg-rail-active hover:bg-rail-active dark:hover:bg-rail-active"
+                    : "hover:bg-rail-active/60 dark:hover:bg-rail-active/60"
                 )}
                 style={active ? { color: accent } : undefined}
               >
@@ -109,7 +112,7 @@ export function GameRail() {
                     className="absolute right-1.5 bottom-1.5 size-2 rounded-full bg-info"
                   />
                 )}
-              </button>
+              </Button>
             </TooltipTrigger>
             <TooltipContent side="right">{game.displayName}</TooltipContent>
           </Tooltip>
