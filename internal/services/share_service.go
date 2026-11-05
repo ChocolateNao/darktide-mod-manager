@@ -510,6 +510,7 @@ func (s *ShareService) InstallShare(
 			).Msg(
 				"install from share failed",
 			)
+
 			return nil, err
 		}
 
@@ -748,6 +749,7 @@ func (s *ShareService) RevokeShare(ctx context.Context, shareID string) error {
 			).Msg(
 				"provider for share link unavailable, skipping",
 			)
+
 			continue
 		}
 
@@ -767,6 +769,7 @@ func (s *ShareService) RevokeShare(ctx context.Context, shareID string) error {
 			).Msg(
 				"share link could not be resolved, skipping",
 			)
+
 			continue
 		}
 

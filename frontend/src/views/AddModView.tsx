@@ -285,6 +285,13 @@ function LinkPanel({ link, onLinkChange }: LinkPanelProps) {
     if (needsCredential(error)) setMissingKey(true);
   };
 
+  const runImport = () => {
+    importLink.mutate(trimmed, {
+      onSuccess: () => onLinkChange(""),
+      onError: onImportError,
+    });
+  };
+
   return (
     <FormSection title={t("add.linkTitle")} description={t("add.linkHint")}>
       <label className="flex flex-col gap-1.5" htmlFor={textareaId}>
@@ -322,12 +329,7 @@ function LinkPanel({ link, onLinkChange }: LinkPanelProps) {
           size="sm"
           disabled={!valid}
           loading={importLink.isPending}
-          onClick={() => {
-            importLink.mutate(trimmed, {
-              onSuccess: () => onLinkChange(""),
-              onError: onImportError,
-            });
-          }}
+          onClick={runImport}
         >
           <Link2 className="size-4" />
           {t("add.installFromLink")}
@@ -344,6 +346,7 @@ function LinkPanel({ link, onLinkChange }: LinkPanelProps) {
         open={missingKey}
         onOpenChange={setMissingKey}
         reason={t("apikey.reason.link")}
+        onSaved={runImport}
       />
     </FormSection>
   );

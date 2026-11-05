@@ -40,6 +40,7 @@ interface ApiKeyPromptProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reason: string;
+  onSaved?: () => void;
 }
 
 export function ApiKeyPrompt({
@@ -47,6 +48,7 @@ export function ApiKeyPrompt({
   open,
   onOpenChange,
   reason,
+  onSaved,
 }: ApiKeyPromptProps) {
   const sources = useSourcesQuery();
   const save = useSetSourceApiKey();
@@ -74,6 +76,7 @@ export function ApiKeyPrompt({
     try {
       await save.mutateAsync({ sourceId, apiKey: key });
       close(false);
+      onSaved?.();
     } catch (error) {
       setFailure(describeBridgeFailure(error));
     }

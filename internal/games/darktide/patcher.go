@@ -257,6 +257,7 @@ func zipPayload(archive []byte, binary string) ([]byte, error) {
 // writeExecutable replaces the target atomically, so an interrupted write does
 // not leave a truncated patcher behind.
 func writeExecutable(dir, name string, payload []byte) error {
+	//nolint:gosec // the game launcher may run as another user, so the directory stays world-traversable
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -277,6 +278,7 @@ func writeExecutable(dir, name string, payload []byte) error {
 		return err
 	}
 
+	//nolint:gosec // the game launcher may run as another user, so the patcher stays world-executable
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
 		return err
 	}

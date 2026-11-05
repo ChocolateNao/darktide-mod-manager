@@ -18,9 +18,7 @@ import (
 
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
 	zlog "github.com/rs/zerolog/log"
-	// Pure-Go SQLite: registers the "sqlite" database/sql driver. No CGO, so
-	// the manager cross-compiles for every platform Wails targets.
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // Pure-Go driver; no CGO, so every target cross-compiles.
 )
 
 // DriverName is the database/sql driver registered by modernc.org/sqlite: a pure-Go

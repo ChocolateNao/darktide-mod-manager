@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DropOverlay } from "./DropOverlay";
 
+import type * as DialogsModule from "@/bridge/dialogs";
+
 vi.mock("@/bridge/dialogs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/bridge/dialogs")>();
+  const actual = await importOriginal<typeof DialogsModule>();
   return {
     ...actual,
     canResolveDroppedPaths: () => false,

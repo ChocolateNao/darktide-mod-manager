@@ -75,6 +75,7 @@ func RegisterConfigured(
 			).Msg(
 				"cloud provider not built",
 			)
+
 			continue
 		}
 
@@ -90,6 +91,7 @@ func RegisterConfigured(
 			).Msg(
 				"cloud provider not registered",
 			)
+
 			continue
 		}
 

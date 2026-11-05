@@ -15,9 +15,9 @@ import (
 func TestLaunchCommandFollowsTheInstallation(t *testing.T) {
 	tests := []struct {
 		name     string
-		actx     domain.ActionContext
 		wantPath string
 		wantArgs []string
+		actx     domain.ActionContext
 	}{
 		{
 			name: "native steam on linux",

@@ -11,5 +11,6 @@ func FreeSpace(path string) (int64, error) {
 		return 0, err
 	}
 
+	//nolint:gosec // real filesystems keep the block count well below the int64 limit
 	return int64(stats.Bavail) * int64(stats.Bsize), nil
 }

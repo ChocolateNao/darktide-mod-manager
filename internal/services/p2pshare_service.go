@@ -748,6 +748,7 @@ func (s *P2PShareService) InstallShare(
 			).Msg(
 				"install from p2p share failed",
 			)
+
 			return nil, err
 		}
 

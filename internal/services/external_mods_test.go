@@ -113,8 +113,8 @@ func TestExternalModCannotBeEnabledOrDisabled(t *testing.T) {
 		run  func() error
 		name string
 	}{
-		{"enable", func() error { return h.svc.EnableMod(context.Background(), "external:external_mod") }},
-		{"disable", func() error { return h.svc.DisableMod(context.Background(), "external:external_mod") }},
+		{run: func() error { return h.svc.EnableMod(context.Background(), "external:external_mod") }, name: "enable"},
+		{run: func() error { return h.svc.DisableMod(context.Background(), "external:external_mod") }, name: "disable"},
 	} {
 		t.Run(call.name, func(t *testing.T) {
 			err := call.run()
