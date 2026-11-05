@@ -623,21 +623,22 @@ const ModRow = memo(function ModRow({
       {/* The handle is the whole leading cell: `absolute inset-0` inside a
           `relative` cell fills it, so the grab area is the full row height. */}
       <TableCell className="relative w-10 p-0">
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-label={t("mods.reorder")}
           title={reorderable ? undefined : t("mods.reorderNeedsLoadOrder")}
           className={cn(
-            "absolute inset-0 flex touch-none items-center justify-center transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset",
+            "absolute inset-0 flex h-auto touch-none items-center justify-center rounded-none p-0 transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset has-[svg]:px-0",
             reorderable
-              ? "cursor-grab text-muted-foreground/70 hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60 active:cursor-grabbing"
-              : "cursor-not-allowed text-muted-foreground/30"
+              ? "cursor-grab text-muted-foreground/70 hover:bg-accent/60 hover:text-foreground focus-visible:bg-accent/60 active:cursor-grabbing dark:hover:bg-accent/60 dark:hover:text-foreground"
+              : "cursor-not-allowed text-muted-foreground/30 hover:bg-transparent hover:text-muted-foreground/30 dark:hover:bg-transparent dark:hover:text-muted-foreground/30"
           )}
           {...attributes}
           {...listeners}
         >
           <GripVertical className="size-4" />
-        </button>
+        </Button>
       </TableCell>
       <TableCell className="w-8">
         <Checkbox

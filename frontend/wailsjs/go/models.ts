@@ -372,18 +372,6 @@ export namespace domain {
 	        this.auto_install = source["auto_install"];
 	    }
 	}
-	export class SecurityConfig {
-	    allow_action_commands?: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new SecurityConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.allow_action_commands = source["allow_action_commands"];
-	    }
-	}
 	export class LoggingConfig {
 	    level: string;
 	    directory?: string;
@@ -407,6 +395,98 @@ export namespace domain {
 	        this.max_age_days = source["max_age_days"];
 	        this.compress = source["compress"];
 	    }
+	}
+	export class ScriptPermissions {
+	    fs_read: boolean;
+	    fs_write: boolean;
+	    config_read: boolean;
+	    config_write: boolean;
+	    storage_read: boolean;
+	    env_read: boolean;
+	    timeout_seconds?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScriptPermissions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.fs_read = source["fs_read"];
+	        this.fs_write = source["fs_write"];
+	        this.config_read = source["config_read"];
+	        this.config_write = source["config_write"];
+	        this.storage_read = source["storage_read"];
+	        this.env_read = source["env_read"];
+	        this.timeout_seconds = source["timeout_seconds"];
+	    }
+	}
+	export class HooksPermissionsConfig {
+	    games?: Record<string, ScriptPermissions>;
+	    mods?: Record<string, ScriptPermissions>;
+	    default: ScriptPermissions;
+	
+	    static createFrom(source: any = {}) {
+	        return new HooksPermissionsConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.games = this.convertValues(source["games"], ScriptPermissions, true);
+	        this.mods = this.convertValues(source["mods"], ScriptPermissions, true);
+	        this.default = this.convertValues(source["default"], ScriptPermissions);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class HooksConfig {
+	    permissions: HooksPermissionsConfig;
+	    default_timeout: number;
+	    max_timeout: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new HooksConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.permissions = this.convertValues(source["permissions"], HooksPermissionsConfig);
+	        this.default_timeout = source["default_timeout"];
+	        this.max_timeout = source["max_timeout"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class P2PSharingConfig {
 	    stun_servers?: string[];
@@ -526,112 +606,32 @@ export namespace domain {
 	        this.enabled = source["enabled"];
 	    }
 	}
-	export class ScriptPermissions {
-	    fs_read: boolean;
-	    fs_write: boolean;
-	    config_read: boolean;
-	    config_write: boolean;
-	    storage_read: boolean;
-	    env_read: boolean;
-	    timeout_seconds?: number;
+	export class SecurityConfig {
+	    allow_action_commands?: boolean;
 	
 	    static createFrom(source: any = {}) {
-	        return new ScriptPermissions(source);
+	        return new SecurityConfig(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.fs_read = source["fs_read"];
-	        this.fs_write = source["fs_write"];
-	        this.config_read = source["config_read"];
-	        this.config_write = source["config_write"];
-	        this.storage_read = source["storage_read"];
-	        this.env_read = source["env_read"];
-	        this.timeout_seconds = source["timeout_seconds"];
+	        this.allow_action_commands = source["allow_action_commands"];
 	    }
-	}
-	export class HooksPermissionsConfig {
-	    games?: Record<string, ScriptPermissions>;
-	    mods?: Record<string, ScriptPermissions>;
-	    default: ScriptPermissions;
-	
-	    static createFrom(source: any = {}) {
-	        return new HooksPermissionsConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.games = this.convertValues(source["games"], ScriptPermissions, true);
-	        this.mods = this.convertValues(source["mods"], ScriptPermissions, true);
-	        this.default = this.convertValues(source["default"], ScriptPermissions);
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
-	export class HooksConfig {
-	    permissions: HooksPermissionsConfig;
-	    default_timeout: number;
-	    max_timeout: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new HooksConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.permissions = this.convertValues(source["permissions"], HooksPermissionsConfig);
-	        this.default_timeout = source["default_timeout"];
-	        this.max_timeout = source["max_timeout"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class Config {
-	    hooks: HooksConfig;
+	    security: SecurityConfig;
 	    sources: Record<string, SourceConfig>;
 	    games?: Record<string, GameSettings>;
 	    active_game: string;
 	    ui: UIConfig;
-	    advanced: AdvancedConfig;
 	    storage: StorageConfig;
 	    auto_update: AutoUpdateConfig;
-	    cache: CacheConfig;
 	    cloud_sharing: CloudSharingConfig;
 	    sharing: SharingConfig;
+	    hooks: HooksConfig;
+	    cache: CacheConfig;
 	    logging: LoggingConfig;
-	    security: SecurityConfig;
+	    advanced: AdvancedConfig;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -639,19 +639,19 @@ export namespace domain {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.hooks = this.convertValues(source["hooks"], HooksConfig);
+	        this.security = this.convertValues(source["security"], SecurityConfig);
 	        this.sources = this.convertValues(source["sources"], SourceConfig, true);
 	        this.games = this.convertValues(source["games"], GameSettings, true);
 	        this.active_game = source["active_game"];
 	        this.ui = this.convertValues(source["ui"], UIConfig);
-	        this.advanced = this.convertValues(source["advanced"], AdvancedConfig);
 	        this.storage = this.convertValues(source["storage"], StorageConfig);
 	        this.auto_update = this.convertValues(source["auto_update"], AutoUpdateConfig);
-	        this.cache = this.convertValues(source["cache"], CacheConfig);
 	        this.cloud_sharing = this.convertValues(source["cloud_sharing"], CloudSharingConfig);
 	        this.sharing = this.convertValues(source["sharing"], SharingConfig);
+	        this.hooks = this.convertValues(source["hooks"], HooksConfig);
+	        this.cache = this.convertValues(source["cache"], CacheConfig);
 	        this.logging = this.convertValues(source["logging"], LoggingConfig);
-	        this.security = this.convertValues(source["security"], SecurityConfig);
+	        this.advanced = this.convertValues(source["advanced"], AdvancedConfig);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -926,11 +926,11 @@ export namespace domain {
 	}
 	export class GameActionResult {
 	    Data: any;
+	    MessageArgs: Record<string, any>;
 	    Message: string;
 	    MessageKey: string;
-	    MessageArgs: Record<string, any>;
-	    Details: ActionDetail[];
 	    Output: string;
+	    Details: ActionDetail[];
 	    Success: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -940,11 +940,11 @@ export namespace domain {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Data = source["Data"];
+	        this.MessageArgs = source["MessageArgs"];
 	        this.Message = source["Message"];
 	        this.MessageKey = source["MessageKey"];
-	        this.MessageArgs = source["MessageArgs"];
-	        this.Details = this.convertValues(source["Details"], ActionDetail);
 	        this.Output = source["Output"];
+	        this.Details = this.convertValues(source["Details"], ActionDetail);
 	        this.Success = source["Success"];
 	    }
 	

@@ -6,6 +6,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ViewId } from "@/stores/ui.store";
@@ -40,15 +41,15 @@ export function NavTabs() {
         const selected = view === id;
 
         return (
-          <button
+          <Button
             key={id}
             role="tab"
             type="button"
             aria-selected={selected}
+            variant="ghost"
             onClick={() => setView(id)}
             className={cn(
-              "flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-2 text-sm transition-colors",
-              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              "h-auto gap-1.5 rounded-none rounded-t-md border-b-2 px-3 py-2 font-normal transition-colors hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring has-[svg]:px-3 dark:hover:bg-transparent",
               selected
                 ? "border-(--game-accent) font-medium text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -56,7 +57,7 @@ export function NavTabs() {
           >
             <Icon className="size-4" />
             {NAV_LABELS[id]}
-          </button>
+          </Button>
         );
       })}
     </div>

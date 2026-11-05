@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search } from "lucide-react";
 
 import { EmptyState } from "@/components/common/Surfaces";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatClock, logFeature } from "@/lib/format";
 import { t } from "@/lib/i18n";
@@ -75,10 +76,11 @@ export function LogTail({ lines, filter, onPick }: LogTailProps) {
             logFeature(line).toLowerCase().includes(needle);
 
           return (
-            <button
+            <Button
               key={row.key}
               type="button"
-              className={`absolute left-0 flex w-full items-baseline gap-2 px-2 text-left hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset ${
+              variant="ghost"
+              className={`absolute left-0 flex h-auto w-full items-baseline justify-start gap-2 rounded-none px-2 py-0 text-left text-xs font-normal whitespace-normal transition-none hover:bg-muted/40 hover:text-inherit focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset dark:hover:bg-muted/40 ${
                 matches ? "" : "opacity-30"
               }`}
               style={{
@@ -99,7 +101,7 @@ export function LogTail({ lines, filter, onPick }: LogTailProps) {
                 {logFeature(line)}
               </span>
               <span className="min-w-0 flex-1 truncate">{line.message}</span>
-            </button>
+            </Button>
           );
         })}
       </div>
