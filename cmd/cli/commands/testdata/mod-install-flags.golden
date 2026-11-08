@@ -2,7 +2,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> mod install local be
 o installed betterui 0.0.0 (disabled)
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui
-e error: MOD_ALREADY_EXISTS: mod "betterui" is already installed as version 0.0.0
+e error: MOD_ALREADY_EXISTS: mod "betterui 0.0.0" is already installed
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> mod install local betterui --force
 o installed betterui 0.0.0 (enabled)

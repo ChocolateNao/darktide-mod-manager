@@ -1,19 +1,8 @@
 $ dmm --config <config> --cache <cache> --storage <storage> config show
 o # <config>
 o {
-o   "hooks": {
-o   "permissions": {
-o   "default": {
-o   "fs_read": true,
-o   "fs_write": false,
-o   "config_read": true,
-o   "config_write": false,
-o   "storage_read": true,
-o   "env_read": false
-o   }
-o   },
-o   "default_timeout": "10s",
-o   "max_timeout": "30s"
+o   "security": {
+o   "allow_action_commands": true
 o   },
 o   "sources": {
 o   "github": {
@@ -44,9 +33,6 @@ o   "theme": "system",
 o   "language": "en",
 o   "compact_mode": false
 o   },
-o   "advanced": {
-o   "enable_experimental": false
-o   },
 o   "storage": {
 o   "path": "<storage>",
 o   "backup_retention_days": 7
@@ -56,12 +42,6 @@ o   "check_interval_hours": 24,
 o   "enabled": false,
 o   "download_automatically": false,
 o   "notify_on_update": true
-o   },
-o   "cache": {
-o   "path": "<cache>",
-o   "max_size_gb": 5,
-o   "max_age_days": 30,
-o   "verify_hashes": true
 o   },
 o   "cloud_sharing": {
 o   "default_provider": "",
@@ -73,6 +53,26 @@ o   "p2p": {
 o   "expiry_days": 0
 o   }
 o   },
+o   "hooks": {
+o   "permissions": {
+o   "default": {
+o   "fs_read": true,
+o   "fs_write": false,
+o   "config_read": true,
+o   "config_write": false,
+o   "storage_read": true,
+o   "env_read": false
+o   }
+o   },
+o   "default_timeout": "10s",
+o   "max_timeout": "30s"
+o   },
+o   "cache": {
+o   "path": "<cache>",
+o   "max_size_gb": 5,
+o   "max_age_days": 30,
+o   "verify_hashes": true
+o   },
 o   "logging": {
 o   "level": "info",
 o   "max_size_mb": 10,
@@ -80,8 +80,8 @@ o   "max_backups": 5,
 o   "max_age_days": 30,
 o   "compress": true
 o   },
-o   "security": {
-o   "allow_action_commands": true
+o   "advanced": {
+o   "enable_experimental": false
 o   }
 o }
 ! exit 0

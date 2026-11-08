@@ -23,7 +23,7 @@ $ dmm --config <config> --cache <cache> --storage <storage> config get sources.n
 e error: NOT_FOUND: sources.nexus.api_key holds a credential and is not readable through the configuration API
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> source auth nexus --api-key-stdin
-e error: AUTH_FAILED: authenticate mod source "nexus": AUTH_FAILED: Nexus rejected the API key (the service answers a refused key with the same 401 it uses for a missing one, so the status alone cannot tell them apart): AUTH_REQUIRED: authentication rejected the credentials for <nexus>/mods/batch: "{\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"Please provide a valid API Key\"}"
+e error: AUTH_FAILED: authenticate mod source "nexus": AUTH_FAILED: Nexus rejected the API key (the service answers a refused key with the same 401 it uses for a missing one, so the status alone cannot tell them apart): AUTH_REQUIRED: authentication rejected the credentials for <nexus>/mods/batch: {"title":"Unauthorized","status":401,"detail":"Please provide a valid API Key"}
 ! exit 1
 $ dmm --config <config> --cache <cache> --storage <storage> config get sources.nexus.api_key
 e error: NOT_FOUND: sources.nexus.api_key holds a credential and is not readable through the configuration API
