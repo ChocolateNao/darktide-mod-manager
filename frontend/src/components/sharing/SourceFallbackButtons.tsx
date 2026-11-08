@@ -1,9 +1,8 @@
 import { ExternalLink } from "lucide-react";
-import { toast } from "sonner";
 
 import * as api from "@/bridge/client";
-import { describeBridgeFailure } from "@/bridge/dialogs";
 import { Button } from "@/components/ui/button";
+import { notifyFailure } from "@/lib/errorToast";
 import { t } from "@/lib/i18n";
 import type { ModSourceLink } from "@/types/domain";
 
@@ -37,7 +36,7 @@ export function SourceFallbackButtons({
     try {
       await api.openModSource(link.modId, "auto");
     } catch (error) {
-      toast.error(describeBridgeFailure(error));
+      notifyFailure(t("common.error"), error);
     }
   };
 

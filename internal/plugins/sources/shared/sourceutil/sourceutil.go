@@ -241,17 +241,25 @@ func FileSHA256(path string) (string, error) {
 	return sum, nil
 }
 
-// ModLabel names a mod for an error message, tolerating nil.
+// ModLabel names a mod for an error message: display name and version, with the
+// id as the fallback for a record a source never named.
 func ModLabel(mod *domain.Mod) string {
 	if mod == nil {
 		return "<unknown>"
 	}
 
-	if id := strings.TrimSpace(mod.ID); id != "" {
-		return id
-	}
+	name, version := strings.TrimSpace(mod.Name), strings.TrimSpace(mod.Version)
 
-	return "<unknown>"
+	switch {
+	case name != "" && version != "":
+		return name + " " + version
+	case name != "":
+		return name
+	case strings.TrimSpace(mod.ID) != "":
+		return strings.TrimSpace(mod.ID)
+	default:
+		return "<unknown>"
+	}
 }
 
 // CredValue returns the first credential present under any of keys, accepting

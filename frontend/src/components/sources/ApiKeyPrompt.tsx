@@ -2,6 +2,7 @@ import { useState } from "react";
 import { KeyRound } from "lucide-react";
 
 import { describeBridgeFailure } from "@/bridge/dialogs";
+import { ErrorText } from "@/components/common/ErrorText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -113,7 +114,9 @@ export function ApiKeyPrompt({
           <p className="text-xs text-muted-foreground">{t("apikey.hint")}</p>
 
           {failure ? (
-            <p className="text-xs text-destructive">{failure}</p>
+            <div className="text-xs text-destructive">
+              <ErrorText message={failure} />
+            </div>
           ) : null}
         </div>
 

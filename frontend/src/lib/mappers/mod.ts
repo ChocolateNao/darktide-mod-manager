@@ -5,7 +5,6 @@ import type {
   hookScriptWireSchema,
   modHooksWireSchema,
   modLinkStatusWireSchema,
-  modUpdateWireSchema,
 } from "@/lib/schemas/mod";
 import {
   conflictListWireSchema,
@@ -19,6 +18,7 @@ import {
   modSourceLinkMapWireSchema,
   modSourceLinkWireSchema,
   modUpdateListWireSchema,
+  modUpdateWireSchema,
   modWireSchema,
 } from "@/lib/schemas/mod";
 import type {
@@ -112,17 +112,25 @@ export const mapConflicts = (raw: unknown): ConflictReport[] =>
     recommendation: wire.recommendation,
   }));
 
+type UpdateWire = z.infer<typeof modUpdateWireSchema>;
+
+const fromUpdateWire = (wire: UpdateWire): ModUpdateInfo => ({
+  modId: wire.mod_id,
+  localVersion: wire.local_version,
+  remoteVersion: wire.remote_version,
+  sourceId: wire.source_id,
+  available: wire.available,
+  remoteOlder: wire.remote_older,
+  releaseNotes: wire.release_notes,
+  downloadUrl: wire.download_url,
+  changelogUrl: wire.changelog_url,
+});
+
+export const mapUpdate = (raw: unknown): ModUpdateInfo =>
+  fromUpdateWire(modUpdateWireSchema.parse(raw));
+
 export const mapUpdates = (raw: unknown): ModUpdateInfo[] =>
-  modUpdateListWireSchema.parse(raw).map((wire) => ({
-    modId: wire.mod_id,
-    localVersion: wire.local_version,
-    remoteVersion: wire.remote_version,
-    sourceId: wire.source_id,
-    available: wire.available,
-    releaseNotes: wire.release_notes,
-    downloadUrl: wire.download_url,
-    changelogUrl: wire.changelog_url,
-  }));
+  modUpdateListWireSchema.parse(raw).map(fromUpdateWire);
 
 export const mapModFiles = (raw: unknown): ModFile[] =>
   modFileListWireSchema.parse(raw).map((wire) => ({

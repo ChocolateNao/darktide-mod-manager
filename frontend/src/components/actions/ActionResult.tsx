@@ -1,18 +1,11 @@
 import { CheckCircle2, XCircle } from "lucide-react";
 
+import { ErrorText } from "@/components/common/ErrorText";
+import { JsonViewer } from "@/components/common/JsonViewer";
 import { t, tOr } from "@/lib/i18n";
+import { extractJson } from "@/lib/jsonText";
 import { cn } from "@/lib/utils";
 import type { ActionDetail, GameActionResult } from "@/types/domain";
-
-/* `data` is `unknown` because Go owns its shape. Pretty-printing it is the only
- * renderer that keeps working when an action gains a field the UI never saw. */
-function resultData(data: unknown): string {
-  try {
-    return JSON.stringify(data, null, 2) ?? String(data);
-  } catch {
-    return String(data);
-  }
-}
 
 interface ResultBlockProps {
   children: string;
@@ -37,8 +30,35 @@ function ResultBlock({ children, muted }: ResultBlockProps) {
   );
 }
 
+/**
+ * An action's own words can be JSON too: a script that prints a document, or a
+ * data field Go shaped for the UI. Show the document instead of its source.
+ */
+function ValueBlock({ value }: { value: unknown }) {
+  if (typeof value !== "string") return <JsonViewer value={value} />;
+
+  const json = extractJson(value);
+  if (!json) return <ResultBlock>{value}</ResultBlock>;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {json.before.trim() ? (
+        <ResultBlock muted>{json.before.trim()}</ResultBlock>
+      ) : null}
+      <JsonViewer value={json.json} />
+      {json.after.trim() ? (
+        <ResultBlock muted>{json.after.trim()}</ResultBlock>
+      ) : null}
+    </div>
+  );
+}
+
 interface ResultDetailsProps {
   details?: ActionDetail[];
+}
+
+function DetailValue({ value }: { value: string }) {
+  return <ErrorText message={value} />;
 }
 
 function ResultDetails({ details }: ResultDetailsProps) {
@@ -52,7 +72,7 @@ function ResultDetails({ details }: ResultDetailsProps) {
             {tOr(detail.labelKey, detail.label)}
           </dt>
           <dd className="min-w-0 font-mono text-xs wrap-anywhere">
-            {detail.value}
+            <DetailValue value={detail.value} />
           </dd>
         </div>
       ))}
@@ -95,19 +115,19 @@ export function ActionResult({ result }: ActionResultProps) {
             {result.success ? t("actions.succeeded") : t("actions.failed")}
           </p>
           {message ? (
-            <p className="mt-0.5 text-sm wrap-anywhere text-muted-foreground">
-              {message}
-            </p>
+            <div className="mt-0.5 text-sm text-muted-foreground">
+              <ErrorText message={message} />
+            </div>
           ) : null}
         </div>
       </div>
 
       <ResultDetails details={result.details} />
 
-      {result.output ? <ResultBlock>{result.output}</ResultBlock> : null}
+      {result.output ? <ValueBlock value={result.output} /> : null}
 
       {result.data !== undefined && result.data !== null ? (
-        <ResultBlock muted>{resultData(result.data)}</ResultBlock>
+        <ValueBlock value={result.data} />
       ) : null}
     </div>
   );

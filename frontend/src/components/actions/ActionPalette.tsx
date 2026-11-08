@@ -17,6 +17,7 @@ import {
 import { describeBridgeFailure } from "@/bridge/dialogs";
 import { ActionForm } from "@/components/actions/ActionForm";
 import { ActionResult } from "@/components/actions/ActionResult";
+import { ErrorText } from "@/components/common/ErrorText";
 import { ScrollingText } from "@/components/common/ScrollingText";
 import { ErrorNote } from "@/components/common/Surfaces";
 import { Badge } from "@/components/ui/badge";
@@ -68,11 +69,13 @@ export function ActionPalette() {
               {t("actions.paletteLabel")}
             </DialogTitle>
             <DialogDescription>
-              {isPending
-                ? t("common.loading")
-                : isError
-                  ? describeBridgeFailure(error)
-                  : t("actions.paletteEmpty")}
+              {isPending ? (
+                t("common.loading")
+              ) : isError ? (
+                <ErrorText message={describeBridgeFailure(error)} />
+              ) : (
+                t("actions.paletteEmpty")
+              )}
             </DialogDescription>
           </DialogHeader>
 

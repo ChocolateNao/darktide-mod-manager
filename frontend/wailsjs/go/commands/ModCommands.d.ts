@@ -10,6 +10,8 @@ export function CancelAll():Promise<void>;
 
 export function CancelUpdate(arg1:string):Promise<void>;
 
+export function CheckModUpdate(arg1:string):Promise<domain.ModUpdateInfo>;
+
 export function CheckModUpdates():Promise<Array<domain.ModUpdateInfo>>;
 
 export function Context():Promise<context.Context>;
@@ -27,6 +29,8 @@ export function GetModHooks(arg1:string):Promise<domain.ModHooks>;
 export function ImportLink(arg1:string,arg2:services.InstallOptions):Promise<domain.Mod>;
 
 export function InstallMod(arg1:string,arg2:string):Promise<domain.Mod>;
+
+export function InstallModWithOptions(arg1:string,arg2:string,arg3:services.InstallOptions):Promise<domain.Mod>;
 
 export function ListModFiles(arg1:string):Promise<Array<commands.ModFile>>;
 

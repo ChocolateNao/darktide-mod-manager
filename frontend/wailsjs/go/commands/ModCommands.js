@@ -10,6 +10,10 @@ export function CancelUpdate(arg1) {
   return window['go']['commands']['ModCommands']['CancelUpdate'](arg1);
 }
 
+export function CheckModUpdate(arg1) {
+  return window['go']['commands']['ModCommands']['CheckModUpdate'](arg1);
+}
+
 export function CheckModUpdates() {
   return window['go']['commands']['ModCommands']['CheckModUpdates']();
 }
@@ -44,6 +48,10 @@ export function ImportLink(arg1, arg2) {
 
 export function InstallMod(arg1, arg2) {
   return window['go']['commands']['ModCommands']['InstallMod'](arg1, arg2);
+}
+
+export function InstallModWithOptions(arg1, arg2, arg3) {
+  return window['go']['commands']['ModCommands']['InstallModWithOptions'](arg1, arg2, arg3);
 }
 
 export function ListModFiles(arg1) {

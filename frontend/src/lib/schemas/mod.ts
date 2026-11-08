@@ -93,6 +93,7 @@ export const modUpdateWireSchema = z.object({
   download_url: optionalText,
   changelog_url: optionalText,
   available: z.boolean().default(false),
+  remote_older: z.boolean().default(false),
 });
 
 export const modUpdateListWireSchema = z.array(modUpdateWireSchema);

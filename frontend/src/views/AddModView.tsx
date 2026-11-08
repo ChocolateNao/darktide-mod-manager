@@ -37,6 +37,7 @@ import {
   useSourcesQuery,
 } from "@/hooks/queries";
 import { t } from "@/lib/i18n";
+import { isNxmLink, modFamily } from "@/lib/modLink";
 import { selectMods, useModsStore } from "@/stores/mods.store";
 import type { Mod } from "@/types/domain";
 
@@ -44,7 +45,7 @@ const ALL_SOURCES = "__all__";
 
 export default function AddModView() {
   const installedIds = useModsStore(selectMods);
-  const installed = new Set(installedIds.map((mod) => mod.id));
+  const installed = new Set(installedIds.map((mod) => modFamily(mod.id)));
 
   const [text, setText] = useState("");
   const [sourceId, setSourceId] = useState<string>(ALL_SOURCES);
@@ -85,9 +86,12 @@ export default function AddModView() {
     install.mutate(
       { sourceId: mod.sourceId, modId: mod.id },
       {
-        onError: () => {
-          // Nexus rejects anonymous downloads; the mod page is the useful fallback.
-          if (mod.sourceUrl) openLink(mod.sourceUrl);
+        onError: (error) => {
+          // A refusal is the only failure the mod page can help with; other
+          // failures already carry their own message.
+          if (needsCredential(error) && mod.sourceUrl) {
+            openLink(mod.sourceUrl);
+          }
         },
       }
     );
@@ -222,7 +226,7 @@ export default function AddModView() {
                 <SearchResultCard
                   key={`${mod.sourceId}:${mod.id}`}
                   mod={mod}
-                  installed={installed.has(mod.id)}
+                  installed={installed.has(modFamily(mod.id))}
                   busy={install.isPending}
                   installing={
                     install.isPending && install.variables?.modId === mod.id
@@ -264,15 +268,6 @@ interface LinkPanelProps {
   onLinkChange: (value: string) => void;
 }
 
-/* Mirrors domain.ParseModLink: the launcher scheme or the "nxm link" chat form,
-   with the legacy game/mod/file path or the canonical mods/<id>/files/<id> one. */
-const NXM_LINK =
-  /^(?:nxm:\/\/|nxm link )[\w.-]+\/(?:mods\/)?\d+\/(?:files\/)?\d+\/?(?:\?.*)?$/i;
-
-function isNxmLink(value: string): boolean {
-  return NXM_LINK.test(value);
-}
-
 function LinkPanel({ link, onLinkChange }: LinkPanelProps) {
   const textareaId = useId();
   const importLink = useImportLink();
@@ -286,10 +281,13 @@ function LinkPanel({ link, onLinkChange }: LinkPanelProps) {
   };
 
   const runImport = () => {
-    importLink.mutate(trimmed, {
-      onSuccess: () => onLinkChange(""),
-      onError: onImportError,
-    });
+    importLink.mutate(
+      { link: trimmed },
+      {
+        onSuccess: () => onLinkChange(""),
+        onError: onImportError,
+      }
+    );
   };
 
   return (

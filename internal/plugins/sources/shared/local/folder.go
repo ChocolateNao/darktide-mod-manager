@@ -34,11 +34,22 @@ func firstNonBlank(values ...string) string {
 
 // modLabel renders a mod for an error message without dereferencing nil.
 func modLabel(mod *domain.Mod) string {
-	if mod == nil || strings.TrimSpace(mod.ID) == "" {
+	if mod == nil {
 		return "<unknown>"
 	}
 
-	return mod.ID
+	name, version := strings.TrimSpace(mod.Name), strings.TrimSpace(mod.Version)
+
+	switch {
+	case name != "" && version != "":
+		return name + " " + version
+	case name != "":
+		return name
+	case strings.TrimSpace(mod.ID) != "":
+		return strings.TrimSpace(mod.ID)
+	default:
+		return "<unknown>"
+	}
 }
 
 // looksLikeVersion reports whether s is a dotted numeric version such as "1.2.0".
@@ -64,6 +75,13 @@ func looksLikeVersion(s string) bool {
 // folder is user-owned, so links inside it are expected; one whose target escapes the
 // tree would let a "copy" read arbitrary files and index them as mod content.
 func copyTree(src, dst string) error {
+	// The resolved root makes a link inside the tree compare equal to it even
+	// when the tree itself sits behind a symlink, as temp folders on macOS do.
+	canonical := src
+	if resolved, err := filepath.EvalSymlinks(src); err == nil {
+		canonical = resolved
+	}
+
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "read %q", path)
@@ -95,7 +113,7 @@ func copyTree(src, dst string) error {
 				return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "resolve link %q", path)
 			}
 
-			within, err := filepath.Rel(src, resolved)
+			within, err := filepath.Rel(canonical, resolved)
 			if err != nil || within == ".." ||
 				strings.HasPrefix(within, ".."+string(filepath.Separator)) {
 				return appErrors.New(appErrors.ErrCodeInvalidMod,

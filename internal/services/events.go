@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
@@ -113,19 +114,53 @@ func wrapDownloadError(mod *domain.Mod, err error) error {
 
 	if code := appErrors.CodeOf(err); code != appErrors.CodeUnknown {
 		// The source already produced a typed error; keep its code.
-		return appErrors.Wrap(err, code, "download mod %q: %v", modLabel(mod), err)
+		return appErrors.Wrap(err, code, "download %q: %v", userLabel(mod), err)
 	}
 
 	return appErrors.Wrap(
 		err,
 		appErrors.ErrCodeDownloadFailed,
-		"download mod %q: %v",
-		modLabel(mod),
+		"download %q: %v",
+		userLabel(mod),
 		err,
 	)
 }
 
-// modLabel names a mod for an error message without dereferencing a nil.
+// userLabel names a mod for a person: the display name and version. The id is a
+// fallback only when the source never named the mod.
+func userLabel(mod *domain.Mod) string {
+	if mod == nil {
+		return "<unknown>"
+	}
+
+	name, version := strings.TrimSpace(mod.Name), strings.TrimSpace(mod.Version)
+
+	switch {
+	case name != "" && version != "":
+		return name + " " + version
+	case name != "":
+		return name
+	case strings.TrimSpace(mod.ID) != "":
+		return strings.TrimSpace(mod.ID)
+	default:
+		return "<unknown>"
+	}
+}
+
+// modName returns the display name, or the id when a source never named the mod.
+func modName(mod *domain.Mod) string {
+	if mod == nil {
+		return "<unknown>"
+	}
+
+	if name := strings.TrimSpace(mod.Name); name != "" {
+		return name
+	}
+
+	return mod.ID
+}
+
+// modLabel names a mod for an internal id field without dereferencing a nil.
 func modLabel(mod *domain.Mod) string {
 	if mod == nil || mod.ID == "" {
 		return "<unknown>"

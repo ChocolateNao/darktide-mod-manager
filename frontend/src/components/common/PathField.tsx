@@ -1,6 +1,5 @@
 import { useCallback, useState } from "react";
 import { Check, Copy, FolderOpen } from "lucide-react";
-import { toast } from "sonner";
 
 import {
   copyToClipboard,
@@ -10,6 +9,7 @@ import {
 } from "@/bridge/dialogs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { notifyFailure } from "@/lib/errorToast";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +73,7 @@ export function PathField({
     try {
       await revealPath(value);
     } catch (error) {
-      toast.error(t("common.error"), { description: String(error) });
+      notifyFailure(t("common.error"), error);
     }
   }, [value]);
 

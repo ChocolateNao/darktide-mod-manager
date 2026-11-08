@@ -10,3 +10,4 @@ build/windows/installer/tmp
 
 **/*.md
 !README.md
+Test*

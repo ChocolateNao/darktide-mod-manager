@@ -159,7 +159,7 @@ func (s *ModService) scanGameFolder(
 			}
 
 			return nil, appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
-				"reconcile mod %q with the game folder", modLabel(mod))
+				"reconcile mod %q with the game folder", userLabel(mod))
 		}
 
 		mod.Enabled = enabled
@@ -255,6 +255,32 @@ func (s *ModService) loadOrderFromFile(ctx context.Context, gameID string) ([]st
 	}
 
 	return out, nil
+}
+
+// gameLoadOrder returns the order the game actually loads: the load order file
+// when the game has one, the stored order otherwise. Conflict detection has to
+// read the same source as the game, or a report names an order nobody uses.
+func (s *ModService) gameLoadOrder(ctx context.Context) []string {
+	gameID, err := s.activeGameID()
+	if err != nil {
+		return nil
+	}
+
+	if s.hasLoadOrderFile() {
+		order, err := s.loadOrderFromFile(ctx, gameID)
+		if err != nil {
+			return nil
+		}
+
+		return order
+	}
+
+	order, err := s.deps.Index.LoadOrderByGame(ctx, gameID)
+	if err != nil {
+		return nil
+	}
+
+	return order
 }
 
 // reorderFile writes the given ids to the load order file. Disabled mods keep

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Toggle } from "@/components/ui/toggle";
 import { useSetConfigValue, useSwitchGame } from "@/hooks/mutations";
+import { notifyFailure } from "@/lib/errorToast";
 import { GAME_ICON_CHOICES } from "@/lib/gameAccent";
 import { t } from "@/lib/i18n";
 import { isCustomIcon, RailIconError, readRailIcon } from "@/lib/railIcon";
@@ -120,7 +121,7 @@ export function GamesTab() {
             }[error.code]
           : t("settings.games.iconReadFailed");
 
-      toast.error(t("settings.games.customIcon"), { description });
+      notifyFailure(t("settings.games.customIcon"), error, { description });
     }
   };
 

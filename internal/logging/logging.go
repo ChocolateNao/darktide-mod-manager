@@ -277,9 +277,11 @@ func (c *consoleSink) Sync() error {
 func (c *consoleSink) Close() error { return nil }
 
 // unflushable reports whether an fsync failure means the destination simply
-// cannot be flushed: a write failure is reported instead of missing.
+// cannot be flushed: a write failure is reported instead of missing. macOS
+// answers EBADF for a console the test harness has already closed.
 func unflushable(err error) bool {
-	return errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTTY)
+	return errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTTY) ||
+		errors.Is(err, syscall.EBADF)
 }
 
 // Service is the log fan-out plus the rotation policy behind it.

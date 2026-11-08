@@ -68,13 +68,27 @@ func (c *ModCommands) GetMod(id string) (*api.Mod, error) {
 // InstallMod installs and, when a game mods folder resolves, enables the mod in
 // one step; the returned Enabled field says which happened.
 func (c *ModCommands) InstallMod(sourceID, modID string) (*api.Mod, error) {
+	return c.InstallModWithOptions(sourceID, modID, api.InstallOptions{})
+}
+
+// InstallModWithOptions installs a mod with explicit options. Force replaces an
+// existing installation in place, so a downgrade never leaves two versions.
+func (c *ModCommands) InstallModWithOptions(
+	sourceID, modID string,
+	opts api.InstallOptions,
+) (*api.Mod, error) {
 	client, ctx, cancel, err := c.ready()
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	mod, err := client.InstallMod(ctx, strings.TrimSpace(sourceID), strings.TrimSpace(modID))
+	mod, err := client.Install(
+		ctx,
+		strings.TrimSpace(sourceID),
+		strings.TrimSpace(modID),
+		opts,
+	)
 	if err != nil {
 		return nil, c.fail(err, "install %s/%s", sourceID, modID)
 	}
@@ -285,6 +299,22 @@ func (c *ModCommands) CheckModUpdates() ([]api.ModUpdateInfo, error) {
 	}
 
 	return updates, nil
+}
+
+// CheckModUpdate reports what is known about one mod's available update.
+func (c *ModCommands) CheckModUpdate(id string) (*api.ModUpdateInfo, error) {
+	client, ctx, cancel, err := c.ready()
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	info, err := client.CheckModUpdate(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, c.fail(err, "check mod %q for updates", id)
+	}
+
+	return info, nil
 }
 
 func (c *ModCommands) UpdateMod(id string) error {

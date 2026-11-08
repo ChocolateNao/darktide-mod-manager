@@ -31,7 +31,7 @@ func (d *RegistryDownloader) sourceFor(
 ) (domain.ModSource, error) {
 	if d == nil || d.registry == nil {
 		return nil, appErrors.New(appErrors.ErrCodeSourceUnavailable,
-			"no source registry is available to fetch %s", modLabel(mod))
+			"no source registry is available to fetch %s", userLabel(mod))
 	}
 
 	if mod == nil {

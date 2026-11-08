@@ -23,6 +23,8 @@ const messages = {
   "nav.logs": "Logs",
 
   "common.error": "Something went wrong",
+  "errors.detailsHint": "The failure details are below.",
+  "errors.jsonBody": "The source returned an error document.",
   "common.loading": "Loading…",
   "common.retry": "Retry",
   "common.save": "Save",
@@ -59,6 +61,7 @@ const messages = {
   "rail.addGame": "Add a game",
   "rail.invalidInstallation": "This game’s install folder is not valid",
   "rail.updatesAvailable": "Updates are available",
+  "rail.conflicts": "Mods need conflict resolution",
 
   "header.noGame": "No game selected",
   "header.actions": "Actions",
@@ -67,6 +70,9 @@ const messages = {
 
   "status.idle": "Idle",
   "status.modsEnabled": "{enabled} of {total} mods enabled",
+  "status.updates": "{count} update(s) ready",
+  "status.issues": "{count} issue(s)",
+  "status.more": "+{count} more",
 
   "mods.title": "Installed mods",
   "mods.empty": "No mods installed",
@@ -109,11 +115,21 @@ const messages = {
   "mods.disable": "Disable",
   "mods.updateTo": "Update to {version}",
   "mods.updateAvailable": "Update available",
+  "mods.updateAction": "Update",
+  "mods.openPage": "Open mod page",
+  "mods.updateFailed": "The update failed",
+  "mods.checkUpdate": "Check for updates",
+  "mods.checkingUpdate": "Checking for updates…",
+  "mods.noUpdate": "No update available",
+  "mods.downgradeAction": "Downgrade",
+  "mods.reinstallAction": "Reinstall",
+  "mods.installConflictTitle": "Replace {name}?",
+  "mods.installConflictHint":
+    "Version {current} is installed. {action} to version {target} replaces the installed copy.",
   "mods.issues": "Mod issues",
   "mods.issue.multipleManifests":
     "Several manifest files found; the one closest to the mod root is used.",
   "mods.cancelUpdate": "Cancel update",
-  "mods.busy": "Working",
   "mods.damaged": "{count} damaged link(s)",
   "mods.more": "More actions",
   "mods.details": "Details",
@@ -130,7 +146,7 @@ const messages = {
     "This mod is in the game folder but the manager does not track it",
   "mods.deleteExternalTitle": "Delete external mod {name}?",
   "mods.deleteExternalHint":
-    "This mod is external: the manager did not install it and does not track it. Deleting it cannot be undone from the manager. Choose whether it goes to the trash or is removed permanently.",
+    "This mod is external: the manager did not install it and does not track it. Deleting it cannot be undone from the manager. Choose an option.",
   "mods.moveToTrash": "Move to trash",
   "mods.deletePermanently": "Delete permanently",
   "mods.notFound": "That mod is no longer installed.",
@@ -186,6 +202,7 @@ const messages = {
   "mods.requirementMissing": "missing",
   "mods.installRequirement": "Install requirement",
   "mods.missingRequirements": "This mod needs other mods",
+  "mods.blocked": "This mod cannot be enabled: a blocking issue is unresolved",
   "mods.dependencyLookupFailed":
     "The manager could not read this mod's requirements from its source.",
   "mods.field.conflictsWith": "Conflicts with",
@@ -198,7 +215,7 @@ const messages = {
   "mods.source.update": "Get the latest release",
   "mods.source.missing": "No source link for this mod",
   "mods.source.missingHint":
-    "There is nowhere to point you, so this mod has to travel over the wire.",
+    "There is nowhere to point you, this mod has to travel over the wire.",
   "mods.source.fallbackHint":
     "A STUN server learns your public address and nothing else. Mod bytes always travel encrypted end to end.",
 
@@ -334,7 +351,7 @@ const messages = {
   "add.searchPlaceholder": "Search every enabled source",
   "add.searchAll": "All sources",
   "add.nexusTrendingOnly":
-    "Nexus offers no search API, so this matches its trending feed — an empty result means not trending, not no such mod.",
+    "Nexus offers no search API, only its trending feed. Empty result means not trending.",
   "add.loadMore": "Load more",
   "add.source": "Source",
   "add.gameVersion": "Game version",
@@ -342,6 +359,7 @@ const messages = {
   "add.empty": "Nothing matched that search.",
   "add.searchFirst": "Type something to search.",
   "add.install": "Install",
+  "add.reinstall": "Reinstall",
   "add.alreadyInstalled": "Already installed",
   "add.by": "by {author}",
   "add.linkTitle": "Install from a link",
@@ -721,6 +739,7 @@ const messages = {
   "notify.install.failed": "Install failed: {name}",
   "notify.install.uninstalled": "{name} uninstalled",
   "notify.updates.completed": "{name} updated to {version}",
+  "notify.updates.downloadFailed": "Could not download the update",
   "notify.hooks.failed": "A {phase} hook failed",
   "notify.share.completed": "Received {count} mod(s) from {sender}",
   "notify.share.rejected": "{sender} declined the transfer",

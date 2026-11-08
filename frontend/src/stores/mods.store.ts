@@ -24,6 +24,8 @@ export interface ModsState {
   setMods: (mods: Mod[]) => void;
   setLoadOrder: (ids: string[]) => void;
   setUpdates: (updates: ModUpdateInfo[]) => void;
+  /** Replaces one mod's update record, for a check that named a single mod. */
+  setUpdate: (update: ModUpdateInfo) => void;
   setConflicts: (conflicts: ConflictReport[]) => void;
   setLinkStatuses: (statuses: ModLinkStatus[]) => void;
   setSelection: (ids: string[]) => void;
@@ -54,6 +56,14 @@ export const useModsStore = create<ModsState>()((set) => ({
   setMods: (mods) => set({ mods }),
   setLoadOrder: (loadOrder) => set({ loadOrder }),
   setUpdates: (updates) => set({ updates }),
+  setUpdate: (update) =>
+    set((state) => ({
+      updates: state.updates.some((entry) => entry.modId === update.modId)
+        ? state.updates.map((entry) =>
+            entry.modId === update.modId ? update : entry
+          )
+        : [...state.updates, update],
+    })),
   setConflicts: (conflicts) => set({ conflicts }),
   setLinkStatuses: (statuses) =>
     set({ linkStatuses: new Map(statuses.map((s) => [s.modId, s])) }),

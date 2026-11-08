@@ -6,6 +6,8 @@ package domain
 import (
 	"maps"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -143,6 +145,83 @@ func (m *Mod) HasTag(tag string) bool {
 	return false
 }
 
+// SourceModID is the source's id for the mod page this install belongs to.
+// Sources that publish several files for one mod record it in SourceData; a mod
+// without that key is its own family.
+func (m *Mod) SourceModID() string {
+	if m == nil {
+		return ""
+	}
+
+	if id, ok := sourceDataInt(m.SourceData, "mod_id"); ok {
+		return strconv.FormatInt(id, 10)
+	}
+
+	if id, ok := m.SourceData["mod_id"].(string); ok {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return m.ID
+}
+
+// SourceFamily returns the mod-page part of a manager id. A Nexus id names one
+// file of a page; other sources do not encode a page, so they are their own
+// family.
+func SourceFamily(id string) string {
+	trimmed := strings.TrimSpace(id)
+
+	rest, ok := strings.CutPrefix(trimmed, "nexus-")
+	if !ok {
+		return trimmed
+	}
+
+	page, file, ok := strings.Cut(rest, "-")
+	if !ok || !digitsOnly(page) || !digitsOnly(file) {
+		return trimmed
+	}
+
+	return "nexus-" + page
+}
+
+func digitsOnly(text string) bool {
+	if text == "" {
+		return false
+	}
+
+	for _, r := range text {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// SourceFileNumber returns the numeric file id of a Nexus manager id. File ids
+// grow over time, so a smaller number is an earlier upload of the same page.
+func SourceFileNumber(id string) (int64, bool) {
+	trimmed := strings.TrimSpace(id)
+
+	rest, ok := strings.CutPrefix(trimmed, "nexus-")
+	if !ok {
+		return 0, false
+	}
+
+	_, file, ok := strings.Cut(rest, "-")
+	if !ok || !digitsOnly(file) {
+		return 0, false
+	}
+
+	number, err := strconv.ParseInt(file, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+
+	return number, true
+}
+
 // ModUpdateInfo describes an available update for an installed mod.
 type ModUpdateInfo struct {
 	ModID         string `json:"mod_id"`
@@ -153,6 +232,9 @@ type ModUpdateInfo struct {
 	DownloadURL   string `json:"download_url,omitempty"`
 	ChangelogURL  string `json:"changelog_url,omitempty"`
 	Available     bool   `json:"available"`
+	// RemoteOlder says the source's version is behind the installed one, which
+	// makes an install a downgrade rather than an update.
+	RemoteOlder bool `json:"remote_older,omitempty"`
 }
 
 // ConflictType enumerates why two installed mods are incompatible.

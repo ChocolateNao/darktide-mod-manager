@@ -256,15 +256,3 @@ export const selectHookConsole = (state: ActivityState) => state.hookConsole;
 export function isRunning(entry: ActivityEntry): boolean {
   return entry.state === "running";
 }
-
-/** The newest in-flight row for one mod, which is what a row spinner shows. */
-export function selectProgressFor(
-  state: ActivityState,
-  modId: string
-): ActivityEntry | null {
-  return (
-    state.entries.find(
-      (entry) => entry.state === "running" && entry.modId === modId
-    ) ?? null
-  );
-}

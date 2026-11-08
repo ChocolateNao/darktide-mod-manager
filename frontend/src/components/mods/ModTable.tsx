@@ -31,6 +31,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import * as api from "@/bridge/client";
 import { EmptyState } from "@/components/common/Surfaces";
@@ -72,6 +73,7 @@ import {
   useBulkToggleMods,
   useBulkUninstallMods,
   useCancelUpdate,
+  useCheckModUpdate,
   useRelinkMod,
   useReorderMods,
   useToggleMod,
@@ -82,8 +84,9 @@ import { useGameActionsForMod } from "@/hooks/useModActions";
 import { type DragBounds, dragLimits } from "@/lib/dragBounds";
 import { t } from "@/lib/i18n";
 import { resolveLoadOrder } from "@/lib/loadOrder";
+import { issueSummary } from "@/lib/modIssues";
 import { cn } from "@/lib/utils";
-import { selectProgressFor, useActivityStore } from "@/stores/activity.store";
+import { useInstallPromptStore } from "@/stores/installPrompt.store";
 import {
   selectLinkStatus,
   selectLoadOrder,
@@ -657,27 +660,17 @@ interface ModCellsProps {
   position: number | null;
 }
 
-function issueSummary(issues: string[]): string {
-  return issues
-    .map((issue) =>
-      issue === "multiple_manifests" ? t("mods.issue.multipleManifests") : issue
-    )
-    .join(" · ");
-}
-
 const ModCells = memo(function ModCells({ mod, position }: ModCellsProps) {
   const toggle = useToggleMod();
   const update = useUpdateMod();
   const cancelUpdate = useCancelUpdate();
+  const checkUpdate = useCheckModUpdate();
   const uninstall = useUninstallMod();
   const relink = useRelinkMod();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [trashAvailable, setTrashAvailable] = useState(false);
   const updateInfo = useModsStore((state) => selectUpdateFor(state, mod.id));
   const linkStatus = useModsStore((state) => selectLinkStatus(state, mod.id));
-  const activity = useActivityStore((state) =>
-    selectProgressFor(state, mod.id)
-  );
   const modActions = useGameActionsForMod();
 
   const damaged = linkStatus?.damaged ?? 0;
@@ -742,19 +735,27 @@ const ModCells = memo(function ModCells({ mod, position }: ModCellsProps) {
       <TableCell className="w-24">
         <div className="flex flex-wrap items-center gap-1">
           {updateInfo?.available && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  tabIndex={0}
-                  role="img"
-                  aria-label={t("mods.updateAvailable")}
-                  className="inline-flex text-info"
-                >
-                  <ArrowUpCircle className="size-4" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>{t("mods.updateAvailable")}</TooltipContent>
-            </Tooltip>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 gap-1 border-info/50 px-2 text-xs text-info hover:bg-info/10 hover:text-info"
+              title={t("mods.updateAvailable")}
+              onClick={() =>
+                useInstallPromptStore.getState().request({
+                  mode: "update",
+                  sourceId: mod.sourceId,
+                  modId: mod.id,
+                  name: mod.name,
+                  currentVersion: mod.version,
+                  targetVersion: updateInfo?.remoteVersion ?? "",
+                  direction: "update",
+                })
+              }
+            >
+              <ArrowUpCircle className="size-3.5" />
+              {t("mods.updateAction")}
+            </Button>
           )}
           {mod.issues.length > 0 && (
             <Tooltip>
@@ -770,14 +771,6 @@ const ModCells = memo(function ModCells({ mod, position }: ModCellsProps) {
               </TooltipTrigger>
               <TooltipContent>{issueSummary(mod.issues)}</TooltipContent>
             </Tooltip>
-          )}
-          {activity && (
-            <Badge
-              variant="outline"
-              className="max-w-full border-(--game-accent)/60 text-center whitespace-normal"
-            >
-              {t("mods.busy")}
-            </Badge>
           )}
           {damaged > 0 && (
             <Badge
@@ -820,11 +813,41 @@ const ModCells = memo(function ModCells({ mod, position }: ModCellsProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
+              {!mod.external && mod.sourceId ? (
+                <DropdownMenuItem
+                  disabled={checkUpdate.isPending}
+                  onSelect={() =>
+                    checkUpdate.mutate(mod.id, {
+                      onSuccess: (info) => {
+                        if (info.available) {
+                          toast.info(t("mods.updateAvailable"), {
+                            description: t("mods.updateTo", {
+                              version: info.remoteVersion,
+                            }),
+                          });
+                        } else {
+                          toast.success(t("mods.noUpdate"));
+                        }
+                      },
+                    })
+                  }
+                >
+                  <RefreshCw
+                    className={cn(
+                      "size-4",
+                      checkUpdate.isPending && "animate-spin"
+                    )}
+                  />
+                  {checkUpdate.isPending
+                    ? t("mods.checkingUpdate")
+                    : t("mods.checkUpdate")}
+                </DropdownMenuItem>
+              ) : null}
               {!mod.external && updateInfo?.available ? (
                 <>
                   <DropdownMenuItem
                     disabled={update.isPending}
-                    onSelect={() => update.mutate(mod.id)}
+                    onSelect={() => update.mutate({ id: mod.id })}
                   >
                     <Download className="size-4" />
                     {t("mods.updateTo", { version: updateInfo.remoteVersion })}

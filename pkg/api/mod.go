@@ -225,6 +225,17 @@ func (c *Client) CheckModUpdates(ctx context.Context) ([]ModUpdateInfo, error) {
 	return svc.CheckModUpdates(ctx)
 }
 
+// CheckModUpdate reports what is known about one mod's available update without
+// changing anything.
+func (c *Client) CheckModUpdate(ctx context.Context, modID string) (*ModUpdateInfo, error) {
+	svc, err := c.mods()
+	if err != nil {
+		return nil, err
+	}
+
+	return svc.CheckModUpdate(ctx, modID)
+}
+
 // RefreshMods reconciles the database with what is on disk: a mod whose payload
 // vanished is disabled, and the links of enabled mods are repaired. Call it after
 // something else may have touched the game folder.

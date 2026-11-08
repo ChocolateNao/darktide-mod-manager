@@ -14,6 +14,7 @@ import {
   notificationAvailability,
   sendNativeNotification,
 } from "@/bridge/notifications";
+import { toastBody } from "@/lib/errorToast";
 import { formatCount } from "@/lib/format";
 import {
   COALESCE_WINDOW_MS,
@@ -62,13 +63,13 @@ function deliver(request: NotifyRequest): void {
   if (store.toggles[request.category] === false) return;
   if (request.silent) return;
 
-  if (isWindowFocused()) {
-    toast(request.title, { description: request.body });
-    return;
-  }
+  if (isWindowFocused() || store.availability === false) {
+    const body = toastBody(request.title, request.body ?? "");
+    toast(request.title, {
+      description: body.description,
+      ...(body.details ? { action: body.details } : {}),
+    });
 
-  if (store.availability === false) {
-    toast(request.title, { description: request.body });
     return;
   }
 

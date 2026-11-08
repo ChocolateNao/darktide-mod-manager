@@ -67,11 +67,11 @@ export function SearchResultCard({
 
       <Button
         size="sm"
-        disabled={installed || busy}
+        disabled={busy}
         loading={installing}
         onClick={() => onInstall(mod)}
       >
-        {t("add.install")}
+        {installed ? t("add.reinstall") : t("add.install")}
       </Button>
     </div>
   );

@@ -36,6 +36,7 @@ import {
   mapSourceInfo,
   mapSourceInfos,
   mapSourceLinks,
+  mapUpdate,
   mapUpdates,
 } from "@/lib/mappers/mod";
 import {
@@ -77,6 +78,7 @@ const KNOWN_CODES = [
   "INVALID_MOD",
   "DEPENDENCY_MISSING",
   "DEPENDENCY_CYCLE",
+  "MOD_BLOCKED",
   "HOOK_FAILED",
   "HOOK_TIMEOUT",
   "HOOK_INVALID",
@@ -165,15 +167,23 @@ export const listMods = () => invoke(() => ModCommands.ListMods(), mapMods);
 export const getMod = (id: string) =>
   invoke(() => ModCommands.GetMod(id), mapMod);
 
-export const installMod = (sourceId: string, modId: string) =>
-  invoke(() => ModCommands.InstallMod(sourceId, modId), mapMod);
+export const installMod = (sourceId: string, modId: string, force = false) =>
+  invoke(
+    () =>
+      ModCommands.InstallModWithOptions(sourceId, modId, {
+        Force: force,
+        PurgeCache: false,
+        SourceData: {},
+      }),
+    mapMod
+  );
 
 /** The `nxm://` and Vortex forms a user actually has in a clipboard. */
-export const importLink = (link: string) =>
+export const importLink = (link: string, force = false) =>
   invoke(
     () =>
       ModCommands.ImportLink(link, {
-        Force: false,
+        Force: force,
         PurgeCache: false,
         SourceData: {},
       }),
@@ -216,6 +226,9 @@ export const disableMod = (id: string) =>
 
 export const checkModUpdates = () =>
   invoke(() => ModCommands.CheckModUpdates(), mapUpdates);
+
+export const checkModUpdate = (id: string) =>
+  invoke(() => ModCommands.CheckModUpdate(id), mapUpdate);
 
 export const updateMod = (id: string) =>
   invoke(

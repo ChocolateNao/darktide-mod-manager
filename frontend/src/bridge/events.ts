@@ -221,7 +221,19 @@ export function routeEvent(raw: unknown, sink: ManagerEventsSink): boolean {
         modId: event.modId,
       });
       return true;
-    case "update-completed":
+    case "update-completed": {
+      const previousID = readInstallEventData(event.data).data?.previous_id;
+      const id =
+        sink.activity.find({ kind: "update", modId: event.modId }) ??
+        (previousID
+          ? sink.activity.find({ kind: "update", modId: previousID })
+          : undefined) ??
+        sink.activity.begin({
+          kind: "update",
+          label: labelFor(event),
+          modId: event.modId,
+        });
+      sink.activity.finish(id);
       sink.changed("mods");
       sink.changed("updates");
       sink.changed("conflicts");
@@ -233,6 +245,7 @@ export function routeEvent(raw: unknown, sink: ManagerEventsSink): boolean {
         category: "updates",
       });
       return true;
+    }
     case "updated":
       sink.changed("mods");
       sink.changed("updates");

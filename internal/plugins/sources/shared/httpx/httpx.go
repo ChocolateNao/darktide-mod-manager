@@ -49,6 +49,9 @@ const (
 	// is treated as dead. A total timeout would kill large archives on a slow link.
 	downloadIdleTimeout = 2 * time.Minute
 
+	// jsonBodyLimit bounds a JSON error body, which the UI renders as a document.
+	// A larger body is dropped: a truncated document does not parse.
+	jsonBodyLimit = 4 * 1024
 	// snippetLimit bounds how much of an error body is quoted back to the user.
 	// Enough to identify the problem, not enough to flood the log.
 	snippetLimit = 256
@@ -425,9 +428,11 @@ func buildURL(rawURL string, query url.Values) (string, error) {
 // SOURCE_UNAVAILABLE sends the user after a network problem they do not have and
 // invites a retry loop against a source that is working as intended.
 func statusError(kind Kind, status int, target string, body []byte) error {
-	snippet := strings.TrimSpace(string(body))
+	raw := strings.TrimSpace(string(body))
+
+	snippet := raw
 	if len(snippet) > snippetLimit {
-		snippet = snippet[:snippetLimit] + "..."
+		snippet = snippet[:snippetLimit]
 	}
 	// Hosts like to return HTML for an error, which is unreadable in a message.
 	if strings.Contains(strings.ToLower(snippet), "<html") {
@@ -435,8 +440,20 @@ func statusError(kind Kind, status int, target string, body []byte) error {
 	}
 
 	suffix := ""
-	if snippet != "" {
+
+	switch {
+	case snippet == "":
+	case json.Valid([]byte(raw)):
+		// A JSON body is shown as the document it is. Quoting escapes the braces
+		// and quotes, and the error viewer can then no longer colour it.
+		if len(raw) <= jsonBodyLimit {
+			suffix = ": " + raw
+		}
+	default:
 		suffix = ": " + strconv.Quote(snippet)
+		if len(raw) > snippetLimit {
+			suffix += "..."
+		}
 	}
 
 	switch {

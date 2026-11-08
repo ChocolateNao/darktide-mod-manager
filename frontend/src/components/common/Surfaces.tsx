@@ -2,6 +2,7 @@ import type { ComponentType, ReactNode } from "react";
 import { AlertCircle, Inbox, Info, Loader2 } from "lucide-react";
 
 import { describeBridgeFailure } from "@/bridge/dialogs";
+import { ErrorText } from "@/components/common/ErrorText";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -97,9 +98,9 @@ export function ErrorNote({ error, onRetry, className }: ErrorNoteProps) {
       )}
     >
       <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
-      <span className="min-w-0 flex-1 wrap-break-word">
-        {describeBridgeFailure(error)}
-      </span>
+      <div className="min-w-0 flex-1 text-xs">
+        <ErrorText message={describeBridgeFailure(error)} />
+      </div>
       {onRetry && (
         <Button
           type="button"

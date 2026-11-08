@@ -20,7 +20,11 @@ import {
   selectGames,
   useGamesStore,
 } from "@/stores/games.store";
-import { selectUpdates, useModsStore } from "@/stores/mods.store";
+import {
+  selectConflicts,
+  selectUpdates,
+  useModsStore,
+} from "@/stores/mods.store";
 import type { GameSettings } from "@/types/domain";
 
 /** A stable empty object so the rail selector keeps one reference when unset. */
@@ -39,6 +43,7 @@ export function GameRail() {
   const activeGameId = useGamesStore(selectActiveGameId);
   const invalidGameIds = useGamesStore((state) => state.invalidGameIds);
   const updates = useModsStore(selectUpdates);
+  const conflicts = useModsStore(selectConflicts);
   const gameSettings = useConfigStore(
     (state) => selectConfig(state)?.games ?? EMPTY_GAMES
   );
@@ -50,6 +55,9 @@ export function GameRail() {
   // to attribute a result to, so the dot appears on that one game alone.
   const activeHasUpdates =
     activeGameId !== null && updates.some((info) => info.available);
+  const activeHasConflicts =
+    activeGameId !== null &&
+    conflicts.some((conflict) => conflict.severity === "error");
 
   const choose = (gameId: string) => {
     if (gameId === activeGameId) return;
@@ -103,6 +111,13 @@ export function GameRail() {
                     title={t("rail.invalidInstallation")}
                     aria-label={t("rail.invalidInstallation")}
                     className="absolute top-1.5 right-1.5 size-2 rounded-full bg-warning"
+                  />
+                )}
+                {active && activeHasConflicts && (
+                  <span
+                    title={t("rail.conflicts")}
+                    aria-label={t("rail.conflicts")}
+                    className="absolute bottom-1.5 left-1.5 size-2 rounded-full bg-destructive"
                   />
                 )}
                 {active && activeHasUpdates && (

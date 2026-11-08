@@ -10,11 +10,7 @@ import {
 import { toast } from "sonner";
 
 import * as api from "@/bridge/client";
-import {
-  copyToClipboard,
-  describeBridgeFailure,
-  revealPath,
-} from "@/bridge/dialogs";
+import { copyToClipboard, revealPath } from "@/bridge/dialogs";
 import { EmptyState, LoadingState } from "@/components/common/Surfaces";
 import { ModHooksEditor } from "@/components/mods/ModHooksEditor";
 import { Badge } from "@/components/ui/badge";
@@ -41,9 +37,11 @@ import {
   useModHooksQuery,
   useSourceLinksQuery,
 } from "@/hooks/queries";
+import { notifyFailure } from "@/lib/errorToast";
 import { formatBytes, formatDateTime, formatNumber } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { resolveLoadOrder } from "@/lib/loadOrder";
+import { modFamily } from "@/lib/modLink";
 import {
   selectLinkStatus,
   selectLoadOrder,
@@ -111,7 +109,7 @@ async function openSource(modId: string, target: string): Promise<void> {
   try {
     await api.openModSource(modId, target);
   } catch (error) {
-    toast.error(describeBridgeFailure(error));
+    notifyFailure(t("common.error"), error);
   }
 }
 
@@ -123,7 +121,7 @@ function DetailsTab({ mod }: DetailsTabProps) {
   const writeManifest = useWriteModManifest();
   const install = useInstallMod();
   const mods = useModsStore(selectMods);
-  const installed = new Set(mods.map((item) => item.id));
+  const installed = new Set(mods.map((item) => modFamily(item.id)));
   const loadOrder = useModsStore(selectLoadOrder);
   const { positions } = useMemo(
     () => resolveLoadOrder(mods, loadOrder),
@@ -244,7 +242,7 @@ function DetailsTab({ mod }: DetailsTabProps) {
               {t("mods.field.requirements")}
             </span>
             {mod.dependencies.map((dep) => {
-              const present = installed.has(dep);
+              const present = installed.has(modFamily(dep));
 
               return (
                 <div key={dep} className="flex items-center gap-2">

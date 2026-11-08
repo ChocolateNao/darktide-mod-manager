@@ -29,6 +29,7 @@ const (
 	ErrCodeInvalidMod        Code = "INVALID_MOD"
 	ErrCodeDependencyMissing Code = "DEPENDENCY_MISSING"
 	ErrCodeDependencyCycle   Code = "DEPENDENCY_CYCLE"
+	ErrCodeModBlocked        Code = "MOD_BLOCKED"
 	ErrCodeHookFailed        Code = "HOOK_FAILED"
 	ErrCodeHookTimeout       Code = "HOOK_TIMEOUT"
 	ErrCodeHookInvalid       Code = "HOOK_INVALID"
@@ -302,6 +303,10 @@ var (
 	ErrDependencyCycle = &AppError{
 		Code:    ErrCodeDependencyCycle,
 		Message: "dependency cycle detected",
+	}
+	ErrModBlocked = &AppError{
+		Code:    ErrCodeModBlocked,
+		Message: "mod is blocked by an unresolved conflict",
 	}
 	ErrHookFailed  = &AppError{Code: ErrCodeHookFailed, Message: "hook script failed"}
 	ErrHookTimeout = &AppError{Code: ErrCodeHookTimeout, Message: "hook script timed out"}

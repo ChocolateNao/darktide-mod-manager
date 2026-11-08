@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { useSaveModHooks } from "@/hooks/mutations";
 import { useLifecycleVocabulary, useModHooksQuery } from "@/hooks/queries";
+import { notifyFailure } from "@/lib/errorToast";
 import { formatClock } from "@/lib/format";
 import { t } from "@/lib/i18n";
 import { mapHookScript } from "@/lib/mappers/mod";
@@ -614,7 +615,7 @@ function HookRunButton({ modId, script }: HookRunButtonProps) {
           await api.runHookScript(mapHookScript(script), mod);
           toast.success(t("hooks.ran"));
         } catch (error) {
-          toast.error(describeBridgeFailure(error));
+          notifyFailure(t("common.error"), error);
         } finally {
           setRunning(false);
         }

@@ -1083,6 +1083,7 @@ export namespace domain {
 	    download_url?: string;
 	    changelog_url?: string;
 	    available: boolean;
+	    remote_older?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ModUpdateInfo(source);
@@ -1098,6 +1099,7 @@ export namespace domain {
 	        this.download_url = source["download_url"];
 	        this.changelog_url = source["changelog_url"];
 	        this.available = source["available"];
+	        this.remote_older = source["remote_older"];
 	    }
 	}
 	export class P2PAnswerLink {

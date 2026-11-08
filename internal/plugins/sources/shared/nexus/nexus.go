@@ -70,6 +70,7 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/services"
 	"github.com/ChocolateNao/darktide-mod-manager/pkg/domain"
 	appErrors "github.com/ChocolateNao/darktide-mod-manager/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // SourceID is the id this plugin registers under. It matches the key used in
@@ -468,6 +469,141 @@ func (s *Source) GetMod(ctx context.Context, modID string) (*domain.Mod, error) 
 	return mod, nil
 }
 
+// LatestMod resolves the newest release across a mod page's active files.
+//
+// An installed id names the file it came from, and a later release can live in a
+// different file on the same page, so looking the id up again would keep
+// reporting the installed file as the latest.
+func (s *Source) LatestMod(ctx context.Context, mod *domain.Mod) (*domain.Mod, error) {
+	ctx = sourceutil.CtxOrBackground(ctx)
+
+	if mod == nil {
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "no mod to look up")
+	}
+
+	scopedID := strings.TrimSpace(sourceutil.StringOf(mod.SourceData["mod_id"]))
+	if !isDigits(scopedID) {
+		scopedID, _, _ = ParseModID(mod.ID)
+	}
+
+	if !isDigits(scopedID) {
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
+			"%q does not name a Nexus mod page", mod.ID)
+	}
+
+	if err := ctx.Err(); err != nil {
+		return nil, canceledError(err)
+	}
+
+	info, err := s.modContext(ctx, scopedID)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := s.modFiles(ctx, info.uid)
+	if err != nil {
+		return nil, err
+	}
+
+	type release struct {
+		mod     *domain.Mod
+		version fileVersion
+	}
+
+	releases := make([]release, 0, len(files))
+
+	var firstErr error
+
+	skipped := 0
+
+	for _, file := range files {
+		if !file.IsActive {
+			continue
+		}
+
+		versions, err := s.modFileVersions(ctx, file.ID)
+		if err != nil {
+			// One unreadable file is not a failed lookup while another answers,
+			// but skipping it silently could hide the only newer release.
+			if firstErr == nil {
+				firstErr = err
+			}
+
+			skipped++
+
+			continue
+		}
+
+		version, ok := pickVersion(versions)
+		if !ok {
+			continue
+		}
+
+		candidate := modFor(info, file, version)
+		if candidate == nil {
+			continue
+		}
+
+		if scoped := strings.TrimSpace(version.GameScopedID); scoped != "" {
+			candidate.SourceData[sourceDataFileScopedID] = scoped
+		}
+
+		releases = append(releases, release{mod: candidate, version: version})
+	}
+
+	if len(releases) == 0 {
+		return nil, appErrors.New(appErrors.ErrCodeModNotFound,
+			"Nexus mod %s has no downloadable file", scopedID)
+	}
+
+	if skipped > 0 {
+		zlog.Warn().
+			Err(firstErr).
+			Str("op", "mod-latest").
+			Str("mod", scopedID).
+			Int("files", skipped).
+			Msg("skipped mod files that could not be read")
+	}
+
+	// A page can publish optional add-ons beside the mod itself. Staying on the
+	// installed file's category, or on main when that category is gone, keeps an
+	// add-on from being offered as the update.
+	preferred := releases
+
+	for _, category := range []string{
+		strings.ToLower(strings.TrimSpace(sourceutil.StringOf(mod.SourceData["category"]))),
+		"main",
+	} {
+		if category == "" {
+			continue
+		}
+
+		matching := make([]release, 0, len(releases))
+		for _, candidate := range releases {
+			if strings.ToLower(strings.TrimSpace(candidate.version.Category)) == category {
+				matching = append(matching, candidate)
+			}
+		}
+
+		if len(matching) > 0 {
+			preferred = matching
+
+			break
+		}
+	}
+
+	best := preferred[0]
+	for _, candidate := range preferred[1:] {
+		if newerRelease(candidate.version, best.version) {
+			best = candidate
+		}
+	}
+
+	s.attachDependencies(ctx, best.mod)
+
+	return best.mod, nil
+}
+
 // Search returns the trending feed, filtered locally. A failing provider is
 // reported, not swallowed: unlike the registry's fan-out, a direct Search
 // on one provider has nothing to fall back to, and an empty result would read as
@@ -703,13 +839,7 @@ func (s *Source) modFileVersionByScopedID(
 }
 
 // modFileForID reads the mod file a mod id's file half refers to, accepting
-// either numbering. A pasted link's number is a version's game-scoped id and the
-// file endpoint wants the v3 file id, so one request against the version endpoint
-// bridges them; an id that is already v3 is returned untouched and costs nothing.
-//
-// The second result is the version that number named, set only on that path: it
-// is what lets GetMod install the version the site authorised instead of
-// re-listing the file and picking another.
+// either numbering.
 func (s *Source) modFileForID(
 	ctx context.Context,
 	scopedID, fileID string,
@@ -783,7 +913,7 @@ func (s *Source) Download(ctx context.Context, mod *domain.Mod, destPath string)
 	_, fileID, ok := ParseModID(mod.ID)
 	if !ok {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument,
-			"mod %q does not carry a Nexus mod and file id", mod.ID)
+			"mod %q does not carry a Nexus mod and file id", sourceutil.ModLabel(mod))
 	}
 
 	versionID, err := s.versionIDFor(ctx, mod, fileID)
@@ -891,9 +1021,7 @@ func (s *Source) downloadURLRepacked(ctx context.Context, versionID string) (str
 }
 
 // downloadURLForKeyed mints a content-host URL with the one-time authorization
-// a keyed nxm link carried. It is a GET taking the three parameters the website
-// put in the link, and it answers with mirrors, not one URL; the first is
-// used, since they are the same file and one has no basis for preferring a host.
+// a keyed nxm link carried.
 func (s *Source) downloadURLForKeyed(
 	ctx context.Context,
 	mod *domain.Mod,
@@ -908,7 +1036,7 @@ func (s *Source) downloadURLForKeyed(
 	scopedID, linkFileID, ok := ParseModID(mod.ID)
 	if !ok {
 		return "", appErrors.New(appErrors.ErrCodeInvalidArgument,
-			"mod %q does not carry a Nexus mod and file id", mod.ID)
+			"mod %q does not carry a Nexus mod and file id", sourceutil.ModLabel(mod))
 	}
 
 	query := url.Values{}

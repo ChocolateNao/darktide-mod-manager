@@ -4,11 +4,13 @@ import {
   ActionDialogHost,
   ActionPalette,
 } from "@/components/actions/ActionPalette";
+import { ErrorDetailsDialog } from "@/components/common/ErrorDetailsDialog";
 import { LoadingState } from "@/components/common/Surfaces";
 import { GameRail } from "@/components/layout/GameRail";
 import { Header } from "@/components/layout/Header";
 import { NavTabs } from "@/components/layout/NavTabs";
 import { StatusBar } from "@/components/layout/StatusBar";
+import { InstallConflictDialog } from "@/components/mods/InstallConflictDialog";
 import { ModDrawer } from "@/components/mods/ModDrawer";
 import { DropOverlay } from "@/components/sources/DropOverlay";
 import { Toaster } from "@/components/ui/sonner";
@@ -61,6 +63,8 @@ export function ViewSlot({ ready }: ViewSlotProps) {
       </div>
 
       <ModDrawer />
+      <InstallConflictDialog />
+      <ErrorDetailsDialog />
       {/* The run dialog is a sibling of the palette, so an action from either surface renders the same request. */}
       <ActionPalette />
       <ActionDialogHost />

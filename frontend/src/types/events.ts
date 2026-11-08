@@ -46,6 +46,9 @@ const installEventDataSchema = z.object({
   path: z.string().default(""),
   files: z.number().int().optional(),
   enabled: z.boolean().optional(),
+  // Set when a replacement installed under a new file id, so the row that the
+  // started event opened can still be found.
+  previous_id: z.string().optional(),
 });
 
 const hookEventDataSchema = z.object({

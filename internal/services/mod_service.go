@@ -55,6 +55,12 @@ type SourceProvider interface {
 	Get(ctx context.Context, id string) (domain.ModSource, error)
 }
 
+// ModLatestFinder is implemented by sources that can name the newest version of
+// a mod page, which can be newer than the installed file.
+type ModLatestFinder interface {
+	LatestMod(ctx context.Context, mod *domain.Mod) (*domain.Mod, error)
+}
+
 // ModCache is the slice of CacheManager the mod lifecycle needs. CacheKey is the
 // package-level function of the same name, not a method, so it is not listed.
 type ModCache interface {
@@ -152,6 +158,9 @@ type InstallOptions struct {
 	SourceData map[string]any
 	Force      bool
 	PurgeCache bool
+	// Updates publish their own events; install events would add a second
+	// status row that nothing closes when the download fails.
+	suppressInstallEvents bool
 }
 
 // mergeSourceData copies entries from extra into a mod's SourceData, leaving
@@ -416,8 +425,37 @@ func (s *ModService) Install(
 			modID,
 		)
 	}
-	// The source's id is authoritative; a source that returns a mod stamped
-	// with a different one would make every later update lookup miss.
+	// The resolved remote goes straight to install: it may name a different file
+	// than the id the caller passed, which is what a page-wide lookup exists for.
+	installed, err := s.installRemote(ctx, sourceID, remote, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	s.enforceInstalledConflicts(ctx, installed)
+
+	return installed, nil
+}
+
+// installRemote records and deploys a mod the source already resolved.
+//
+// A source can publish several files for one mod page. They share a source mod
+// id, so a different file replaces the installed family instead of adding a
+// second row the game cannot load.
+func (s *ModService) installRemote(
+	ctx context.Context,
+	sourceID string,
+	remote *domain.Mod,
+	opts InstallOptions,
+) (*domain.Mod, error) {
+	if remote == nil {
+		return nil, appErrors.New(
+			appErrors.ErrCodeModNotFound,
+			"source %q returned no mod",
+			sourceID,
+		)
+	}
+
 	installed := remote.Clone()
 	installed.SourceID = sourceID
 
@@ -448,11 +486,39 @@ func (s *ModService) Install(
 		}
 	}
 
-	release, err := s.ops.acquire(ctx, installed.ID)
+	// Every file of one mod page shares this lock, so two files cannot both pass
+	// the "already installed" check before either records its row.
+	releaseFamily, err := s.ops.acquire(ctx, installed.SourceModID())
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer releaseFamily()
+
+	existing, duplicates, err := s.installedFamily(ctx, gameID, installed)
+	if err != nil {
+		return nil, err
+	}
+
+	// The id names the file being installed, so a replacement adopts the new
+	// file's id. Keeping the old one would leave the record pointing at a file
+	// whose version is no longer the payload on disk.
+	if existing != nil && existing.ID != installed.ID {
+		releaseExisting, err := s.ops.acquire(ctx, existing.ID)
+		if err != nil {
+			return nil, err
+		}
+		defer releaseExisting()
+	}
+
+	// Enable and uninstall lock the installed id, which differs from the family
+	// lock when the source publishes several files for one page.
+	if installed.ID != installed.SourceModID() {
+		release, err := s.ops.acquire(ctx, installed.ID)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+	}
 
 	s.log.Debug().
 		Str("op", "install").
@@ -461,18 +527,15 @@ func (s *ModService) Install(
 		Str("version", installed.Version).
 		Msg("installing mod")
 
-	existing, err := s.deps.Index.GetByID(ctx, installed.ID)
-	switch {
-	case err == nil && !opts.Force:
+	if existing != nil && !opts.Force {
 		return nil, appErrors.New(appErrors.ErrCodeModAlreadyExists,
-			"mod %q is already installed as version %s", existing.ID, existing.Version)
-	case err != nil && appErrors.CodeOf(err) != appErrors.ErrCodeModNotFound:
-		return nil, err
+			"mod %q is already installed", userLabel(existing))
 	}
 
-	// A reinstall or update replaces the archive this install held, so its
-	// reference goes before the new download takes one.
-	if existing != nil {
+	// A reinstall replaces the archive the record held, so its reference goes
+	// before the new download takes one. A different file keeps its reference
+	// until the install succeeds and the old record is retired.
+	if existing != nil && existing.ID == installed.ID {
 		s.releaseArchive(ctx, existing)
 	}
 
@@ -485,10 +548,12 @@ func (s *ModService) Install(
 
 	// Pre-install hooks see a mod that is not yet on disk, so their LocalPath is
 	// empty, not pointing at a folder that is about to be replaced.
-	s.publish(Event{
-		Type: EventModInstallStarted, ModID: installed.ID, ModName: installed.Name,
-		SourceID: sourceID, Data: installEventData{Version: installed.Version, Path: target},
-	})
+	if !opts.suppressInstallEvents {
+		s.publish(Event{
+			Type: EventModInstallStarted, ModID: installed.ID, ModName: installed.Name,
+			SourceID: sourceID, Data: installEventData{Version: installed.Version, Path: target},
+		})
+	}
 
 	if err := s.runHooks(ctx, domain.PhasePreInstall, installed); err != nil {
 		return nil, err
@@ -512,7 +577,195 @@ func (s *ModService) Install(
 		return nil, err
 	}
 
+	if existing != nil && existing.ID == installed.ID {
+		s.retireSupersededPayload(ctx, existing, installed)
+	}
+
+	stale := duplicates
+	if existing != nil && existing.ID != installed.ID {
+		stale = append(stale, existing)
+	}
+
+	if s.retireDuplicateFamilyMembers(ctx, installed, stale) {
+		if err := s.syncLoadOrderFile(ctx); err != nil {
+			s.log.Warn().
+				Err(err).
+				Str("op", "install").
+				Str("mod", installed.ID).
+				Msg("could not sync the load order after retiring replaced files")
+		}
+	}
+
 	return installed, nil
+}
+
+// installedFamily finds the installed mods that share a source mod family with
+// candidate. The exact id wins; otherwise the newest version is the replacement
+// target, and the rest are duplicates to retire.
+func (s *ModService) installedFamily(
+	ctx context.Context,
+	gameID string,
+	candidate *domain.Mod,
+) (*domain.Mod, []*domain.Mod, error) {
+	if candidate == nil {
+		return nil, nil, nil
+	}
+
+	mods, err := s.deps.Index.ListByGame(ctx, gameID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	family := candidate.SourceModID()
+
+	var members []*domain.Mod
+
+	for i := range mods {
+		m := &mods[i]
+		if m.External || m.SourceID != candidate.SourceID || m.SourceModID() != family {
+			continue
+		}
+
+		members = append(members, m)
+	}
+
+	if len(members) == 0 {
+		return nil, nil, nil
+	}
+
+	existing := members[0]
+
+	for _, m := range members[1:] {
+		switch {
+		case m.ID == candidate.ID:
+			existing = m
+		case existing.ID != candidate.ID &&
+			domain.CompareVersions(m.Version, existing.Version) > 0:
+			existing = m
+		}
+	}
+
+	duplicates := make([]*domain.Mod, 0, len(members)-1)
+
+	for _, m := range members {
+		if m.ID != existing.ID {
+			duplicates = append(duplicates, m)
+		}
+	}
+
+	return existing, duplicates, nil
+}
+
+// retireDuplicateFamilyMembers removes the extra rows a same-family install
+// leaves behind. The payload is deleted only when it is a separate folder from
+// the one just installed. It reports whether it removed anything.
+func (s *ModService) retireDuplicateFamilyMembers(
+	ctx context.Context,
+	current *domain.Mod,
+	duplicates []*domain.Mod,
+) bool {
+	if len(duplicates) == 0 {
+		return false
+	}
+
+	removed := false
+
+	for _, duplicate := range duplicates {
+		if duplicate == nil || duplicate.ID == "" || duplicate.ID == current.ID {
+			continue
+		}
+
+		// The row is about to vanish, so its links have to go first or nothing
+		// remembers which entries belonged to it.
+		if duplicate.Enabled {
+			if err := s.undeploy(ctx, duplicate); err != nil {
+				s.log.Warn().
+					Err(err).
+					Str("op", "install").
+					Str("mod", current.ID).
+					Str("duplicate", duplicate.ID).
+					Msg("could not undeploy a duplicate install")
+			}
+		}
+
+		if err := s.deps.Index.Delete(ctx, duplicate.ID); err != nil {
+			s.log.Warn().
+				Err(err).
+				Str("op", "install").
+				Str("mod", current.ID).
+				Str("duplicate", duplicate.ID).
+				Msg("could not remove a duplicate install")
+
+			continue
+		}
+
+		removed = true
+
+		if duplicate.LocalPath != "" &&
+			!domain.PathsEqual(duplicate.LocalPath, current.LocalPath) &&
+			!domain.PathWithin(duplicate.LocalPath, current.LocalPath) &&
+			!domain.PathWithin(current.LocalPath, duplicate.LocalPath) {
+			if err := s.removePayload(duplicate); err != nil {
+				s.log.Warn().
+					Err(err).
+					Str("op", "install").
+					Str("mod", current.ID).
+					Str("duplicate", duplicate.ID).
+					Msg("could not remove a duplicate payload")
+			}
+		}
+
+		s.releaseArchive(ctx, duplicate)
+	}
+
+	return removed
+}
+
+// retireSupersededPayload removes the previous version's folder when retention
+// says not to keep it. A path outside the storage root is never deleted.
+func (s *ModService) retireSupersededPayload(
+	ctx context.Context,
+	previous, current *domain.Mod,
+) {
+	if previous == nil || current == nil ||
+		previous.LocalPath == "" ||
+		domain.PathsEqual(previous.LocalPath, current.LocalPath) ||
+		s.keepOldVersions(ctx) {
+		return
+	}
+
+	root, err := s.storageRoot()
+	if err != nil || !domain.PathWithin(root, previous.LocalPath) {
+		// Logging Err(nil) would print the warning as if nothing went wrong.
+		event := s.log.Warn().
+			Str("op", "install").
+			Str("mod", current.ID).
+			Str("old_path", previous.LocalPath)
+		if err != nil {
+			event = event.Err(err)
+		}
+
+		event.Msg("kept the superseded payload outside the storage root")
+
+		return
+	}
+
+	if err := os.RemoveAll(previous.LocalPath); err != nil {
+		s.log.Warn().
+			Err(err).
+			Str("op", "install").
+			Str("mod", current.ID).
+			Str("old_path", previous.LocalPath).
+			Msg("could not remove the superseded payload")
+		s.publish(Event{
+			Type: EventLog, ModID: current.ID,
+			Data: fmt.Sprintf("could not remove the old payload %q: %v", previous.LocalPath, err),
+		})
+
+		return
+	}
+
+	_ = platform.RemoveEmptyDir(filepath.Dir(previous.LocalPath))
 }
 
 // manifestIssues reports the payload problems worth showing in the mod table.
@@ -552,7 +805,7 @@ func (s *ModService) place(
 		previousFiles, loadErr = s.deps.Index.GetFilesByMod(ctx, existing.ID)
 		if loadErr != nil {
 			return appErrors.Wrap(loadErr, appErrors.ErrCodeInstallFailed,
-				"read the file inventory of the installed mod %q", modLabel(existing))
+				"read the file inventory of the installed mod %q", userLabel(existing))
 		}
 	}
 
@@ -602,7 +855,7 @@ func (s *ModService) place(
 		s.rollbackPlace(ctx, installed, existing, previousFiles, target)
 
 		return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
-			"record the file inventory of mod %q", installed.ID)
+			"record the file inventory of mod %q", userLabel(installed))
 	}
 
 	wantEnabled := opts.Enable != nil && *opts.Enable
@@ -616,16 +869,6 @@ func (s *ModService) place(
 
 	if wantEnabled {
 		placeErr = s.enableLocked(ctx, installed, true)
-	} else if s.hasLoadOrderFile() && installed.InstallMode != domain.InstallModeGameRoot {
-		// A file-driven game switches a mods-folder mod by its line alone, so the
-		// payload must be on disk even while the mod is disabled. A game-root mod
-		// has no line; deploying it would enable it. A missing game folder leaves
-		// the mod disabled, as it does for a game without a load order file.
-		if _, modsErr := s.modsPath(ctx); modsErr == nil {
-			if _, deployErr := s.deployPayload(ctx, installed); deployErr != nil {
-				placeErr = deployErr
-			}
-		}
 	}
 
 	if placeErr != nil {
@@ -634,18 +877,21 @@ func (s *ModService) place(
 		return placeErr
 	}
 
-	s.publish(Event{
-		Type:     EventModInstallCompleted,
-		ModID:    installed.ID,
-		ModName:  installed.Name,
-		SourceID: sourceID,
-		Data: installEventData{
-			Version: installed.Version,
-			Path:    target,
-			Files:   len(files),
-			Enabled: installed.Enabled,
-		},
-	})
+	if !opts.suppressInstallEvents {
+		s.publish(Event{
+			Type:     EventModInstallCompleted,
+			ModID:    installed.ID,
+			ModName:  installed.Name,
+			SourceID: sourceID,
+			Data: installEventData{
+				Version: installed.Version,
+				Path:    target,
+				Files:   len(files),
+				Enabled: installed.Enabled,
+			},
+		})
+	}
+
 	s.log.Info().
 		Str("op", "install").
 		Str("source", sourceID).
@@ -695,6 +941,12 @@ func (s *ModService) rollbackPlace(
 		rollback("remove payload", os.RemoveAll(target))
 	}
 
+	// A replacement file gets its own record, so the failed one must not survive
+	// beside the restored record.
+	if installed.ID != existing.ID {
+		rollback("delete failed record", s.deps.Index.Delete(ctx, installed.ID))
+	}
+
 	rollback("restore record", s.deps.Index.Save(ctx, existing))
 	rollback("restore inventory", s.deps.Index.SaveFiles(ctx, existing.ID, previousFiles))
 
@@ -714,6 +966,22 @@ func (s *ModService) rollbackPlace(
 // this skips the source lookup and the download cache; the archive's hash is
 // recorded as the mod's hash because it is the only provenance the install has.
 func (s *ModService) InstallArchiveFromShare(
+	ctx context.Context,
+	mod *domain.Mod,
+	archivePath string,
+	opts InstallOptions,
+) (*domain.Mod, error) {
+	installed, err := s.installSharedArchive(ctx, mod, archivePath, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	s.enforceInstalledConflicts(ctx, installed)
+
+	return installed, nil
+}
+
+func (s *ModService) installSharedArchive(
 	ctx context.Context,
 	mod *domain.Mod,
 	archivePath string,
@@ -763,7 +1031,7 @@ func (s *ModService) InstallArchiveFromShare(
 	switch {
 	case err == nil && !opts.Force:
 		return nil, appErrors.New(appErrors.ErrCodeModAlreadyExists,
-			"mod %q is already installed as version %s", existing.ID, existing.Version)
+			"mod %q is already installed", userLabel(existing))
 	case err != nil && appErrors.CodeOf(err) != appErrors.ErrCodeModNotFound:
 		return nil, err
 	}
@@ -820,10 +1088,11 @@ func (s *ModService) ReinstallMod(
 
 // installEventData is the payload attached to install lifecycle events.
 type installEventData struct {
-	Version string `json:"version"`
-	Path    string `json:"path"`
-	Files   int    `json:"files,omitempty"`
-	Enabled bool   `json:"enabled"`
+	Version    string `json:"version"`
+	Path       string `json:"path"`
+	PreviousID string `json:"previous_id,omitempty"`
+	Files      int    `json:"files,omitempty"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // fetchArchive asks the cache for the payload and returns both the archive path
@@ -836,7 +1105,7 @@ func (s *ModService) fetchArchive(ctx context.Context, mod *domain.Mod) (string,
 
 	if s.deps.Cache == nil {
 		return "", "", appErrors.New(appErrors.ErrCodeCacheMiss,
-			"no download cache is configured, cannot fetch mod %q", modLabel(mod))
+			"no download cache is configured, cannot fetch mod %q", userLabel(mod))
 	}
 
 	path, err := s.deps.Cache.GetOrDownload(ctx, mod)
@@ -846,7 +1115,7 @@ func (s *ModService) fetchArchive(ctx context.Context, mod *domain.Mod) (string,
 
 	if strings.TrimSpace(path) == "" {
 		return "", "", appErrors.New(appErrors.ErrCodeDownloadFailed,
-			"cache returned no archive for mod %q", modLabel(mod))
+			"cache returned no archive for mod %q", userLabel(mod))
 	}
 
 	return path, key, nil
@@ -994,38 +1263,71 @@ func (s *ModService) unpack(
 // A mod that is already enabled is still redeployed: that is what heals a
 // deleted or half-created set of links.
 func (s *ModService) EnableMod(ctx context.Context, modID string) error {
-	if err := checkInitialized(s); err != nil {
+	mod, err := s.enableRecord(ctx, modID)
+	if err != nil {
 		return err
 	}
 
+	// The lock is released, so disabling a conflicting mod below cannot deadlock
+	// with a concurrent enable of the other side.
+	s.enforceBlockingConflicts(ctx, mod.GameID, mod.ID)
+
+	return nil
+}
+
+// enforceInstalledConflicts applies blocking-conflict rules once a mod is on
+// disk. It runs after the install released its locks, so the disable it may
+// issue cannot deadlock against a concurrent install of the other side.
+func (s *ModService) enforceInstalledConflicts(ctx context.Context, mod *domain.Mod) {
+	if mod == nil || !mod.Enabled {
+		return
+	}
+
+	s.enforceBlockingConflicts(ctx, mod.GameID, mod.ID)
+}
+
+// enableRecord enables one mod and returns the record as stored. The caller
+// enforces conflicts after this returns, when the per-mod lock is free.
+func (s *ModService) enableRecord(ctx context.Context, modID string) (*domain.Mod, error) {
+	if err := checkInitialized(s); err != nil {
+		return nil, err
+	}
+
 	if err := s.precheck(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
 	modID = strings.TrimSpace(modID)
 	if modID == "" {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument, "mod id is required")
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "mod id is required")
 	}
 
 	if _, external := externalFolder(modID); external {
-		return appErrors.New(appErrors.ErrCodeInvalidArgument,
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument,
 			"external mods cannot be enabled by the manager")
 	}
 
 	release, err := s.ops.acquire(ctx, modID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer release()
 
 	mod, err := s.deps.Index.GetByID(ctx, modID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	deploy := !s.hasLoadOrderFile() || mod.InstallMode == domain.InstallModeGameRoot
+	if blockers := s.enableBlockers(ctx, mod); len(blockers) > 0 {
+		return nil, appErrors.New(appErrors.ErrCodeModBlocked,
+			"mod %q cannot be enabled: %s", userLabel(mod), blockers[0].Details)
+	}
 
-	return s.enableLocked(ctx, mod, deploy)
+	if err := s.enableLocked(ctx, mod, true); err != nil {
+		return nil, err
+	}
+
+	return mod, nil
 }
 
 // hasLoadOrderFile reports whether enabling a known mod means editing the load
@@ -1042,12 +1344,12 @@ func (s *ModService) hasLoadOrderFile() bool {
 func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod, deploy bool) error {
 	if strings.TrimSpace(mod.LocalPath) == "" {
 		return appErrors.New(appErrors.ErrCodeInvalidMod,
-			"mod %q has no payload folder; reinstall it", modLabel(mod))
+			"mod %q has no payload folder; reinstall it", userLabel(mod))
 	}
 
 	if !platform.IsDir(platform.RealFS(), mod.LocalPath) {
 		return appErrors.New(appErrors.ErrCodeInvalidMod,
-			"the payload folder of mod %q is gone; reinstall it", modLabel(mod))
+			"the payload folder of mod %q is gone; reinstall it", userLabel(mod))
 	}
 
 	// PreEnable hooks see the mod as it is about to become: still disabled.
@@ -1077,7 +1379,7 @@ func (s *ModService) enableLocked(ctx context.Context, mod *domain.Mod, deploy b
 
 	mod.UpdatedAt = s.now()
 	if err := s.deps.Index.Save(ctx, mod); err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "mark mod %q enabled", modLabel(mod))
+		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "mark mod %q enabled", userLabel(mod))
 	}
 
 	if err := s.syncLoadOrderFile(ctx); err != nil {
@@ -1116,7 +1418,7 @@ func (s *ModService) deployPayload(ctx context.Context, mod *domain.Mod) (string
 
 	if err := s.deps.Deployer.DeployAs(mod.LocalPath, dst, s.installMethod()); err != nil {
 		return "", appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
-			"deploy mod %q into %q", modLabel(mod), dst)
+			"deploy mod %q into %q", userLabel(mod), dst)
 	}
 
 	return dst, nil
@@ -1163,19 +1465,17 @@ func (s *ModService) DisableMod(ctx context.Context, modID string) error {
 	}
 	// A game that is not configured cannot hold the links, so failing here would
 	// make a disable impossible on a machine where the game was never set up.
-	// Games with a load order file switch managed mods by that file alone, so
-	// their files stay where the user put them; game-root mods have no line.
-	if !s.hasLoadOrderFile() || mod.InstallMode == domain.InstallModeGameRoot {
-		if err := s.undeploy(ctx, mod); err != nil {
-			return err
-		}
+	if err := s.undeploy(ctx, mod); err != nil {
+		return err
 	}
 
 	mod.Enabled = false
 
 	mod.UpdatedAt = s.now()
 	if err := s.deps.Index.Save(ctx, mod); err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "mark mod %q disabled", modLabel(mod))
+		return appErrors.Wrap(
+			err, appErrors.ErrCodeConfigIO, "mark mod %q disabled", userLabel(mod),
+		)
 	}
 
 	if err := s.syncLoadOrderFile(ctx); err != nil {
@@ -1221,7 +1521,7 @@ func (s *ModService) undeployAt(ctx context.Context, mod *domain.Mod, dst string
 
 	if _, err := s.deps.Deployer.UndeployEntries(dst, topLevelNames(files)); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeUninstallFailed,
-			"remove the deployed files of mod %q", modLabel(mod))
+			"remove the deployed files of mod %q", userLabel(mod))
 	}
 
 	return nil
@@ -1368,9 +1668,10 @@ func (s *ModService) DeleteAllMods(ctx context.Context) error {
 	for i := range mods {
 		mod := &mods[i]
 
-		// Undeploy every mod that can have files in the game folder. A disabled
-		// load-order mod still has its payload deployed. A disabled game-root mod
-		// never does, and removing its names would delete unrelated game files.
+		// Undeploy every mods-folder mod before deleting its row, including a
+		// disabled one, so no link survives the record. A game-root mod that is
+		// disabled never occupies the folder, and removing its names could delete
+		// unrelated game files.
 		if mod.Enabled || mod.InstallMode != domain.InstallModeGameRoot {
 			switch {
 			case mod.GameID == activeGame || mod.GameID == "":
@@ -1455,7 +1756,7 @@ func (s *ModService) removePayload(mod *domain.Mod) error {
 
 	if err := os.RemoveAll(payload); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeUninstallFailed,
-			"remove the payload folder %q of mod %q", payload, modLabel(mod))
+			"remove the payload folder %q of mod %q", payload, userLabel(mod))
 	}
 
 	_ = platform.RemoveEmptyDir(filepath.Dir(payload))
@@ -1747,7 +2048,7 @@ func (s *ModService) RelinkMod(ctx context.Context, modID string) ([]string, err
 	repaired, err := s.deps.Deployer.Repair(mod.LocalPath, dst)
 	if err != nil {
 		return nil, appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
-			"repair the links of mod %q", modLabel(mod))
+			"repair the links of mod %q", userLabel(mod))
 	}
 
 	s.log.Info().
@@ -1927,7 +2228,7 @@ func (s *ModService) RefreshMods(ctx context.Context) error {
 
 		if _, err := s.deps.Deployer.Repair(mod.LocalPath, dst); err != nil {
 			return appErrors.Wrap(err, appErrors.ErrCodeInstallFailed,
-				"refresh the links of mod %q", modLabel(&mod))
+				"refresh the links of mod %q", userLabel(&mod))
 		}
 	}
 
@@ -1997,6 +2298,34 @@ func (s *ModService) CheckModUpdates(ctx context.Context) ([]domain.ModUpdateInf
 	return out, nil
 }
 
+// CheckModUpdate asks one installed mod's source what the latest version is.
+func (s *ModService) CheckModUpdate(
+	ctx context.Context,
+	modID string,
+) (*domain.ModUpdateInfo, error) {
+	if err := checkInitialized(s); err != nil {
+		return nil, err
+	}
+
+	if err := s.precheck(ctx); err != nil {
+		return nil, err
+	}
+
+	modID = strings.TrimSpace(modID)
+	if modID == "" {
+		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "mod id is required")
+	}
+
+	mod, err := s.deps.Index.GetByID(ctx, modID)
+	if err != nil {
+		return nil, err
+	}
+
+	info := s.updateInfoFor(ctx, *mod)
+
+	return &info, nil
+}
+
 // updateInfoFor builds the update record for one mod, tolerating every failure
 // mode of the lookup.
 func (s *ModService) updateInfoFor(ctx context.Context, mod domain.Mod) domain.ModUpdateInfo {
@@ -2014,7 +2343,13 @@ func (s *ModService) updateInfoFor(ctx context.Context, mod domain.Mod) domain.M
 	info.RemoteVersion = remote.Version
 	info.ReleaseNotes = remote.Description
 	info.DownloadURL = DownloadLocation(remote)
-	info.Available = domain.CompareVersions(remote.Version, mod.Version) > 0
+
+	switch domain.CompareVersions(remote.Version, mod.Version) {
+	case 1:
+		info.Available = true
+	case -1:
+		info.RemoteOlder = true
+	}
 
 	return info
 }
@@ -2041,13 +2376,19 @@ func (s *ModService) remoteMod(ctx context.Context, mod domain.Mod) (*domain.Mod
 		)
 	}
 
+	// An installed id names the file it came from. A newer release may live in
+	// another file on the same mod page, so prefer the source's page-wide lookup.
+	if finder, ok := src.(ModLatestFinder); ok {
+		return finder.LatestMod(ctx, &mod)
+	}
+
 	return src.GetMod(ctx, mod.ID)
 }
 
 // ApplyUpdate reinstalls a mod from its source and removes the old payload once
-// the new one is in place. The mod keeps its installed timestamp and load
-// priority, because to a user this is the same mod updated, not a fresh install;
-// a failure leaves the old payload and record untouched.
+// the new one is in place. The replacement keeps the installed timestamp and
+// load priority, and it adopts the id of the file it downloaded; a failure
+// leaves the old payload and record untouched.
 func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod, error) {
 	if err := checkInitialized(s); err != nil {
 		return nil, err
@@ -2079,7 +2420,7 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 
 	if mod.SourceID == "" {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidMod,
-			"mod %q has no source recorded, cannot update it", modLabel(mod))
+			"mod %q has no source recorded, cannot update it", userLabel(mod))
 	}
 
 	remote, err := s.remoteMod(ctx, *mod)
@@ -2102,9 +2443,7 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 		return mod, nil
 	}
 
-	oldPath := mod.LocalPath
 	wasEnabled := mod.Enabled
-	keepOld := s.keepOldVersions(ctx)
 	start := time.Now()
 
 	s.log.Info().
@@ -2121,42 +2460,18 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 	})
 
 	// The enable state is restored from the record, not assumed, so a failed
-	// update does not leave the mod half-written; DisableMod would need the
-	// operation lock this goroutine already holds.
-	opts := InstallOptions{Force: true, Enable: &wasEnabled}
+	// update does not leave the mod half-written. Calling DisableMod instead
+	// would deadlock: it would take the operation lock the install below holds.
+	opts := InstallOptions{Force: true, Enable: &wasEnabled, suppressInstallEvents: true}
 
-	updated, err := s.Install(ctx, mod.SourceID, mod.ID, opts)
+	// The resolved remote is the newest version the check just found. Passing it
+	// through keeps the update from re-reading the old file and finding itself.
+	updated, err := s.installRemote(ctx, mod.SourceID, remote, opts)
 	if err != nil {
 		return nil, err
 	}
-	// The old payload has its own version folder, so retiring it here is what makes
-	// the retention setting mean anything. The cached archive is a separate
-	// decision and is left alone. LocalPath comes from the database, so it is only
-	// deleted when it is provably inside the storage root.
-	if !keepOld && oldPath != "" && !domain.PathsEqual(oldPath, updated.LocalPath) {
-		root, rootErr := s.storageRoot()
-		if rootErr != nil || !domain.PathWithin(root, oldPath) {
-			s.log.Warn().
-				Err(rootErr).
-				Str("op", "update").
-				Str("mod", mod.ID).
-				Str("old_path", oldPath).
-				Msg("kept the superseded payload outside the storage root")
-		} else if err := os.RemoveAll(oldPath); err != nil {
-			s.log.Warn().
-				Err(err).
-				Str("op", "update").
-				Str("mod", mod.ID).
-				Str("old_path", oldPath).
-				Msg("could not remove the superseded payload")
-			s.publish(Event{
-				Type: EventLog, ModID: mod.ID,
-				Data: fmt.Sprintf("could not remove the old payload %q: %v", oldPath, err),
-			})
-		} else {
-			_ = platform.RemoveEmptyDir(filepath.Dir(oldPath))
-		}
-	}
+
+	s.enforceInstalledConflicts(ctx, updated)
 
 	s.publish(Event{
 		Type:     EventModUpdateCompleted,
@@ -2164,9 +2479,10 @@ func (s *ModService) ApplyUpdate(ctx context.Context, modID string) (*domain.Mod
 		ModName:  updated.Name,
 		SourceID: updated.SourceID,
 		Data: installEventData{
-			Version: updated.Version,
-			Path:    updated.LocalPath,
-			Enabled: updated.Enabled,
+			Version:    updated.Version,
+			Path:       updated.LocalPath,
+			Enabled:    updated.Enabled,
+			PreviousID: mod.ID,
 		},
 	})
 	s.publish(Event{
@@ -2495,6 +2811,8 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 
 	var lines []string
 
+	seenFolders := map[string]bool{}
+
 	for _, modID := range loadOrder {
 		mod, err := s.deps.Index.GetByID(ctx, modID)
 		if err != nil {
@@ -2502,15 +2820,12 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 			continue
 		}
 
-		if mod.InstallMode == domain.InstallModeGameRoot {
-			// Game root mods are not in the mods folder the file describes.
+		if !mod.Enabled || mod.InstallMode == domain.InstallModeGameRoot ||
+			mod.ModFolderName == "" || seenFolders[mod.ModFolderName] {
 			continue
 		}
 
-		if mod.ModFolderName == "" {
-			continue
-		}
-
+		seenFolders[mod.ModFolderName] = true
 		lines = append(lines, mod.ModFolderName)
 	}
 	// Also include enabled mods that are not in the explicit load order,
@@ -2534,18 +2849,12 @@ func (s *ModService) syncLoadOrderFile(ctx context.Context) error {
 	})
 
 	for _, mod := range enabledMods {
-		if explicitSet[mod.ID] {
+		if explicitSet[mod.ID] || mod.InstallMode == domain.InstallModeGameRoot ||
+			mod.ModFolderName == "" || seenFolders[mod.ModFolderName] {
 			continue
 		}
 
-		if mod.InstallMode == domain.InstallModeGameRoot {
-			continue
-		}
-
-		if mod.ModFolderName == "" {
-			continue
-		}
-
+		seenFolders[mod.ModFolderName] = true
 		lines = append(lines, mod.ModFolderName)
 	}
 
@@ -2572,7 +2881,7 @@ func (s *ModService) runHooks(ctx context.Context, phase domain.HookPhase, mod *
 
 	if err := s.deps.Hooks.ExecutePhase(ctx, phase, mod.Hooks, mod); err != nil {
 		return appErrors.Wrap(err, appErrors.ErrCodeHookFailed,
-			"%s hook of mod %q failed", phase, modLabel(mod))
+			"%s hook of mod %q failed", phase, userLabel(mod))
 	}
 
 	return nil
@@ -2605,7 +2914,7 @@ func (s *ModService) runHooksAdvisory(
 			Msg("advisory hook phase failed")
 		s.publish(Event{
 			Type: EventLog, ModID: mod.ID, SourceID: mod.SourceID,
-			Data: fmt.Sprintf("%s hook of mod %q failed: %v", phase, modLabel(mod), err),
+			Data: fmt.Sprintf("%s hook of mod %q failed: %v", phase, userLabel(mod), err),
 		})
 	}
 }

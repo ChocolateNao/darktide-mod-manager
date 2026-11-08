@@ -103,6 +103,7 @@ export interface ModUpdateInfo {
   remoteVersion: string;
   sourceId: string;
   available: boolean;
+  remoteOlder?: boolean;
   releaseNotes?: string;
   downloadUrl?: string;
   changelogUrl?: string;

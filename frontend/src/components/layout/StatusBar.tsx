@@ -1,7 +1,13 @@
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { t } from "@/lib/i18n";
+import { issueLabel } from "@/lib/modIssues";
 import {
   isRunning,
   selectEntries,
@@ -10,6 +16,46 @@ import {
 import { useConfigStore } from "@/stores/config.store";
 import { useModsStore } from "@/stores/mods.store";
 
+/** Long lists are capped so the popup stays readable. */
+const PREVIEW_LIMIT = 10;
+
+interface SummaryProps {
+  label: string;
+  items: string[];
+  tone: string;
+}
+
+function Summary({ label, items, tone }: SummaryProps) {
+  if (items.length === 0) return null;
+
+  const shown = items.slice(0, PREVIEW_LIMIT);
+  const hidden = items.length - shown.length;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className={`shrink-0 cursor-default ${tone}`}>
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">
+        <ul className="flex flex-col gap-0.5">
+          {shown.map((item, index) => (
+            <li key={`${item}-${index}`} className="truncate">
+              {item}
+            </li>
+          ))}
+          {hidden > 0 && (
+            <li className="opacity-70">
+              {t("status.more", { count: formatNumber(hidden) })}
+            </li>
+          )}
+        </ul>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /**
  * What the application is doing, how much is left, and how big the library is.
  * Always present so the content above never shifts.
@@ -17,8 +63,18 @@ import { useModsStore } from "@/stores/mods.store";
 export function StatusBar() {
   const inProgress = useActivityStore(selectEntries).filter(isRunning);
   const mods = useModsStore((state) => state.mods);
+  const updates = useModsStore((state) => state.updates);
   const enabled = mods.filter((mod) => mod.enabled).length;
   const logLevel = useConfigStore((state) => state.config?.logging.level ?? "");
+  const updateNames = updates
+    .filter((update) => update.available)
+    .map(
+      (update) =>
+        mods.find((mod) => mod.id === update.modId)?.name ?? update.modId
+    );
+  const issues = mods.flatMap((mod) =>
+    mod.issues.map((issue) => `${mod.name} — ${issueLabel(issue)}`)
+  );
 
   return (
     <footer className="flex h-7 shrink-0 items-center gap-4 border-t px-4 text-[11px] text-muted-foreground">
@@ -67,6 +123,20 @@ export function StatusBar() {
           total: formatNumber(mods.length),
         })}
       </span>
+      <Summary
+        tone="text-info"
+        label={t("status.updates", {
+          count: formatNumber(updateNames.length),
+        })}
+        items={updateNames}
+      />
+      <Summary
+        tone="text-warning"
+        label={t("status.issues", {
+          count: formatNumber(issues.length),
+        })}
+        items={issues}
+      />
       {logLevel && <span className="shrink-0 uppercase">{logLevel}</span>}
     </footer>
   );

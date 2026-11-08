@@ -465,6 +465,21 @@ func pickVersion(versions []fileVersion) (fileVersion, bool) {
 	return best, found
 }
 
+// newerRelease reports whether candidate is a later release than current.
+//
+// Position orders versions inside one file, so files are compared by version
+// string, then by upload time when the strings do not parse.
+func newerRelease(candidate, current fileVersion) bool {
+	switch domain.CompareVersions(candidate.Version, current.Version) {
+	case 1:
+		return true
+	case -1:
+		return false
+	}
+
+	return parseStamp(candidate.UploadedAt).After(parseStamp(current.UploadedAt))
+}
+
 // parseStamp reads one of the API's timestamps, reporting the zero time when it
 // cannot: a missing upload date must not stop a mod being offered, since the date
 // is presentation and the version id is identity.

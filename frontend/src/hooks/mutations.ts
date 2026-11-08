@@ -3,10 +3,15 @@ import { toast } from "sonner";
 
 import * as api from "@/bridge/client";
 import { describeBridgeFailure } from "@/bridge/dialogs";
+import { notifyFailure } from "@/lib/errorToast";
 import { t } from "@/lib/i18n";
+import { modFamily, nxmModId, sameModPage } from "@/lib/modLink";
 import { queryKeys } from "@/lib/queryClient";
 import { useActivityStore } from "@/stores/activity.store";
+import { useInstallPromptStore } from "@/stores/installPrompt.store";
 import { useModsStore } from "@/stores/mods.store";
+import type { ModUpdateInfo } from "@/types/domain";
+import type { BridgeErrorCode } from "@/types/errors";
 
 /**
  * Every write: bridge call first, invalidation second, slice-local state last.
@@ -14,17 +19,52 @@ import { useModsStore } from "@/stores/mods.store";
  */
 
 function report(error: unknown): void {
-  toast.error(t("common.error"), { description: describeBridgeFailure(error) });
+  notifyFailure(t("common.error"), error);
 }
 
 /** No failure event exists for every operation, so a rejected mutation closes its own row. */
-function failRunning(kind: "install" | "uninstall", error: unknown): void {
+function failRunning(
+  kind: "install" | "uninstall" | "update",
+  error: unknown,
+  modId?: string
+): void {
   const activity = useActivityStore.getState();
   for (const entry of activity.entries) {
-    if (entry.kind === kind && entry.state === "running") {
+    if (
+      entry.kind === kind &&
+      entry.state === "running" &&
+      (modId === undefined || entry.modId === modId)
+    ) {
       activity.fail(entry.id, describeBridgeFailure(error));
     }
   }
+}
+
+const MOD_PAGE_ERROR_CODES = new Set<BridgeErrorCode>([
+  "DOWNLOAD_FAILED",
+  "AUTH_REQUIRED",
+  "AUTH_FAILED",
+]);
+
+/** Whether only the mod page can clear the failure: a refused download or an expired key. */
+export function updateNeedsModPage(error: unknown): boolean {
+  return MOD_PAGE_ERROR_CODES.has(api.toBridgeError(error).code);
+}
+
+function reportUpdateFailure(error: unknown, modId: string): void {
+  if (!updateNeedsModPage(error)) {
+    report(error);
+    return;
+  }
+
+  notifyFailure(t("notify.updates.downloadFailed"), error, {
+    action: {
+      label: t("mods.openPage"),
+      onClick: () => {
+        void api.openModSource(modId, "source").catch(report);
+      },
+    },
+  });
 }
 
 /** The invalidation map: a write moves more than the obvious query. */
@@ -42,22 +82,77 @@ function invalidate(
   }
 }
 
+/** An install that stopped to ask whether to update or downgrade is not a failure. */
+class InstallDecisionPending extends Error {}
+
+function directionOf(info: ModUpdateInfo) {
+  if (info.available) return "update" as const;
+  if (info.remoteOlder) return "downgrade" as const;
+  return "reinstall" as const;
+}
+
+/** Raises the replacement prompt for an installed mod and stops the caller. */
+async function requestReplacement({
+  sourceId,
+  modId,
+  link,
+}: {
+  sourceId: string;
+  modId: string;
+  link?: string;
+}): Promise<void> {
+  const existing = useModsStore
+    .getState()
+    .mods.find((mod) => sameModPage(mod.id, modId) && !mod.external);
+
+  if (!existing) return;
+
+  const info = await api.checkModUpdate(existing.id);
+
+  if (!info.remoteVersion) return;
+
+  useInstallPromptStore.getState().request({
+    mode: link ? "link" : "replace",
+    link,
+    sourceId,
+    modId,
+    name: existing.name || modId,
+    currentVersion: info.localVersion || existing.version,
+    targetVersion: info.remoteVersion,
+    direction: directionOf(info),
+  });
+
+  throw new InstallDecisionPending();
+}
+
 export function useInstallMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ sourceId, modId }: { sourceId: string; modId: string }) =>
-      api.installMod(sourceId, modId),
+    mutationFn: async ({
+      sourceId,
+      modId,
+      force = false,
+    }: {
+      sourceId: string;
+      modId: string;
+      force?: boolean;
+    }) => {
+      if (!force) await requestReplacement({ sourceId, modId });
+
+      return api.installMod(sourceId, modId, force);
+    },
     onSuccess: (mod) => {
       invalidate(queryClient, ["mods", "conflicts", "updates"]);
 
       if (!mod) return;
 
       const installed = new Set(
-        useModsStore.getState().mods.map((entry) => entry.id)
+        useModsStore.getState().mods.map((entry) => modFamily(entry.id))
       );
+      installed.add(modFamily(mod.id));
       const missing = mod.dependencies.filter(
-        (dep) => dep !== mod.id && !installed.has(dep)
+        (dep) => !sameModPage(dep, mod.id) && !installed.has(modFamily(dep))
       );
 
       if (missing.length > 0) {
@@ -69,6 +164,8 @@ export function useInstallMod() {
       }
     },
     onError: (error) => {
+      if (error instanceof InstallDecisionPending) return;
+
       // `mod.install.failed` is never published by the backend, so rejection is
       // the only signal; otherwise the status bar spins forever.
       failRunning("install", error);
@@ -77,13 +174,37 @@ export function useInstallMod() {
   });
 }
 
+export function useCheckModUpdate() {
+  return useMutation({
+    mutationFn: (id: string) => api.checkModUpdate(id),
+    onSuccess: (info) => useModsStore.getState().setUpdate(info),
+    onError: report,
+  });
+}
+
 export function useImportLink() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (link: string) => api.importLink(link),
+    mutationFn: async ({
+      link,
+      force = false,
+    }: {
+      link: string;
+      force?: boolean;
+    }) => {
+      if (!force) {
+        const modId = nxmModId(link);
+
+        if (modId) await requestReplacement({ sourceId: "nexus", modId, link });
+      }
+
+      return api.importLink(link, force);
+    },
     onSuccess: () => invalidate(queryClient, ["mods", "conflicts", "updates"]),
-    onError: report,
+    onError: (error) => {
+      if (!(error instanceof InstallDecisionPending)) report(error);
+    },
   });
 }
 
@@ -134,6 +255,12 @@ export function useToggleMod() {
           .getState()
           .patchMod(context.id, { enabled: context.previous });
       }
+
+      if (api.toBridgeError(error).code === "MOD_BLOCKED") {
+        notifyFailure(t("mods.blocked"), error);
+        return;
+      }
+
       report(error);
     },
     onSettled: () => invalidate(queryClient, ["mods", "conflicts"]),
@@ -190,9 +317,15 @@ export function useUpdateMod() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => api.updateMod(id),
+    mutationFn: ({ id }: { id: string; quiet?: boolean }) => api.updateMod(id),
     onSuccess: () => invalidate(queryClient, ["mods", "updates", "conflicts"]),
-    onError: report,
+    onError: (error, { id, quiet }) => {
+      failRunning("update", error, id);
+
+      // The update dialog keeps its own failure and offer; a toast behind it
+      // cannot be clicked while the modal holds pointer events.
+      if (!quiet) reportUpdateFailure(error, id);
+    },
   });
 }
 

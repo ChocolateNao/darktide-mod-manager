@@ -63,6 +63,13 @@ func CollectTree(root string) ([]TreeEntry, error) {
 		return nil, appErrors.New(appErrors.ErrCodeInvalidArgument, "%q is not a folder", root)
 	}
 
+	// Compare links against the resolved root: a temp directory on macOS sits
+	// behind the /var symlink, so the raw root cannot prefix-match a resolved link.
+	canonical := root
+	if resolved, resolveErr := filepath.EvalSymlinks(root); resolveErr == nil {
+		canonical = resolved
+	}
+
 	var entries []TreeEntry
 
 	walkErr := filepath.WalkDir(root, func(current string, entry fs.DirEntry, err error) error {
@@ -90,7 +97,7 @@ func CollectTree(root string) ([]TreeEntry, error) {
 					"resolve link %q", current)
 			}
 
-			if escapes(root, resolved) {
+			if escapes(canonical, resolved) {
 				return appErrors.New(appErrors.ErrCodeInvalidMod,
 					"link %q points outside the mod folder and was not collected", relative)
 			}

@@ -510,7 +510,7 @@ func (c *CacheManager) normaliseStaged(
 		}
 
 		return written, appErrors.Wrap(err, appErrors.ErrCodeConfigIO,
-			"read the download for mod %q", modLabel(mod))
+			"read the download for mod %q", userLabel(mod))
 	}
 
 	if !info.IsDir() {
@@ -521,7 +521,7 @@ func (c *CacheManager) normaliseStaged(
 
 	start := time.Now()
 
-	result, err := packFolder(ctx, written, archive, modLabel(mod))
+	result, err := packFolder(ctx, written, archive, userLabel(mod))
 	if err != nil {
 		_ = os.Remove(archive)
 		_ = os.RemoveAll(written)
@@ -593,31 +593,31 @@ func (c *CacheManager) validateStaged(
 	if err != nil {
 		if os.IsNotExist(err) {
 			return 0, appErrors.Wrap(err, appErrors.ErrCodeDownloadFailed,
-				"downloader reported success but wrote no file for mod %q", modLabel(mod))
+				"downloader reported success but wrote no file for mod %q", userLabel(mod))
 		}
 
 		return 0, appErrors.Wrap(
 			err,
 			appErrors.ErrCodeConfigIO,
 			"stat downloaded archive for mod %q",
-			modLabel(mod),
+			userLabel(mod),
 		)
 	}
 
 	if info.IsDir() {
 		return 0, appErrors.New(appErrors.ErrCodeDownloadFailed,
-			"downloader reported a directory for mod %q", modLabel(mod))
+			"downloader reported a directory for mod %q", userLabel(mod))
 	}
 
 	if info.Size() == 0 {
 		return 0, appErrors.New(appErrors.ErrCodeDownloadFailed,
-			"downloaded archive for mod %q is empty", modLabel(mod))
+			"downloaded archive for mod %q is empty", userLabel(mod))
 	}
 
 	if c.download != nil && c.config.VerifyHashes {
 		if err := c.download.Verify(ctx, mod, path); err != nil {
 			return 0, appErrors.Wrap(err, appErrors.ErrCodeIntegrity,
-				"downloaded copy of mod %q failed verification", modLabel(mod))
+				"downloaded copy of mod %q failed verification", userLabel(mod))
 		}
 	}
 
