@@ -1218,16 +1218,23 @@ func (s *ModService) unpack(
 		)
 	}
 
-	if err := os.RemoveAll(destDir); err != nil {
+	// Swap the staged payload in without deleting the previous one first: the old
+	// folder moves to a backup, the new one moves into place, and only then is the
+	// backup removed. A failed rename after a delete would leave the mod empty.
+	backup := destDir + ".old"
+	_ = os.RemoveAll(backup)
+
+	if err := os.Rename(destDir, backup); err != nil && !os.IsNotExist(err) {
 		return nil, appErrors.Wrap(
 			err,
 			appErrors.ErrCodeInstallFailed,
-			"clear the old payload at %q",
+			"move the old payload at %q aside",
 			destDir,
 		)
 	}
 
 	if err := os.Rename(staging, destDir); err != nil {
+		_ = os.Rename(backup, destDir)
 		return nil, appErrors.Wrap(
 			err,
 			appErrors.ErrCodeInstallFailed,
@@ -1235,9 +1242,8 @@ func (s *ModService) unpack(
 			destDir,
 		)
 	}
-	// On Windows a rename onto an existing path can leave the source behind,
-	// so the (now stale) staging path is removed a second time.
-	defer func() { _ = os.RemoveAll(staging) }()
+
+	_ = os.RemoveAll(backup)
 
 	files := make([]domain.ModFile, 0, len(result.Files))
 	for _, f := range result.Files {

@@ -20,8 +20,6 @@ const mask = "[REDACTED]"
 // hit the same entry.
 var defaultSensitive = []string{
 	"api_key",
-	"apikey",
-	"apiKey",
 	"token",
 	"access_token",
 	"refresh_token",

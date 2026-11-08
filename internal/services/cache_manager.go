@@ -413,9 +413,9 @@ func (c *CacheManager) downloadOnce(
 		return "", err
 	}
 
-	if err := installBlob(written, dest); err != nil {
+	if err := platform.ReplaceFile(written, dest); err != nil {
 		discardStaging(staging, written)
-		return "", err
+		return "", appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "install cached archive %q", dest)
 	}
 	// A blob with no index row is invisible to every later lookup and to
 	// pruning, so the row is written before the call reports success.
@@ -467,35 +467,11 @@ func discardStaging(paths ...string) {
 	}
 }
 
-// installBlob moves src onto dst, replacing whatever is there. The destination
-// is removed first because Windows cannot rename onto an existing file; that is
-// safe because dest is keyed by the cache key and only holds bytes for this same
-// download.
-func installBlob(src, dst string) error {
-	if src == dst {
-		return nil
-	}
-
-	if err := os.Rename(src, dst); err == nil {
-		return nil
-	}
-
-	if rmErr := os.Remove(dst); rmErr != nil && !os.IsNotExist(rmErr) {
-		return appErrors.Wrap(rmErr, appErrors.ErrCodeConfigIO, "replace cached archive %q", dst)
-	}
-
-	if err := os.Rename(src, dst); err != nil {
-		return appErrors.Wrap(err, appErrors.ErrCodeConfigIO, "install cached archive %q", dst)
-	}
-
-	return nil
-}
-
 // normaliseStaged turns whatever a source wrote into the single file the cache
 // promises, and returns the path to it. A folder is zipped next to the staging
-// path — next to, so installBlob's rename stays on one filesystem and stays
-// atomic — and then removed, since leaving it would leak a temporary copy of a
-// mod folder for the life of the process.
+// path — next to, so platform.ReplaceFile's rename stays on one filesystem and
+// stays atomic — and then removed, since leaving it would leak a temporary copy
+// of a mod folder for the life of the process.
 func (c *CacheManager) normaliseStaged(
 	ctx context.Context,
 	mod *domain.Mod,

@@ -238,6 +238,21 @@ func TestAtomicWriteFileFailureLeavesNoTemporary(t *testing.T) {
 	assertNoTempFiles(t, dir)
 }
 
+func TestReplaceFileKeepsDestinationWhenSourceIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "dst")
+	src := filepath.Join(dir, "src")
+
+	require.NoError(t, os.WriteFile(dst, []byte("keep me"), 0o600))
+
+	err := ReplaceFile(src, dst) // src does not exist
+	require.Error(t, err, "ReplaceFile with a missing source should fail")
+
+	got, readErr := os.ReadFile(dst)
+	require.NoError(t, readErr, "destination should still be readable")
+	assert.Equal(t, "keep me", string(got), "destination must survive a failed replace")
+}
+
 func assertNoTempFiles(t *testing.T, dir string) {
 	t.Helper()
 

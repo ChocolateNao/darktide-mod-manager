@@ -202,9 +202,8 @@ func AtomicWriteFile(path string, data []byte, perm os.FileMode) (err error) {
 	if err = tmp.Close(); err != nil {
 		return errors.Wrap(err, errors.ErrCodeConfigIO, "close %s", path)
 	}
-	// On Windows a rename over an existing file needs the destination removed
-	// first; ignore a "not there" failure.
-	if err = replaceFile(tmpName, path); err != nil {
+
+	if err = ReplaceFile(tmpName, path); err != nil {
 		return errors.Wrap(err, errors.ErrCodeConfigIO, "replace %s", path)
 	}
 
@@ -304,7 +303,7 @@ func CopyFile(src, dst string) error {
 		return errors.Wrap(err, errors.ErrCodeConfigIO, "set mode on %s", dst)
 	}
 
-	if err := replaceFile(tmpName, dst); err != nil {
+	if err := ReplaceFile(tmpName, dst); err != nil {
 		os.Remove(tmpName)
 		return errors.Wrap(err, errors.ErrCodeConfigIO, "replace %s", dst)
 	}
@@ -468,22 +467,58 @@ func RemoveEmptyDir(dir string) error {
 	return nil
 }
 
-// replaceFile renames src over dst. A host that refuses to rename onto an
-// existing file gets the destination cleared and the rename retried once, so a
-// genuinely broken rename is not masked by the remove step.
-func replaceFile(src, dst string) error {
-	renameErr := os.Rename(src, dst)
-	if renameErr == nil {
+// ReplaceFile renames src over dst. src and dst must share a filesystem, which
+// every caller guarantees by staging its temp file next to dst.
+//
+// Windows cannot rename onto an existing file, so the destination is removed
+// first — but only when it exists. A rename that failed for any other reason
+// (missing source, cross-device) must not delete dst, or a failed write would
+// also destroy the file it was trying to replace.
+func ReplaceFile(src, dst string) error {
+	if src == dst {
 		return nil
 	}
 
-	if removeErr := os.Remove(dst); removeErr != nil && !os.IsNotExist(removeErr) {
+	renameErr := os.Rename(src, dst)
+	if renameErr == nil {
+		syncDir(filepath.Dir(dst))
+		return nil
+	}
+
+	// Only Windows refuses to rename onto an existing file. Remove the
+	// destination only when both it and the source are still present, so a
+	// failure for any other reason never destroys the file being replaced.
+	if _, err := os.Lstat(dst); err != nil {
 		return renameErr
 	}
 
-	if retryErr := os.Rename(src, dst); retryErr != nil {
-		return retryErr
+	if _, err := os.Lstat(src); err != nil {
+		return renameErr
 	}
 
+	if err := os.Remove(dst); err != nil {
+		return err
+	}
+
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+
+	syncDir(filepath.Dir(dst))
+
 	return nil
+}
+
+// syncDir flushes a directory entry to disk so a rename inside it survives a
+// crash. It is best-effort: Windows cannot open a directory this way, and the
+// write has already succeeded by the time this runs.
+func syncDir(dir string) {
+	d, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+
+	defer d.Close()
+
+	_ = d.Sync()
 }
