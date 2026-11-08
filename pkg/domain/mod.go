@@ -263,6 +263,9 @@ type ConflictReport struct {
 	Type           ConflictType     `json:"type"`
 	ModA           *Mod             `json:"mod_a,omitempty"`
 	ModB           *Mod             `json:"mod_b,omitempty"`
+	// DependencyID names the missing dependency when there is no second mod to
+	// point at, so the UI can offer to install it.
+	DependencyID   string           `json:"dependency_id,omitempty"`
 	Details        string           `json:"details"`
 	Severity       ConflictSeverity `json:"severity"`
 	Recommendation string           `json:"recommendation"`

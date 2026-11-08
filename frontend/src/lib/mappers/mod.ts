@@ -107,6 +107,7 @@ export const mapConflicts = (raw: unknown): ConflictReport[] =>
     type: wire.type,
     modA: wire.mod_a ? fromModWire(wire.mod_a) : undefined,
     modB: wire.mod_b ? fromModWire(wire.mod_b) : undefined,
+    dependencyId: wire.dependency_id,
     details: wire.details,
     severity: wire.severity,
     recommendation: wire.recommendation,

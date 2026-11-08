@@ -831,6 +831,7 @@ export namespace domain {
 	    type: string;
 	    mod_a?: Mod;
 	    mod_b?: Mod;
+	    dependency_id?: string;
 	    details: string;
 	    severity: string;
 	    recommendation: string;
@@ -845,6 +846,7 @@ export namespace domain {
 	        this.type = source["type"];
 	        this.mod_a = this.convertValues(source["mod_a"], Mod);
 	        this.mod_b = this.convertValues(source["mod_b"], Mod);
+	        this.dependency_id = source["dependency_id"];
 	        this.details = source["details"];
 	        this.severity = source["severity"];
 	        this.recommendation = source["recommendation"];

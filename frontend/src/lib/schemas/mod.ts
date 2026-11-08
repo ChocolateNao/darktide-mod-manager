@@ -77,6 +77,7 @@ export const conflictReportWireSchema = z.object({
   type: z.string(),
   mod_a: modWireSchema.nullish(),
   mod_b: modWireSchema.nullish(),
+  dependency_id: optionalText,
   details: z.string().default(""),
   severity: z.string().default("warning"),
   recommendation: z.string().default(""),

@@ -85,6 +85,8 @@ export interface ConflictReport {
   type: ConflictType;
   modA?: Mod;
   modB?: Mod;
+  /** The missing dependency's id when a report has no second mod to name. */
+  dependencyId?: string;
   details: string;
   severity: ConflictSeverity;
   recommendation: string;

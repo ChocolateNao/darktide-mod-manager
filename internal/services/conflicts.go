@@ -683,9 +683,10 @@ func dependencyConflicts(
 				// No ModB: the dependency is not installed, so there is no mod to
 				// point at and no "disable mod B" action to offer.
 				out = append(out, domain.ConflictReport{
-					Type:     domain.ConflictLoadOrder,
-					ModA:     &m,
-					Severity: domain.SeverityError,
+					Type:         domain.ConflictLoadOrder,
+					ModA:         &m,
+					DependencyID: dep,
+					Severity:     domain.SeverityError,
 					Details: fmt.Sprintf(
 						"%s requires %s, which is not installed",
 						userLabel(&m),

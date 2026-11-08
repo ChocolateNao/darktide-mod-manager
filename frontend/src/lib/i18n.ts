@@ -258,6 +258,8 @@ const messages = {
   "conflicts.summary": "{count} conflict(s), {errors} blocking",
   "conflicts.rescan": "Rescan",
   "conflicts.resolve.keep-both": "Keep both",
+  "conflicts.resolve.enable": "Enable {name}",
+  "conflicts.resolve.update": "Update {name}",
   "conflicts.resolve.disable-mod-a": "Disable {name}",
   "conflicts.resolve.disable-mod-b": "Disable {name}",
   "conflicts.resolve.uninstall-mod-a": "Uninstall {name}",
