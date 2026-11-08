@@ -6,6 +6,7 @@ import { ModTable } from "@/components/mods/ModTable";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { t } from "@/lib/i18n";
 import { hookPhases } from "@/lib/schemas/mod";
+import { useInstallPromptStore } from "@/stores/installPrompt.store";
 import { useModsStore } from "@/stores/mods.store";
 import type { Mod, ModHooks } from "@/types/domain";
 
@@ -14,11 +15,13 @@ import type { Mod, ModHooks } from "@/types/domain";
 const reorderMutate = vi.hoisted(() => vi.fn());
 const bulkToggleMutate = vi.hoisted(() => vi.fn());
 const bulkUninstallMutate = vi.hoisted(() => vi.fn());
+const checkUpdateMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/mutations", () => ({
   useBulkToggleMods: () => ({ mutate: bulkToggleMutate }),
   useBulkUninstallMods: () => ({ mutate: bulkUninstallMutate }),
   useCancelUpdate: () => ({ isPending: false, mutate: vi.fn() }),
+  useCheckModUpdate: () => ({ isPending: false, mutate: checkUpdateMutate }),
   useRelinkMod: () => ({ isPending: false, mutate: vi.fn() }),
   useReorderMods: () => ({ mutate: reorderMutate }),
   useToggleMod: () => ({ isPending: false, mutate: vi.fn() }),
@@ -91,6 +94,8 @@ describe("ModTable load order", () => {
   beforeEach(() => {
     useModsStore.getState().clearSelection();
     useModsStore.getState().setUpdates([]);
+    useInstallPromptStore.getState().clear();
+    checkUpdateMutate.mockReset();
     seed([], []);
   });
 
@@ -131,7 +136,7 @@ describe("ModTable load order", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows an update icon instead of a text badge", () => {
+  it("offers a clickable update tag that asks before updating", async () => {
     seed([mod("alpha")], ["alpha"]);
     useModsStore.getState().setUpdates([
       {
@@ -145,14 +150,33 @@ describe("ModTable load order", () => {
 
     renderTable();
 
-    expect(
-      within(rowFor("ALPHA")).getByRole("img", {
-        name: t("mods.updateAvailable"),
-      })
-    ).toBeInTheDocument();
-    expect(
-      within(rowFor("ALPHA")).queryByText(t("mods.updateAvailable"))
-    ).not.toBeInTheDocument();
+    const tag = within(rowFor("ALPHA")).getByRole("button", {
+      name: t("mods.updateAction"),
+    });
+    expect(tag).toBeInTheDocument();
+
+    await userEvent.setup().click(tag);
+
+    expect(useInstallPromptStore.getState().pending).toMatchObject({
+      mode: "update",
+      modId: "alpha",
+      targetVersion: "2.0.0",
+      direction: "update",
+    });
+  });
+
+  it("checks the selected mod for updates from the actions menu", async () => {
+    seed([mod("alpha")], ["alpha"]);
+
+    renderTable();
+
+    const user = userEvent.setup();
+    await user.click(
+      within(rowFor("ALPHA")).getByRole("button", { name: t("mods.more") })
+    );
+    await user.click(screen.getByText(t("mods.checkUpdate")));
+
+    expect(checkUpdateMutate).toHaveBeenCalledWith("alpha", expect.anything());
   });
 
   it("shortens the external disabled badge and keeps the full text as a tooltip", () => {

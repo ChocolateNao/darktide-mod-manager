@@ -359,6 +359,10 @@ func TestCurrentDirs(t *testing.T) {
 	assert.True(t, filepath.IsAbs(dirs.Logs), "Logs dir %q is not absolute", dirs.Logs)
 
 	want := filepath.ToSlash(filepath.Join(AppName, "logs"))
+	if runtime.GOOS == "darwin" {
+		want = filepath.ToSlash(filepath.Join("Library", "Logs", AppName))
+	}
+
 	assert.True(
 		t,
 		strings.HasSuffix(filepath.ToSlash(dirs.Logs), want),

@@ -83,6 +83,12 @@ func TestCheckModUpdatesIgnoresADowngrade(t *testing.T) {
 
 	assert.False(t, infos[0].Available, "an older remote version is not an update")
 
+	assert.True(
+		t,
+		infos[0].RemoteOlder,
+		"an older remote version is a downgrade target",
+	)
+
 	assert.Equal(
 		t,
 		"0.5.0",
@@ -223,6 +229,29 @@ func TestApplyUpdateReplacesThePayloadAndTheRecord(t *testing.T) {
 			h.events.types(),
 			EventModUpdateCompleted,
 		), "events = %v, want started and completed", h.events.types())
+}
+
+func TestApplyUpdatePublishesNoInstallActivityEvents(t *testing.T) {
+	h := updateScenario(t)
+	before := len(h.events.types())
+
+	_, err := h.svc.ApplyUpdate(context.Background(), "better_ui")
+	require.NoError(t, err, "ApplyUpdate")
+
+	for _, typ := range h.events.types()[before:] {
+		assert.NotEqual(
+			t,
+			EventModInstallStarted,
+			typ,
+			"an update must not start a second status row",
+		)
+		assert.NotEqual(
+			t,
+			EventModInstallCompleted,
+			typ,
+			"an update reports its own completion",
+		)
+	}
 }
 
 func TestApplyUpdateWithZeroRetentionRemovesTheOldPayload(t *testing.T) {
@@ -1245,4 +1274,213 @@ func TestApplyUpdateNeverRemovesAPayloadOutsideStorage(t *testing.T) {
 		_, err := os.Stat(outsideFile)
 		assert.NoError(t, err, "update removed a folder outside the storage root: %v", err)
 	}
+}
+
+func TestCheckModUpdateReportsOnlyTheNamedMod(t *testing.T) {
+	h := updateScenario(t)
+
+	info, err := h.svc.CheckModUpdate(context.Background(), "better_ui")
+	require.NoError(t, err, "CheckModUpdate")
+
+	assert.Equal(t, "better_ui", info.ModID)
+	assert.Equal(t, "1.0.0", info.LocalVersion)
+	assert.Equal(t, "2.0.0", info.RemoteVersion)
+	assert.True(t, info.Available)
+}
+
+func TestCheckModUpdateUnknownMod(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.svc.CheckModUpdate(context.Background(), "ghost")
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeModNotFound),
+		"want MOD_NOT_FOUND, got %v",
+		err,
+	)
+}
+
+func TestCheckModUpdateBlankID(t *testing.T) {
+	h := newHarness(t)
+
+	_, err := h.svc.CheckModUpdate(context.Background(), "   ")
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeInvalidArgument),
+		"want INVALID_ARGUMENT, got %v",
+		err,
+	)
+}
+
+func TestForcedInstallDowngradesAndRemovesTheOldPayload(t *testing.T) {
+	cfg := domain.DefaultConfig()
+	cfg.Storage.Path = ""
+	cfg.Storage.BackupRetentionDays = 0
+
+	h := updateScenario(t, func(o *harnessOpts) {
+		o.config = newStaticConfig(&cfg)
+	})
+	older := h.installed(t, "better_ui")
+	olderPath := older.LocalPath
+
+	h.source.mods["better_ui"] = modFixture("better_ui", "0.9.0")
+	h.cache.archives["better_ui"] = writeZipArchive(
+		t,
+		filepath.Join(h.archives, "better_ui-090.zip"),
+		"better_ui.dll",
+	)
+
+	installed, err := h.svc.Install(
+		context.Background(),
+		"vortex",
+		"better_ui",
+		InstallOptions{Force: true},
+	)
+	require.NoError(t, err, "forced downgrade")
+
+	assert.Equal(t, "0.9.0", installed.Version)
+	assert.Equal(t, h.payloadPath("better_ui", "0.9.0"), installed.LocalPath)
+	assert.True(
+		t,
+		installed.InstalledAt.Equal(older.InstalledAt),
+		"InstalledAt moved from %v to %v",
+		older.InstalledAt,
+		installed.InstalledAt,
+	)
+
+	{
+		_, err := os.Stat(olderPath)
+		assert.True(
+			t,
+			os.IsNotExist(err),
+			"zero retention should remove %q, stat error = %v",
+			olderPath,
+			err,
+		)
+	}
+}
+
+// fileMod is a mod from a source that publishes several files for one mod page.
+func fileMod(id, version, modID string) *domain.Mod {
+	m := bareMod(id, version)
+	m.SourceData = map[string]any{
+		"download_url": "https://example.test/" + id + "-" + version + ".zip",
+		"mod_id":       modID,
+	}
+
+	return m
+}
+
+func TestInstallReplacesAnotherFileOfTheSameMod(t *testing.T) {
+	h := newHarness(t)
+
+	old := fileMod("nexus-8-7495", "1.3.2", "8")
+	h.withArchive(t, old)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", old.ID)
+	require.NoError(t, err, "install the old file: %v", err)
+
+	fresh := fileMod("nexus-8-191620", "26.10.22", "8")
+	h.withArchive(t, fresh)
+
+	_, err = h.svc.InstallMod(context.Background(), "vortex", fresh.ID)
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeModAlreadyExists),
+		"a second file of the same mod must not install silently: %v",
+		err,
+	)
+
+	updated, err := h.svc.Install(
+		context.Background(),
+		"vortex",
+		fresh.ID,
+		InstallOptions{Force: true},
+	)
+	require.NoError(t, err, "replace the installed file: %v", err)
+
+	assert.Equal(t, fresh.ID, updated.ID, "the replacement adopts the id of the file it installed")
+
+	mods, err := h.index.List(context.Background())
+	require.NoError(t, err, "List")
+	require.Len(t, mods, 1, "installing another file added a second row: %v", mods)
+
+	assert.Equal(t, fresh.ID, mods[0].ID)
+	assert.Equal(t, "26.10.22", mods[0].Version)
+}
+
+func TestInstallRetiresOtherFilesOfTheSameMod(t *testing.T) {
+	h := newHarness(t)
+
+	require.NoError(t, h.index.Save(context.Background(), fileMod("nexus-8-7495", "1.3.2", "8")))
+	require.NoError(
+		t,
+		h.index.Save(context.Background(), fileMod("nexus-8-191620", "26.10.22", "8")),
+	)
+
+	fresh := fileMod("nexus-8-191620", "26.10.23", "8")
+	h.withArchive(t, fresh)
+
+	_, err := h.svc.Install(
+		context.Background(),
+		"vortex",
+		fresh.ID,
+		InstallOptions{Force: true},
+	)
+	require.NoError(t, err, "install over two recorded files: %v", err)
+
+	assert.False(
+		t,
+		h.index.stored("nexus-8-7495"),
+		"the other file of the same mod must be retired",
+	)
+	assert.True(t, h.index.stored("nexus-8-191620"))
+}
+
+func TestApplyUpdateUsesTheNewestFileOfTheModPage(t *testing.T) {
+	h := newHarness(t)
+
+	old := fileMod("nexus-8-7495", "1.3.2", "8")
+	h.withArchive(t, old)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", old.ID)
+	require.NoError(t, err, "install the old file: %v", err)
+
+	fresh := fileMod("nexus-8-191620", "26.10.22", "8")
+	h.withArchive(t, fresh)
+	h.source.latest = map[string]*domain.Mod{old.ID: fresh}
+
+	info, err := h.svc.CheckModUpdate(context.Background(), old.ID)
+	require.NoError(t, err, "CheckModUpdate")
+	assert.True(t, info.Available, "the newer file of the same page is an update: %+v", info)
+	assert.Equal(t, "26.10.22", info.RemoteVersion)
+
+	updated, err := h.svc.ApplyUpdate(context.Background(), old.ID)
+	require.NoError(t, err, "ApplyUpdate: %v", err)
+
+	assert.Equal(t, fresh.ID, updated.ID, "an update adopts the id of the file it downloaded")
+	assert.Equal(t, "26.10.22", updated.Version)
+
+	mods, err := h.index.List(context.Background())
+	require.NoError(t, err, "List")
+	require.Len(t, mods, 1, "the update left a second row behind: %v", mods)
+	assert.Equal(t, fresh.ID, mods[0].ID)
+
+	var completed *Event
+
+	for _, event := range h.events.forMod(fresh.ID) {
+		if event.Type == EventModUpdateCompleted {
+			completed = &event
+		}
+	}
+
+	require.NotNil(t, completed, "no update completed event for the new id")
+	data, ok := completed.Data.(installEventData)
+	require.True(t, ok, "completed event data = %T", completed.Data)
+	assert.Equal(
+		t,
+		old.ID,
+		data.PreviousID,
+		"the completed event must name the row the started event opened",
+	)
 }

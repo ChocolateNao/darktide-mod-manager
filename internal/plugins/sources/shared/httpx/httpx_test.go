@@ -496,9 +496,11 @@ func TestStatusErrorMapping(t *testing.T) {
 }
 
 func TestStatusErrorQuirksOfErrorBodies(t *testing.T) {
-	// A JSON error body is worth quoting: it usually names the offending field.
+	// A JSON error body is worth keeping: it usually names the offending field,
+	// and leaving it verbatim lets the UI render it as a document.
 	err := statusError(KindMeta, 422, "https://example.test/x", []byte(`{"error":"bad version"}`))
-	assert.Contains(t, err.Error(), "bad version", "JSON error body not quoted: %q", err.Error())
+	assert.Contains(t, err.Error(), `{"error":"bad version"}`,
+		"JSON error body was escaped: %q", err.Error())
 	// An HTML body is not: every host has one and it tells the user nothing.
 	html := statusError(
 		KindMeta,
@@ -516,6 +518,15 @@ func TestStatusErrorQuirksOfErrorBodies(t *testing.T) {
 	if strings.Contains(long.Error(), strings.Repeat("x", 400)) {
 		assert.Fail(t, "long error body was not actually cut")
 	}
+	// A JSON body longer than the snippet limit must stay whole, or it stops
+	// parsing and the UI falls back to escaped text.
+	big := `{"error":"` + strings.Repeat("x", 400) + `"}`
+	kept := statusError(KindMeta, 422, "https://example.test/x", []byte(big))
+	assert.Contains(t, kept.Error(), big, "a large JSON body was cut: %q", kept.Error())
+	// Past the JSON limit the body is dropped instead of truncated.
+	huge := statusError(KindMeta, 422, "https://example.test/x",
+		[]byte(`{"error":"`+strings.Repeat("x", 5_000)+`"}`))
+	assert.NotContains(t, huge.Error(), "xxxxx", "a huge JSON body was truncated: %q", huge.Error())
 	// Whitespace-only bodies are dropped, not quoted as "".
 	blank := statusError(KindMeta, 400, "https://example.test/x", []byte("   \n  "))
 	assert.False(

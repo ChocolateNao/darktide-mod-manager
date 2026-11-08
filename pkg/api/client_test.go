@@ -43,6 +43,10 @@ func everyOperation() []clientOperation {
 		{func(c *Client) error { _, err := c.ApplyUpdate(ctx, "m"); return err }, "ApplyUpdate"},
 		{func(c *Client) error { return c.CancelUpdate(ctx, "m") }, "CancelUpdate"},
 		{func(c *Client) error { _, err := c.CheckModUpdates(ctx); return err }, "CheckModUpdates"},
+		{
+			func(c *Client) error { _, err := c.CheckModUpdate(ctx, "m"); return err },
+			"CheckModUpdate",
+		},
 		{func(c *Client) error { return c.RefreshMods(ctx) }, "RefreshMods"},
 		{func(c *Client) error { _, err := c.DetectConflicts(ctx); return err }, "DetectConflicts"},
 		{

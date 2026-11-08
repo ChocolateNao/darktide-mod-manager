@@ -118,6 +118,8 @@ vi.mock("wailsjs/go/commands/ModCommands", () => ({
     stubFor("ModCommands", "CancelUpdate")(...rest),
   CheckModUpdates: (...rest: unknown[]) =>
     stubFor("ModCommands", "CheckModUpdates")(...rest),
+  CheckModUpdate: (...rest: unknown[]) =>
+    stubFor("ModCommands", "CheckModUpdate")(...rest),
   DetectConflicts: (...rest: unknown[]) =>
     stubFor("ModCommands", "DetectConflicts")(...rest),
   DisableMod: (...rest: unknown[]) =>
@@ -131,6 +133,8 @@ vi.mock("wailsjs/go/commands/ModCommands", () => ({
     stubFor("ModCommands", "ImportLink")(...rest),
   InstallMod: (...rest: unknown[]) =>
     stubFor("ModCommands", "InstallMod")(...rest),
+  InstallModWithOptions: (...rest: unknown[]) =>
+    stubFor("ModCommands", "InstallModWithOptions")(...rest),
   ListMods: (...rest: unknown[]) => stubFor("ModCommands", "ListMods")(...rest),
   LoadOrder: (...rest: unknown[]) =>
     stubFor("ModCommands", "LoadOrder")(...rest),
@@ -234,6 +238,7 @@ vi.mock("wailsjs/go/models", () => ({
  * literal), so the arity is spelled out. */
 const FORWARDED_ARITY: Record<string, number> = {
   ImportLink: 2,
+  InstallModWithOptions: 3,
   UninstallModWithOptions: 2,
   UpdateModHooks: 2,
   SearchAll: 1,
@@ -248,13 +253,18 @@ const emptyHooks = (): ModHooks =>
 const wrappers: Record<string, [string, string, unknown[]]> = {
   listMods: ["ModCommands", "ListMods", []],
   getMod: ["ModCommands", "GetMod", ["mod-1"]],
-  installMod: ["ModCommands", "InstallMod", ["nexus", "nexus-1-2"]],
+  installMod: [
+    "ModCommands",
+    "InstallModWithOptions",
+    ["nexus", "nexus-1-2", { Force: false, PurgeCache: false, SourceData: {} }],
+  ],
   importLink: ["ModCommands", "ImportLink", ["dmm://p2p/x"]],
   shareLinkForMod: ["ModCommands", "ShareLinkForMod", ["mod-1"]],
   uninstallMod: ["ModCommands", "UninstallModWithOptions", ["mod-1", false]],
   enableMod: ["ModCommands", "EnableMod", ["mod-1"]],
   disableMod: ["ModCommands", "DisableMod", ["mod-1"]],
   checkModUpdates: ["ModCommands", "CheckModUpdates", []],
+  checkModUpdate: ["ModCommands", "CheckModUpdate", ["mod-1"]],
   updateMod: ["ModCommands", "UpdateMod", ["mod-1"]],
   cancelUpdate: ["ModCommands", "CancelUpdate", ["mod-1"]],
   refreshMods: ["ModCommands", "RefreshMods", []],

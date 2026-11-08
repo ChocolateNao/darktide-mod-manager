@@ -257,6 +257,28 @@ describe("routeEvent", () => {
     expect(calls.changed).toEqual(["mods", "conflicts"]);
   });
 
+  it("closes the update row after the replacement changed the mod id", () => {
+    const { calls, sink } = recorder();
+
+    routeEvent(
+      envelope("mod.update.started", {
+        mod_id: "nexus-8-7495",
+        data: { version: "26.10.22" },
+      }),
+      sink
+    );
+    routeEvent(
+      envelope("mod.update.completed", {
+        mod_id: "nexus-8-191620",
+        data: { version: "26.10.22", previous_id: "nexus-8-7495" },
+      }),
+      sink
+    );
+
+    expect(calls.began).toHaveLength(1);
+    expect(calls.finished).toEqual(["a1"]);
+  });
+
   it("closes the uninstall row the started event opened", () => {
     const { calls, sink } = recorder();
 

@@ -24,7 +24,7 @@ describe("notify", () => {
     notify({ title: "Installed", category: "install" });
 
     expect(toast).toHaveBeenCalledWith("Installed", {
-      description: undefined,
+      description: "",
     });
     expect(useNotificationsStore.getState().pending).toHaveLength(0);
   });

@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -265,7 +267,7 @@ func TestDetectConflictsDeclaredIncompatibilityIsSymmetric(t *testing.T) {
 	assert.Contains(
 		t,
 		report.Details,
-		"alpha declares",
+		"alpha 1.0.0 declares",
 		"details should say who declared it, got %q",
 		report.Details,
 	)
@@ -477,14 +479,19 @@ func TestDetectConflictsSurvivesAnUnreadableInventory(t *testing.T) {
 }
 
 func TestOverlapDetailsSingularAndPlural(t *testing.T) {
+	alpha := conflictMod("alpha")
+	alpha.Name, alpha.Version = "Alpha", "1.0.0"
+	beta := conflictMod("beta")
+	beta.Name, beta.Version = "Beta", "2.0.0"
+
 	{
 		got, want := overlapDetails(
-			[]string{"a.dll"},
-		), `both expose "a.dll" in the game mods folder`
+			&alpha, &beta, []string{"a.dll"},
+		), `Alpha 1.0.0 and Beta 2.0.0 both expose "a.dll" in the game mods folder`
 		assert.Equal(t, want, got, "one file: %q, want %q", got, want)
 	}
 
-	got := overlapDetails([]string{"c.dll", "a.dll", "b.dll"})
+	got := overlapDetails(&alpha, &beta, []string{"c.dll", "a.dll", "b.dll"})
 	assert.False(
 		t,
 		!strings.Contains(got, "3 entries") || !strings.Contains(got, `"a.dll"`),
@@ -493,15 +500,16 @@ func TestOverlapDetailsSingularAndPlural(t *testing.T) {
 	)
 
 	{
-		got := overlapDetails(nil)
-		assert.Equal(t, "no shared entries", got, "no files: %q, want %q", got, "no shared entries")
+		got := overlapDetails(&alpha, &beta, nil)
+		assert.Equal(t, "Alpha 1.0.0 and Beta 2.0.0 share no entries", got,
+			"no files: %q", got)
 	}
 }
 
 func TestOverlapDetailsDoesNotMutateItsArgument(t *testing.T) {
 	files := []string{"c.dll", "a.dll"}
 
-	_ = overlapDetails(files)
+	_ = overlapDetails(&domain.Mod{}, &domain.Mod{}, files)
 	assert.False(
 		t,
 		files[0] != "c.dll" || files[1] != "a.dll",
@@ -572,6 +580,33 @@ func TestDetectConflictsDisabledDependencyIsAWarning(t *testing.T) {
 	)
 }
 
+func TestDetectConflictsMatchesDependencyAcrossFilesOfOneModPage(t *testing.T) {
+	h := newHarness(t)
+
+	dependent := conflictMod("nexus-1450-8149575")
+	dependent.Dependencies = []string{"nexus-8-191620"}
+
+	h.index.put(&dependent)
+	h.index.put(&domain.Mod{
+		ID:         "nexus-8-7495",
+		Name:       "Darktide Mod Framework",
+		Version:    "1.3.2",
+		SourceID:   "nexus",
+		Enabled:    true,
+		SourceData: map[string]any{"mod_id": "8"},
+	})
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	assert.Nil(
+		t,
+		reportFor(reports, domain.ConflictLoadOrder),
+		"a dependency on another file of an installed page is satisfied: %v",
+		reportTypes(reports),
+	)
+}
+
 func TestDetectConflictsIgnoresBlankDependency(t *testing.T) {
 	h := newHarness(t)
 	a := conflictMod("alpha")
@@ -629,7 +664,7 @@ func TestDetectConflictsCycle(t *testing.T) {
 			)
 
 			assert.False(t, strings.Contains(reports[i].Details, " -> ") &&
-				!strings.Contains(reports[i].Details, "gamma -> alpha") &&
+				!strings.Contains(reports[i].Details, "gamma 1.0.0 -> alpha 1.0.0") &&
 				strings.Count(
 					reports[i].Details,
 					"->",
@@ -783,6 +818,127 @@ func TestDetectConflictsLoadOrderFailureIsNotFatal(t *testing.T) {
 	assert.Empty(t, reports, "expected no reports, got %v", reportTypes(reports))
 }
 
+func TestDetectConflictsOlderFileOfTheRequiredPageIsAVersionMismatch(t *testing.T) {
+	h := newHarness(t)
+	dependent := conflictMod("nexus-9-300")
+	dependent.Dependencies = []string{"nexus-8-200"}
+	h.index.put(&dependent)
+	h.index.putValue(conflictMod("nexus-8-100"))
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	report := reportFor(reports, domain.ConflictVersionMismatch, "nexus-8-100", "nexus-9-300")
+	require.NotNil(t, report,
+		"an older file of the required page is still a mismatch: %v", reportTypes(reports))
+
+	assert.Contains(t, report.Details, "nexus-8-100 1.0.0",
+		"the details should name the installed file")
+}
+
+func TestDetectConflictsReportsAVersionGapOnce(t *testing.T) {
+	h := newHarness(t)
+
+	dependent := conflictMod("nexus-9-300")
+	dependent.Dependencies = []string{"nexus-8-200"}
+	dependent.SourceData = map[string]any{
+		"required_versions": map[string]string{"nexus-8-200": ">=2.0.0"},
+	}
+	h.index.put(&dependent)
+	h.index.putValue(conflictMod("nexus-8-100"))
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	count := 0
+
+	for i := range reports {
+		if reports[i].Type == domain.ConflictVersionMismatch {
+			count++
+		}
+	}
+
+	assert.Equal(t, 1, count, "one pair must produce one report: %v", reportTypes(reports))
+}
+
+func TestDetectConflictsNewerFileOfTheRequiredPageSatisfiesIt(t *testing.T) {
+	h := newHarness(t)
+	dependent := conflictMod("nexus-9-300")
+	dependent.Dependencies = []string{"nexus-8-100"}
+	h.index.put(&dependent)
+	h.index.putValue(conflictMod("nexus-8-200"))
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	assert.Nil(t, reportFor(reports, domain.ConflictVersionMismatch),
+		"a later file of the page satisfies the dependency: %v", reportTypes(reports))
+}
+
+func TestEnableWithAnOlderRequiredFileKeepsTheWarning(t *testing.T) {
+	h := newHarness(t)
+
+	older := modFixture("nexus-8-100", "1.0.0")
+	h.withArchive(t, older)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", older.ID)
+	require.NoError(t, err, "install the older file")
+
+	dependent := modFixture("nexus-9-300", "1.0.0")
+	dependent.Dependencies = []string{"nexus-8-200"}
+	h.withArchive(t, dependent)
+
+	_, err = h.svc.Install(context.Background(), "vortex", dependent.ID,
+		InstallOptions{Enable: boolPtr(false)})
+	require.NoError(t, err, "install the dependent")
+
+	err = h.svc.EnableMod(context.Background(), dependent.ID)
+	require.Error(t, err, "an unresolved version gap must block enabling")
+
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeModBlocked),
+		"blocked enable: got %v",
+		err,
+	)
+	assert.False(t, h.installed(t, dependent.ID).Enabled,
+		"the dependent must not stay enabled while its requirement is unmet")
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	assert.NotNil(
+		t,
+		reportFor(reports, domain.ConflictVersionMismatch, "nexus-8-100", "nexus-9-300"),
+		"the warning must survive the automatic disable: %v",
+		reportTypes(reports),
+	)
+}
+
+func TestDetectConflictsReadsTheLoadOrderFileNotTheStoredOrder(t *testing.T) {
+	h := gameWithLoadOrder(t)
+	a := conflictMod("alpha")
+	a.ModFolderName = "alpha"
+	a.Dependencies = []string{"beta"}
+	h.index.put(&a)
+
+	b := conflictMod("beta")
+	b.ModFolderName = "beta"
+	h.index.put(&b)
+
+	// The stored order is wrong and the file the game reads is right.
+	h.index.setOrder([]string{"alpha", "beta"})
+	writeLoadOrderFile(t, h, "beta", "alpha")
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	for i := range reports {
+		assert.NotContains(t, reports[i].Details, "loads before",
+			"the file loads beta first, so nothing is wrong: %q", reports[i].Details)
+	}
+}
+
 func TestDetectConflictsVersionMismatch(t *testing.T) {
 	h := newHarness(t)
 	a := conflictMod("alpha")
@@ -820,6 +976,22 @@ func TestDetectConflictsVersionSatisfiedIsNotReported(t *testing.T) {
 		r := reportFor(reports, domain.ConflictVersionMismatch)
 		assert.Nil(t, r, "2.5.0 satisfies >=1.0.0: %+v", r)
 	}
+}
+
+func TestDetectConflictsVersionMismatchFollowsThePageWhenTheFileIdChanged(t *testing.T) {
+	h := newHarness(t)
+	a := conflictMod("alpha")
+	a.Dependencies = []string{"nexus-8-100"}
+	a.SourceData = map[string]any{"required_versions": map[string]string{"nexus-8-100": ">=2.0.0"}}
+	h.index.put(&a)
+	h.index.put(&domain.Mod{ID: "nexus-8-200", Version: "1.0.0", Enabled: true})
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	report := reportFor(reports, domain.ConflictVersionMismatch, "alpha", "nexus-8-200")
+	require.NotNil(t, report,
+		"the requirement should follow the installed file, got %v", reportTypes(reports))
 }
 
 func TestDetectConflictsVersionMismatchAcceptsJSONRoundTrippedMap(t *testing.T) {
@@ -1440,4 +1612,192 @@ func TestConflictInventoryUsesStoredNames(t *testing.T) {
 		"backslashes should fold to the same top-level entry, got %v",
 		reportTypes(reports),
 	)
+}
+
+func TestEnableModDisablesTheModItConflictsWith(t *testing.T) {
+	h := newHarness(t)
+
+	other := modFixture("other_mod", "1.0.0")
+	other.ConflictsWith = []string{"better_ui"}
+	h.withArchive(t, other)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", other.ID)
+	require.NoError(t, err, "install the conflicting mod: %v", err)
+
+	mod := modFixture("better_ui", "2.0.0")
+	h.withArchive(t, mod)
+
+	_, err = h.svc.Install(
+		context.Background(),
+		"vortex",
+		mod.ID,
+		InstallOptions{Enable: boolPtr(false)},
+	)
+	require.NoError(t, err, "install the mod disabled: %v", err)
+
+	require.NoError(
+		t,
+		h.svc.EnableMod(context.Background(), mod.ID),
+		"enable the mod",
+	)
+
+	assert.True(
+		t,
+		h.installed(t, mod.ID).Enabled,
+		"the mod the user just enabled must stay enabled",
+	)
+	assert.False(t, h.installed(t, other.ID).Enabled, "the conflicting mod must be disabled")
+}
+
+func TestEnableRefusesWhenADependencyIsMissing(t *testing.T) {
+	h := newHarness(t)
+
+	other := modFixture("other", "1.0.0")
+	h.withArchive(t, other)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", other.ID)
+	require.NoError(t, err, "install an unrelated mod so the load order file exists")
+
+	dependent := modFixture("needs_ghost", "1.0.0")
+	dependent.Dependencies = []string{"ghost"}
+	h.withArchive(t, dependent, "needs_ghost/file.txt")
+
+	_, err = h.svc.Install(context.Background(), "vortex", dependent.ID,
+		InstallOptions{Enable: boolPtr(false)})
+	require.NoError(t, err, "install the dependent mod disabled")
+
+	err = h.svc.EnableMod(context.Background(), dependent.ID)
+	require.Error(t, err, "a missing dependency must block enabling")
+
+	assert.True(t, appErrors.IsAppError(err, appErrors.ErrCodeModBlocked),
+		"blocked enable: got %v", err)
+	assert.False(t, h.installed(t, dependent.ID).Enabled,
+		"a refused enable must leave the mod disabled")
+
+	content, readErr := os.ReadFile(filepath.Join(h.locator.modsPath, "mod_load_order.txt"))
+	require.NoError(t, readErr, "read load order file")
+	assert.NotContains(t, string(content), h.installed(t, dependent.ID).ModFolderName,
+		"a refused enable must not add the mod to the load order")
+
+	// The block clears as soon as the dependency exists.
+	ghost := modFixture("ghost", "1.0.0")
+	h.withArchive(t, ghost)
+
+	_, err = h.svc.InstallMod(context.Background(), "vortex", ghost.ID)
+	require.NoError(t, err, "install the missing dependency")
+
+	require.NoError(t, h.svc.EnableMod(context.Background(), dependent.ID),
+		"the mod enables once the dependency is installed")
+	assert.True(t, h.installed(t, dependent.ID).Enabled)
+}
+
+func TestEnforcementRemovesTheBlockedModFromTheLoadOrderFile(t *testing.T) {
+	h := gameWithLoadOrder(t)
+
+	other := modFixture("other", "1.0.0")
+	h.withArchive(t, other, "other/file.txt")
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", other.ID)
+	require.NoError(t, err, "install an unrelated mod")
+
+	mod := modFixture("needs_ghost", "1.0.0")
+	mod.Dependencies = []string{"ghost"}
+	h.withArchive(t, mod, "needs_ghost/file.txt")
+
+	_, err = h.svc.Install(context.Background(), "vortex", mod.ID, InstallOptions{})
+	require.NoError(t, err, "install the blocked mod")
+
+	content, readErr := os.ReadFile(
+		filepath.Join(h.locator.modsPath, testLoadOrder),
+	)
+	require.NoError(t, readErr, "read load order file")
+
+	assert.NotContains(t, string(content), "needs_ghost",
+		"the game must not load a mod with a blocking issue")
+	assert.Contains(t, string(content), "other",
+		"the healthy mod keeps its line")
+}
+
+func TestInstallDisablesAModWithAMissingDependency(t *testing.T) {
+	h := newHarness(t)
+
+	mod := modFixture("needs_ghost", "1.0.0")
+	mod.Dependencies = []string{"ghost"}
+	h.withArchive(t, mod)
+
+	_, err := h.svc.Install(context.Background(), "vortex", mod.ID, InstallOptions{})
+	require.NoError(t, err, "install the mod enabled")
+
+	assert.False(t, h.installed(t, mod.ID).Enabled,
+		"a blocking issue must leave the mod disabled")
+}
+
+func TestEnableVersionMismatchKeepsTheDependentModDisabled(t *testing.T) {
+	h := newHarness(t)
+
+	dep := modFixture("framework", "1.0.0")
+	h.withArchive(t, dep)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", dep.ID)
+	require.NoError(t, err, "install the dependency")
+
+	dependent := modFixture("dependent", "1.0.0")
+	dependent.Dependencies = []string{"framework"}
+	dependent.SourceData["required_versions"] = map[string]string{"framework": ">=2.0.0"}
+	h.withArchive(t, dependent)
+
+	_, err = h.svc.Install(
+		context.Background(),
+		"vortex",
+		dependent.ID,
+		InstallOptions{Enable: boolPtr(false)},
+	)
+	require.NoError(t, err, "install the dependent mod disabled")
+
+	err = h.svc.EnableMod(context.Background(), dependent.ID)
+	require.Error(t, err, "an unresolved version mismatch must block enabling")
+
+	assert.True(
+		t,
+		appErrors.IsAppError(err, appErrors.ErrCodeModBlocked),
+		"blocked enable: got %v",
+		err,
+	)
+
+	assert.False(
+		t,
+		h.installed(t, dependent.ID).Enabled,
+		"a mod whose dependency version is wrong must not stay enabled",
+	)
+	assert.True(t, h.installed(t, "framework").Enabled, "the dependency is not the conflict loser")
+
+	reports, err := h.svc.DetectConflicts(context.Background())
+	require.NoError(t, err, "DetectConflicts")
+
+	assert.NotNil(
+		t,
+		reportFor(reports, domain.ConflictVersionMismatch, "dependent", "framework"),
+		"the mismatch must stay visible: %v",
+		reportTypes(reports),
+	)
+}
+
+func TestInstallDisablesTheModItConflictsWith(t *testing.T) {
+	h := newHarness(t)
+
+	other := modFixture("other_mod", "1.0.0")
+	h.withArchive(t, other)
+
+	_, err := h.svc.InstallMod(context.Background(), "vortex", other.ID)
+	require.NoError(t, err, "install the conflicting mod: %v", err)
+
+	mod := modFixture("better_ui", "2.0.0")
+	mod.ConflictsWith = []string{other.ID}
+	h.withArchive(t, mod)
+
+	_, err = h.svc.Install(context.Background(), "vortex", mod.ID, InstallOptions{})
+	require.NoError(t, err, "install the new mod: %v", err)
+
+	assert.True(t, h.installed(t, mod.ID).Enabled, "the mod just installed must stay enabled")
+	assert.False(t, h.installed(t, other.ID).Enabled, "the conflicting mod must be disabled")
 }

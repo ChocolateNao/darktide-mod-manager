@@ -261,3 +261,20 @@ func TestEqualFoldUnicode(t *testing.T) {
 
 	assert.False(t, EqualFold("a", "b"), "different strings must not fold equal")
 }
+
+func TestSourceFamilyCollapsesFilesOfOneNexusPage(t *testing.T) {
+	for _, tc := range []struct {
+		id   string
+		want string
+	}{
+		{"nexus-8-7495", "nexus-8"},
+		{"nexus-8-191620", "nexus-8"},
+		{"nexus-1450-8149575", "nexus-1450"},
+		{"nexus-8", "nexus-8"},
+		{"nexus-abc-123", "nexus-abc-123"},
+		{"github-owner-repo", "github-owner-repo"},
+		{"", ""},
+	} {
+		assert.Equal(t, tc.want, SourceFamily(tc.id), "SourceFamily(%q)", tc.id)
+	}
+}

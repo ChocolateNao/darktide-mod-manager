@@ -60,6 +60,7 @@ func message(err error) string {
 type stubServer struct {
 	srv                   *httptest.Server
 	versionsBody          string
+	versionsByFileID      map[string]string
 	versionBody           string
 	dlLinkBody            string
 	versionByScopedIDBody string
@@ -174,7 +175,12 @@ func (s *stubServer) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.Contains(path, "/games/") && strings.Contains(path, "/mod-file-versions/"):
 		s.writeJSON(w, s.versionByScopedIDStatus, s.versionByScopedIDBody)
 	case strings.HasSuffix(path, "/versions"):
-		s.writeJSON(w, s.versionsStatus, s.versionsBody)
+		body := s.versionsBody
+		if perFile, ok := s.versionsByFileID[fileIDOfVersionsPath(path)]; ok {
+			body = perFile
+		}
+
+		s.writeJSON(w, s.versionsStatus, body)
 	case strings.Contains(path, "/mod-files/"):
 		status := s.fileStatus
 		if s.missingFileID != "" && strings.HasSuffix(path, "/"+s.missingFileID) {
@@ -206,6 +212,18 @@ func fileIDOfDownloadLink(path string) string {
 	}
 
 	id, _, _ := strings.Cut(rest, "/download_link")
+
+	return id
+}
+
+// fileIDOfVersionsPath pulls the file id out of /v3/mod-files/{id}/versions.
+func fileIDOfVersionsPath(path string) string {
+	_, rest, found := strings.Cut(path, "/mod-files/")
+	if !found {
+		return ""
+	}
+
+	id, _, _ := strings.Cut(rest, "/versions")
 
 	return id
 }
@@ -1182,6 +1200,81 @@ func TestGetModAcceptsAnUnrecognisedCategory(t *testing.T) {
 	require.NotNil(t, mod)
 
 	assert.Equal(t, "1.2.0", mod.Version, "mod.Version = %q, want 1.2.0", mod.Version)
+}
+
+// latestVersionFixture renders one version of one file, which is all LatestMod
+// reads from the version endpoint.
+func latestVersionFixture(id, version, category, uploadedAt string) string {
+	return `{"data":{"versions":[{"id":"` + id + `","position":"1.0",` +
+		`"name":"Release ` + version + `","version":"` + version + `",` +
+		`"category":"` + category + `","uploaded_at":"` + uploadedAt + `"}]}}`
+}
+
+func TestLatestModFindsANewerReleaseInAnotherFile(t *testing.T) {
+	// The installed id names the old file, so reading that id again can never see
+	// the newer release the same mod page now publishes.
+	s := armedStub(t)
+	s.filesBody = `{"data":{"mod_files":[
+		{"id":"7495","name":"Darktide Mod Framework 1.3.2","is_active":false,
+		 "versions_count":1,"archived_count":0,"removed_count":0},
+		{"id":"191620","name":"Darktide Mod Framework","is_active":true,
+		 "last_file_uploaded_at":"2026-10-22T00:00:00Z","versions_count":1,
+		 "archived_count":0,"removed_count":0}]}}`
+	s.versionsByFileID = map[string]string{
+		"191620": latestVersionFixture(
+			"21230023353458", "26.10.22", "main", "2026-10-22T00:00:00Z",
+		),
+	}
+	src := newSource(t, s)
+
+	installed := &domain.Mod{
+		ID:      ModID("8", "7495"),
+		Version: "1.3.2",
+		SourceData: map[string]any{
+			"mod_id":   "8",
+			"category": "removed",
+		},
+	}
+
+	latest, err := src.LatestMod(t.Context(), installed)
+	require.NoError(t, err, "LatestMod: %v", err)
+	require.NotNil(t, latest)
+
+	assert.Equal(t, ModID("8", "191620"), latest.ID)
+	assert.Equal(t, "26.10.22", latest.Version)
+	assert.Equal(t, "8", latest.SourceModID(), "the latest release must stay on the same mod page")
+}
+
+func TestLatestModPrefersTheInstalledFilesCategory(t *testing.T) {
+	// An optional add-on can carry a higher number than the mod itself. Reporting
+	// it as the update would replace the mod with something it does not contain.
+	s := armedStub(t)
+	s.filesBody = `{"data":{"mod_files":[
+		{"id":"7001","name":"Better UI Main","is_active":true,
+		 "versions_count":1,"archived_count":0,"removed_count":0},
+		{"id":"7002","name":"Better UI Optional","is_active":true,
+		 "versions_count":1,"archived_count":0,"removed_count":0}]}}`
+	s.versionsByFileID = map[string]string{
+		"7001": latestVersionFixture("8001", "2.0.0", "main", "2026-02-01T00:00:00Z"),
+		"7002": latestVersionFixture("8002", "9.0.0", "optional", "2026-03-01T00:00:00Z"),
+	}
+	src := newSource(t, s)
+
+	installed := &domain.Mod{
+		ID:      ModID("900", "7001"),
+		Version: "1.0.0",
+		SourceData: map[string]any{
+			"mod_id":   "900",
+			"category": "main",
+		},
+	}
+
+	latest, err := src.LatestMod(t.Context(), installed)
+	require.NoError(t, err, "LatestMod: %v", err)
+	require.NotNil(t, latest)
+
+	assert.Equal(t, ModID("900", "7001"), latest.ID)
+	assert.Equal(t, "2.0.0", latest.Version)
 }
 
 func TestGetModReportsAShapeItCannotUse(t *testing.T) {

@@ -439,6 +439,7 @@ func (f *fakeIndex) enabledFlags() []bool {
 // exactly which mods exist and which calls fail.
 type scriptSource struct {
 	mods     map[string]*domain.Mod
+	latest   map[string]*domain.Mod
 	getErr   map[string]error
 	id       string
 	getCalls []string
@@ -476,6 +477,20 @@ func (s *scriptSource) GetMod(_ context.Context, modID string) (*domain.Mod, err
 
 func (s *scriptSource) Download(context.Context, *domain.Mod, string) (string, error) {
 	return "", appErrors.New(appErrors.ErrCodeDownloadFailed, "script source cannot download")
+}
+
+// LatestMod returns the scripted newest release, or falls back to the id lookup
+// so tests that never needed a different file keep working.
+func (s *scriptSource) LatestMod(ctx context.Context, mod *domain.Mod) (*domain.Mod, error) {
+	s.mu.Lock()
+	latest, ok := s.latest[mod.ID]
+	s.mu.Unlock()
+
+	if ok {
+		return latest.Clone(), nil
+	}
+
+	return s.GetMod(ctx, mod.ID)
 }
 
 func (s *scriptSource) Authenticate(context.Context, domain.AuthCredentials) error { return nil }

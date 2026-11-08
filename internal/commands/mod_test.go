@@ -123,7 +123,7 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 
 	{
 		_, err := os.Lstat(filepath.Join(w.modsDir, "textures"))
-		assert.NoError(t, err, "DisableMod removed a file the user installed")
+		assert.Error(t, err, "DisableMod must remove the link from the game folder")
 	}
 
 	{
@@ -138,7 +138,7 @@ func TestModLifecycleThroughTheCommandLayer(t *testing.T) {
 
 	{
 		_, err := os.Lstat(filepath.Join(w.modsDir, "textures"))
-		assert.NoError(t, err, "EnableMod redeployed a file that was already there")
+		assert.NoError(t, err, "EnableMod must deploy the payload again")
 	}
 
 	repaired, err := app.Mods.RelinkMod(id)

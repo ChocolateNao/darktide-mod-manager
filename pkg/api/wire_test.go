@@ -716,7 +716,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	require.NoError(t, client.DisableMod(ctx, mod.ID), "disable")
 
 	_, err = os.Lstat(filepath.Join(w.modsDir, "textures"))
-	assert.NoError(t, err, "disabling removed a file the user installed")
+	assert.Error(t, err, "disabling must remove the link from the game folder")
 
 	_, err = os.Stat(filepath.Join(wantPayload, "textures"))
 	assert.NoError(t, err, "disabling removed the payload")
@@ -724,7 +724,7 @@ func TestNewClientInstallsAndEnablesAModEndToEnd(t *testing.T) {
 	require.NoError(t, client.EnableMod(ctx, mod.ID), "enable again")
 
 	_, err = os.Lstat(filepath.Join(w.modsDir, "textures"))
-	assert.NoError(t, err, "re-enabling removed the game entry")
+	assert.NoError(t, err, "re-enabling must deploy the payload again")
 
 	require.NoError(t, client.UninstallMod(ctx, mod.ID), "uninstall")
 

@@ -2423,6 +2423,32 @@ func TestSyncLoadOrderFile(t *testing.T) {
 	assert.False(t, len(lines) >= 3 && lines[2] != "mod_b", "third line = %q, want mod_b", lines[2])
 }
 
+// TestLoadOrderFileDropsDisabledModsAfterReorder covers the rewrite path a game
+// without a locator-visible load order file takes: the stored order still names
+// the disabled mod, and the file must not.
+func TestLoadOrderFileDropsDisabledModsAfterReorder(t *testing.T) {
+	h := newHarness(t)
+	h.withArchive(t, modFixture("mod_a", "1.0.0"), "mod_a/file.txt")
+	h.withArchive(t, modFixture("mod_b", "1.0.0"), "mod_b/file.txt")
+
+	for _, id := range []string{"mod_a", "mod_b"} {
+		_, err := h.svc.Install(context.Background(), "vortex", id, InstallOptions{})
+		require.NoError(t, err, "install %s", id)
+	}
+
+	require.NoError(t, h.svc.ReorderMods(context.Background(), []string{"mod_a", "mod_b"}))
+	require.NoError(t, h.svc.DisableMod(context.Background(), "mod_b"))
+
+	folder := h.installed(t, "mod_b").ModFolderName
+	require.NotEmpty(t, folder, "the fixture must have a folder name")
+
+	content, err := os.ReadFile(filepath.Join(h.locator.modsPath, "mod_load_order.txt"))
+	require.NoError(t, err, "read load order file")
+
+	assert.NotContains(t, string(content), folder,
+		"a disabled mod must not stay in the file the game reads")
+}
+
 // TestDisableModRemovesFromLoadOrder verifies that disabling a mod removes
 // it from the load order file.
 func TestDisableModRemovesFromLoadOrder(t *testing.T) {
@@ -2731,7 +2757,7 @@ func TestDeleteAllModsUndeploysDisabledLoadOrderMods(t *testing.T) {
 	}
 
 	assert.Len(t, h.deployer.undeployCalls(), 1,
-		"a disabled mod stays deployed for load-order games and must be undeployed")
+		"delete all must clear a disabled mod's entries too")
 }
 
 func TestUninstallReleasesTheCachedArchive(t *testing.T) {

@@ -124,7 +124,7 @@ func TestExternalModCannotBeEnabledOrDisabled(t *testing.T) {
 	}
 }
 
-func TestEnablingKnownModOnlyEditsLoadOrderFile(t *testing.T) {
+func TestEnablingKnownModDeploysItAndAddsTheLine(t *testing.T) {
 	h := gameWithLoadOrder(t)
 	h.withArchive(t, modFixture("known", "1.0.0"), "known_mod/file.txt")
 
@@ -144,10 +144,10 @@ func TestEnablingKnownModOnlyEditsLoadOrderFile(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(h.locator.modsPath, testLoadOrder))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "known_mod")
-	assert.Len(t, h.deployer.deployCalls, deploys, "enabling must not deploy files")
+	assert.Greater(t, len(h.deployer.deployCalls), deploys, "enabling must deploy the payload")
 }
 
-func TestDisablingKnownModKeepsDeployedFiles(t *testing.T) {
+func TestDisablingKnownModRemovesTheDeployedFiles(t *testing.T) {
 	h := gameWithLoadOrder(t)
 	h.withArchive(t, modFixture("known", "1.0.0"), "known_mod/file.txt")
 
@@ -157,8 +157,7 @@ func TestDisablingKnownModKeepsDeployedFiles(t *testing.T) {
 
 	require.NoError(t, h.svc.DisableMod(context.Background(), "known"))
 
-	assert.Empty(t, h.deployer.undeployed, "disabling must not remove files from the game folder")
-	assert.NotEmpty(t, h.deployer.deployed, "the deployed files stay in place")
+	assert.NotEmpty(t, h.deployer.undeployed, "disabling must remove the link from the game folder")
 
 	content, err := os.ReadFile(filepath.Join(h.locator.modsPath, testLoadOrder))
 	require.NoError(t, err)
@@ -193,7 +192,7 @@ func TestReorderModsSkipsDisabledExternalMod(t *testing.T) {
 	assert.Equal(t, "listed\n", string(content), "a disabled external mod stays out of the file")
 }
 
-func TestInstallingDisabledKnownModStillPlacesPayload(t *testing.T) {
+func TestInstallingDisabledKnownModLeavesTheGameFolderAlone(t *testing.T) {
 	h := gameWithLoadOrder(t)
 	h.withArchive(t, modFixture("known", "1.0.0"), "known_mod/file.txt")
 
@@ -201,8 +200,7 @@ func TestInstallingDisabledKnownModStillPlacesPayload(t *testing.T) {
 		InstallOptions{Enable: boolPtr(false)})
 	require.NoError(t, err)
 
-	assert.NotEmpty(t, h.deployer.deployCalls,
-		"a file-driven game needs the payload on disk even while the mod is disabled")
+	assert.Empty(t, h.deployer.deployCalls, "a disabled mod has no link in the game folder")
 	assert.False(t, h.installed(t, "known").Enabled)
 
 	content, err := os.ReadFile(filepath.Join(h.locator.modsPath, testLoadOrder))
