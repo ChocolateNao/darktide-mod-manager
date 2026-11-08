@@ -537,6 +537,8 @@ func TestDetectConflictsMissingDependencyHasNoModB(t *testing.T) {
 		report.ModB,
 	)
 
+	assert.Equal(t, "missing", report.DependencyID, "the report must name the missing dependency")
+
 	{
 		_, _, both := report.ModIDs()
 		assert.False(t, both, "a one-sided report must not claim two mods")
