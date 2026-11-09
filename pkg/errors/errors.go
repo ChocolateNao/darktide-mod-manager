@@ -76,18 +76,12 @@ const (
 	ErrCodeActionUnavailable Code = "ACTION_UNAVAILABLE"
 	ErrCodeActionFailed      Code = "ACTION_FAILED"
 
-	ErrCodeCloudProviderNotFound Code = "CLOUD_PROVIDER_NOT_FOUND"
-	ErrCodeCloudAuthRequired     Code = "CLOUD_AUTH_REQUIRED"
 	ErrCodeShareExpired          Code = "SHARE_EXPIRED"
 	ErrCodeShareInvalid          Code = "SHARE_INVALID"
 	ErrCodeShareRevoked          Code = "SHARE_REVOKED"
 	ErrCodeGameNotRegistered     Code = "GAME_NOT_REGISTERED"
-	ErrCodeFileTooLarge          Code = "FILE_TOO_LARGE"
 	ErrCodeIntegrityMismatch     Code = "INTEGRITY_MISMATCH"
-	ErrCodeAllProvidersFailed    Code = "ALL_PROVIDERS_FAILED"
 	ErrCodeShareNotFound         Code = "SHARE_NOT_FOUND"
-	ErrCodeCloudUploadFailed     Code = "CLOUD_UPLOAD_FAILED"
-	ErrCodeCloudDownloadFailed   Code = "CLOUD_DOWNLOAD_FAILED"
 )
 
 // AppError is the concrete error type returned by every service. Construct one
@@ -364,14 +358,6 @@ var (
 	}
 	ErrDuplicate = &AppError{Code: ErrCodeDuplicate, Message: "duplicate entry"}
 
-	ErrCloudProviderNotFound = &AppError{
-		Code:    ErrCodeCloudProviderNotFound,
-		Message: "cloud provider not found",
-	}
-	ErrCloudAuthRequired = &AppError{
-		Code:    ErrCodeCloudAuthRequired,
-		Message: "provider authentication required",
-	}
 	ErrShareExpired = &AppError{
 		Code:    ErrCodeShareExpired,
 		Message: "share link has expired",
@@ -388,25 +374,9 @@ var (
 		Code:    ErrCodeGameNotRegistered,
 		Message: "share targets a game this manager does not have",
 	}
-	ErrFileTooLarge = &AppError{
-		Code:    ErrCodeFileTooLarge,
-		Message: "file exceeds provider size limit",
-	}
 	ErrIntegrityMismatch = &AppError{
 		Code:    ErrCodeIntegrityMismatch,
 		Message: "downloaded file hash mismatch",
 	}
-	ErrAllProvidersFailed = &AppError{
-		Code:    ErrCodeAllProvidersFailed,
-		Message: "all providers failed",
-	}
-	ErrShareNotFound     = &AppError{Code: ErrCodeShareNotFound, Message: "share not found"}
-	ErrCloudUploadFailed = &AppError{
-		Code:    ErrCodeCloudUploadFailed,
-		Message: "cloud upload failed",
-	}
-	ErrCloudDownloadFailed = &AppError{
-		Code:    ErrCodeCloudDownloadFailed,
-		Message: "cloud download failed",
-	}
+	ErrShareNotFound = &AppError{Code: ErrCodeShareNotFound, Message: "share not found"}
 )

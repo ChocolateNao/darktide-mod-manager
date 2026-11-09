@@ -63,13 +63,6 @@ const SAMPLE_PAYLOAD = {
     max_age_days: 30,
     verify_hashes: true,
   },
-  cloud_sharing: {
-    providers: { nexus: { url: "https://example.com" } },
-    default_provider: "nexus",
-    fallback_providers: ["github"],
-    share_expiry_days: 30,
-    auto_install: false,
-  },
   sharing: {
     p2p: {
       stun_servers: ["stun:stun.l.google.com:19302"],

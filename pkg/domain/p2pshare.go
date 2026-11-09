@@ -3,7 +3,13 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"time"
+)
+
+var (
+	ErrShareExpired      = errors.New("share link has expired")
+	ErrGameNotRegistered = errors.New("share targets a game this manager does not have")
 )
 
 // P2PProtocolVersion is the version stamped into every offer and every frame
@@ -315,4 +321,50 @@ func ComputeSHA256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 
 	return hex.EncodeToString(sum[:])
+}
+
+// ArchiveFormatZip is the only archive format shares are packed into. Zip is
+// what archive.Extract reads without a streaming dependency and what every
+// peer accepts as a single opaque object.
+const ArchiveFormatZip = "zip"
+
+// PackedMod describes a mod transmitted as one archive.
+type PackedMod struct {
+	FileID string `json:"id"`
+	Hash   string `json:"h"`
+	Format string `json:"f"`
+	Size   int64  `json:"s"`
+}
+
+// PackedModFromFile builds the packed descriptor for an archive that was hashed
+// and whose size is known.
+func PackedModFromFile(fileID string, size int64, hash string) *PackedMod {
+	return &PackedMod{FileID: fileID, Hash: hash, Format: ArchiveFormatZip, Size: size}
+}
+
+// SharedMod describes a mod travelling inside a share offer.
+type SharedMod struct {
+	PackedArchive *PackedMod `json:"archive,omitempty"`
+	Name          string     `json:"name"`
+	Version       string     `json:"version"`
+	Author        string     `json:"author"`
+	Description   string     `json:"description"`
+	FileIDs       []string   `json:"files"`
+	Dependencies  []string   `json:"deps"`
+}
+
+// InstallOptions tunes a share install. The zero value installs without
+// enabling the mods.
+type InstallOptions struct {
+	AutoInstall bool
+}
+
+// ShareFile is one file collected from a mod's payload while packing a share.
+type ShareFile struct {
+	Path string `json:"path"`
+	Hash string `json:"hash"`
+	// Source is the local file the bytes are read from. It is never serialised:
+	// a recipient has no such path, and a link must not leak the sharer's layout.
+	Source string `json:"-"`
+	Size   int64  `json:"size"`
 }

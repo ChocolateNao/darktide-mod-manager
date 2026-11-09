@@ -15,7 +15,6 @@ type Config struct {
 	UI           UIConfig                `json:"ui"`
 	Storage      StorageConfig           `json:"storage"`
 	AutoUpdate   AutoUpdateConfig        `json:"auto_update"`
-	CloudSharing CloudSharingConfig      `json:"cloud_sharing"`
 	Sharing      SharingConfig           `json:"sharing"`
 	Hooks        HooksConfig             `json:"hooks"`
 	Cache        CacheConfig             `json:"cache"`
@@ -142,18 +141,7 @@ type CacheConfig struct {
 	VerifyHashes bool   `json:"verify_hashes"`
 }
 
-// CloudSharingConfig controls the sharing subsystem.
-type CloudSharingConfig struct {
-	Providers         map[string]map[string]string `json:"providers,omitempty"`
-	DefaultProvider   string                       `json:"default_provider"`
-	FallbackProviders []string                     `json:"fallback_providers,omitempty"`
-	ShareExpiryDays   int                          `json:"share_expiry_days"`
-	AutoInstall       bool                         `json:"auto_install"`
-}
-
-// SharingConfig groups the two ways mods are handed to somebody else. The cloud block
-// is kept for configurations that still name it, but a share no longer needs a
-// storage provider.
+// SharingConfig groups the transport settings for direct peer-to-peer sharing.
 type SharingConfig struct {
 	// P2P holds the transport settings for direct sharing.
 	P2P P2PSharingConfig `json:"p2p"`
@@ -235,9 +223,6 @@ func DefaultConfig() Config {
 			MaxAgeDays:   30,
 			VerifyHashes: true,
 		},
-		CloudSharing: CloudSharingConfig{
-			ShareExpiryDays: 30,
-		},
 		Sharing: SharingConfig{
 			// Expiry stays opt-in: a share with no expiry is permanent, which is
 			// what somebody handing a link to a friend expects it to mean.
@@ -311,12 +296,6 @@ func (c *Config) ApplyDefaults() {
 
 	if !c.Cache.VerifyHashes {
 		c.Cache.VerifyHashes = true
-	}
-
-	// A negative expiry would make every link dead on arrival. Zero means
-	// "never expires", so it is left alone.
-	if c.CloudSharing.ShareExpiryDays < 0 {
-		c.CloudSharing.ShareExpiryDays = d.CloudSharing.ShareExpiryDays
 	}
 
 	if c.Hooks.DefaultTimeout <= 0 {
@@ -489,31 +468,6 @@ func (c *Config) Clone() *Config {
 	if c.Security.AllowActionCommands != nil {
 		allowed := *c.Security.AllowActionCommands
 		out.Security.AllowActionCommands = &allowed
-	}
-
-	if c.CloudSharing.FallbackProviders != nil {
-		out.CloudSharing.FallbackProviders = append(
-			[]string(nil),
-			c.CloudSharing.FallbackProviders...)
-	}
-
-	if c.CloudSharing.Providers != nil {
-		out.CloudSharing.Providers = make(
-			map[string]map[string]string,
-			len(c.CloudSharing.Providers),
-		)
-		for id, opts := range c.CloudSharing.Providers {
-			if opts == nil {
-				continue
-			}
-
-			copied := make(map[string]string, len(opts))
-			for k, v := range opts {
-				copied[k] = v
-			}
-
-			out.CloudSharing.Providers[id] = copied
-		}
 	}
 
 	return &out

@@ -97,14 +97,6 @@ const p2pSharingWireSchema = z.object({
 
 const sharingWireSchema = z.object({ p2p: p2pSharingWireSchema });
 
-const cloudSharingWireSchema = z.object({
-  providers: z.record(z.string(), z.record(z.string(), z.string())).nullish(),
-  default_provider: z.string().default(""),
-  fallback_providers: textList,
-  share_expiry_days: z.number().int().default(30),
-  auto_install: z.boolean().default(false),
-});
-
 export const configWireSchema = z.object({
   hooks: hooksWireSchema,
   sources: z.record(z.string(), sourceWireSchema).default({}),
@@ -115,7 +107,6 @@ export const configWireSchema = z.object({
   storage: storageWireSchema,
   auto_update: autoUpdateWireSchema,
   cache: cacheWireSchema,
-  cloud_sharing: cloudSharingWireSchema,
   sharing: sharingWireSchema,
   logging: loggingWireSchema,
   security: securityWireSchema,

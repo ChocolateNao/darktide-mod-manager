@@ -15,9 +15,8 @@ type App struct {
 	Cache   *CacheCommands
 	Config  *ConfigCommands
 	Logs    *LogCommands
-	Shares  *ShareCommands
-	// P2PShares is separate: it is a different protocol, where a share is an
-	// in-flight transfer with its own states.
+	// P2PShares is peer-to-peer sharing, where a share is an in-flight transfer
+	// with its own states.
 	P2PShares *P2PShareCommands
 	Actions   *ActionCommands
 	// SourceLinks is its own set: it answers a question about a mod without
@@ -42,7 +41,6 @@ func New(deps Deps) *App {
 		Cache:       newCacheCommands(shared),
 		Config:      newConfigCommands(shared),
 		Logs:        newLogCommands(shared),
-		Shares:      newShareCommands(shared),
 		P2PShares:   newP2PShareCommands(shared),
 		Actions:     newActionCommands(shared),
 		SourceLinks: newSourceLinkCommands(shared),

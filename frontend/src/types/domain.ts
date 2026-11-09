@@ -292,14 +292,6 @@ export interface SharingConfig {
   p2p: P2PSharingConfig;
 }
 
-export interface CloudSharingConfig {
-  providers: Record<string, Record<string, string>>;
-  defaultProvider: string;
-  fallbackProviders: string[];
-  shareExpiryDays: number;
-  autoInstall: boolean;
-}
-
 export interface AppConfig {
   hooks: HooksConfig;
   sources: Record<string, SourceConfig>;
@@ -310,7 +302,6 @@ export interface AppConfig {
   storage: StorageConfig;
   autoUpdate: AutoUpdateConfig;
   cache: CacheConfig;
-  cloudSharing: CloudSharingConfig;
   sharing: SharingConfig;
   logging: LoggingConfig;
   security: SecurityConfig;

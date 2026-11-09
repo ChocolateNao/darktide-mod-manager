@@ -13,8 +13,8 @@ import (
 const mask = "[REDACTED]"
 
 // defaultSensitive lists the field names that must never reach a log sink: the
-// credentials this application handles (source API keys, refresh tokens, cloud
-// object-storage keys) plus the usual suspects a future call site might log.
+// credentials this application handles (source API keys, tokens) plus the usual
+// suspects a future call site might log.
 //
 // Matching ignores case and underscores, so "api_key", "apiKey" and "API-KEY"
 // hit the same entry.

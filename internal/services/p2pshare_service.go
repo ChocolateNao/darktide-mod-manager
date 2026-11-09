@@ -112,9 +112,9 @@ type P2PShareServiceDeps struct {
 	// GameLocator answers which game is active, for shares whose mods carry no
 	// game id of their own.
 	GameLocator ShareGameLocator
-	// ModInstaller installs a verified archive. It is the same installer the cloud
-	// share uses, so a mod that arrives over a data channel is unpacked, registered
-	// and enabled by exactly the code path a mod from a provider goes through.
+// ModInstaller installs a verified archive. It is the same installer a mod from a
+// source goes through, so a mod that arrives over a data channel is unpacked,
+// registered and enabled by exactly that code path.
 	ModInstaller ModInstaller
 	// Logger receives share lifecycle events.
 	Logger zerolog.Logger
@@ -1042,9 +1042,9 @@ type p2pPacked struct {
 	mod    domain.Mod
 }
 
-// packP2PShare packs every mod and describes it for the offer in one pass, for the
-// same reason the cloud share does it that way: an offer naming a mod that could
-// not be packed would install nothing for the recipient.
+// packP2PShare packs every mod and describes it for the offer in one pass: an
+// offer naming a mod that could not be packed would install nothing for the
+// recipient.
 func packP2PShare(ctx context.Context, staging string, mods []domain.Mod) ([]p2pPacked, error) {
 	packed := make([]p2pPacked, 0, len(mods))
 

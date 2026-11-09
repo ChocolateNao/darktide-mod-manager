@@ -16,8 +16,8 @@ import (
 // recipient returns, each sealed under the same secret and carrying exactly one
 // session description. The prefixes differ so that pasting the wrong half gives
 // "that is an answer, not an offer", not a decode failure halfway
-// through a transfer, and they are deliberately not the dmm://share/<provider>/
-// shape the cloud links use: those name a server, these name a peer.
+// through a transfer, and they are deliberately a server-naming shape: the
+// offer and answer prefixes name a peer, not a provider.
 const (
 	// OfferLinkPrefix is the scheme of a sender's published link.
 	OfferLinkPrefix = "dmm://p2p/v1/"

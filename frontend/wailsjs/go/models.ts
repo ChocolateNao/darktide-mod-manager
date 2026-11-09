@@ -352,26 +352,6 @@ export namespace domain {
 		    return a;
 		}
 	}
-	export class CloudSharingConfig {
-	    providers?: Record<string, any>;
-	    default_provider: string;
-	    fallback_providers?: string[];
-	    share_expiry_days: number;
-	    auto_install: boolean;
-	
-	    static createFrom(source: any = {}) {
-	        return new CloudSharingConfig(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.providers = source["providers"];
-	        this.default_provider = source["default_provider"];
-	        this.fallback_providers = source["fallback_providers"];
-	        this.share_expiry_days = source["share_expiry_days"];
-	        this.auto_install = source["auto_install"];
-	    }
-	}
 	export class LoggingConfig {
 	    level: string;
 	    directory?: string;
@@ -626,7 +606,6 @@ export namespace domain {
 	    ui: UIConfig;
 	    storage: StorageConfig;
 	    auto_update: AutoUpdateConfig;
-	    cloud_sharing: CloudSharingConfig;
 	    sharing: SharingConfig;
 	    hooks: HooksConfig;
 	    cache: CacheConfig;
@@ -646,7 +625,6 @@ export namespace domain {
 	        this.ui = this.convertValues(source["ui"], UIConfig);
 	        this.storage = this.convertValues(source["storage"], StorageConfig);
 	        this.auto_update = this.convertValues(source["auto_update"], AutoUpdateConfig);
-	        this.cloud_sharing = this.convertValues(source["cloud_sharing"], CloudSharingConfig);
 	        this.sharing = this.convertValues(source["sharing"], SharingConfig);
 	        this.hooks = this.convertValues(source["hooks"], HooksConfig);
 	        this.cache = this.convertValues(source["cache"], CacheConfig);

@@ -12,7 +12,6 @@ import (
 	"github.com/ChocolateNao/darktide-mod-manager/internal/games"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/logging"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/platform"
-	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/cloud"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/hooks/host"
 	"github.com/ChocolateNao/darktide-mod-manager/internal/plugins/sources"
@@ -248,21 +247,6 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
-	shareStore := storage.NewShareStore(db)
-
-	// Providers register their own factories, so the S3 adapter (and every one after) is built
-	// here from configuration and reaches the orchestrator only through CloudProvider.
-	cloudRegistry := services.NewCloudRegistry()
-	if err := cloud.RegisterConfigured(
-		cloudRegistry,
-		cfg.CloudSharing,
-		*logService.Logger(),
-	); err != nil {
-		// Not fatal: sharing is optional, and a provider that will not build
-		// simply does not appear in the picker.
-		logService.Logger().Warn().Err(err).Msg("cloud providers not configured")
-	}
-
 	// The registry is built before the cache because the cache's downloader is the registry:
 	// a mod's bytes come from whichever source owns it. WithConfig hands it the merged cfg
 	// instead of letting it reload the file — source overrides are never written back, so
@@ -416,21 +400,6 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 		return nil, err
 	}
 
-	shareService := services.NewShareService(services.ShareServiceDeps{
-		Registry:     cloudRegistry,
-		Store:        shareStore,
-		GameLocator:  locator,
-		ModInstaller: modService,
-		Logger:       *logService.Logger(),
-		Config: &services.ShareConfig{
-			DefaultProvider:   cfg.CloudSharing.DefaultProvider,
-			FallbackProviders: cfg.CloudSharing.FallbackProviders,
-			ShareExpiryDays:   cfg.CloudSharing.ShareExpiryDays,
-			AutoInstall:       cfg.CloudSharing.AutoInstall,
-		},
-		Clock: now,
-	})
-
 	p2pShareService := services.NewP2PShareService(services.P2PShareServiceDeps{
 		GameLocator:  locator,
 		ModInstaller: modService,
@@ -463,7 +432,6 @@ func wire(ctx context.Context, set *settings) (*Bundle, error) {
 			Game:         locator,
 			Cache:        cacheManager,
 			Hooks:        hookExecutor,
-			Shares:       shareService,
 			P2PShares:    p2pShareService,
 			Actions:      actionRegistry,
 			ActionRunner: actionRunner,

@@ -28,13 +28,6 @@ const baseConfig = {
   advanced: { enable_experimental: false },
   storage: { path: "", backup_retention_days: 7 },
   cache: { path: "", max_size_gb: 5, max_age_days: 30, verify_hashes: true },
-  cloud_sharing: {
-    providers: {},
-    default_provider: "",
-    fallback_providers: [],
-    share_expiry_days: 30,
-    auto_install: false,
-  },
   sharing: { p2p: { stun_servers: [], turn_relays: [], expiry_days: 7 } },
   logging: {
     level: "info",

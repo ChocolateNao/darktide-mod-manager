@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { NumberField } from "@/components/common/NumberField";
-import { FieldRow, FormSection, Hint } from "@/components/common/Surfaces";
+import { FieldRow, FormSection } from "@/components/common/Surfaces";
 import { Button } from "@/components/ui/button";
 import { useSaveConfig } from "@/hooks/mutations";
 import { t } from "@/lib/i18n";
@@ -116,9 +116,6 @@ export function SharingTab() {
             />
           </label>
         </div>
-
-        {/* Cloud sharing was deprecated when peer-to-peer landed, so a revoke button would be dead. */}
-        <Hint>{t("settings.sharing.cloudReadOnly")}</Hint>
       </FormSection>
 
       <div className="flex justify-end">

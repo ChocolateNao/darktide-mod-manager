@@ -48,13 +48,6 @@ func (c *Client) DeleteData(ctx context.Context, opts DeleteDataOptions) error {
 				firstErr = err
 			}
 		}
-
-		// Share records point at mods that no longer exist, so they go too.
-		if c.deps.Shares != nil {
-			if err := c.deps.Shares.DeleteAllShares(ctx); err != nil && firstErr == nil {
-				firstErr = err
-			}
-		}
 	}
 
 	if opts.Config {

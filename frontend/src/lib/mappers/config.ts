@@ -90,13 +90,6 @@ export const mapConfig = (raw: unknown): AppConfig => {
       maxAgeDays: wire.cache.max_age_days,
       verifyHashes: wire.cache.verify_hashes,
     },
-    cloudSharing: {
-      providers: wire.cloud_sharing.providers ?? {},
-      defaultProvider: wire.cloud_sharing.default_provider,
-      fallbackProviders: wire.cloud_sharing.fallback_providers ?? [],
-      shareExpiryDays: wire.cloud_sharing.share_expiry_days,
-      autoInstall: wire.cloud_sharing.auto_install,
-    },
     sharing: {
       p2p: {
         stunServers: wire.sharing.p2p.stun_servers ?? [],

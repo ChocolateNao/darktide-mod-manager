@@ -56,11 +56,6 @@ type ModSourceInfo = domain.ModSourceInfo
 // GameInstallation describes one detected Darktide install.
 type GameInstallation = domain.GameInstallation
 
-// InstallShareOptions controls how a share is installed.
-type InstallShareOptions struct {
-	AutoInstall bool
-}
-
 // ClientDeps is the set of services a client drives.
 //
 // The fields are concrete service types: not the narrow interfaces the
@@ -72,13 +67,8 @@ type ClientDeps struct {
 	Game    *services.GameLocator
 	Cache   *services.CacheManager
 	Hooks   *services.HookExecutor
-	// Shares is the deprecated cloud sharing service, declared here: not behind an
-	// interface so the wiring type cannot drift from the composition root that fills it.
-	//
-	//nolint:staticcheck // deprecation is the point: the field stays reachable until cloud shares can no longer be revoked.
-	Shares *services.ShareService
-	// P2PShares is the peer-to-peer sharing service: Shares moves archives through
-	// a storage provider, P2PShares moves them between two machines.
+	// P2PShares is the peer-to-peer sharing service: it moves archives between
+	// two machines without a third-party provider.
 	P2PShares *services.P2PShareService
 	// Actions is the table of code-defined per-game actions; listing them needs
 	// only this.

@@ -100,22 +100,6 @@ CREATE TABLE IF NOT EXISTS cache_entries (
     last_access TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
--- Cloud share records. `game_id` is the registry game id the share targets;
--- it is NOT NULL from the first version, so there is no legacy row to migrate.
--- `mods` and `links` are JSON blobs: the mod list and the share links that
--- point at the uploaded files.
-CREATE TABLE IF NOT EXISTS shares (
-    id         TEXT PRIMARY KEY NOT NULL,
-    game_id    TEXT NOT NULL,
-    mods       TEXT NOT NULL DEFAULT '[]',  -- JSON array of domain.Mod
-    links      TEXT NOT NULL DEFAULT '[]',  -- JSON array of domain.ShareLink
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_shares_game      ON shares(game_id);
-CREATE INDEX IF NOT EXISTS idx_shares_created   ON shares(created_at);
-
 CREATE INDEX IF NOT EXISTS idx_cache_last_access ON cache_entries(last_access);
 CREATE INDEX IF NOT EXISTS idx_cache_refs        ON cache_entries(refs);
 

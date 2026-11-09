@@ -545,8 +545,6 @@ const messages = {
     "A relay forwards every byte in cleartext to itself, so leave this empty unless a transfer will not connect otherwise.",
   "settings.sharing.expiry": "Default link lifetime (days)",
   "settings.sharing.chunk": "Chunk size (KB)",
-  "settings.sharing.cloudReadOnly":
-    "Cloud sharing was removed when peer-to-peer landed. Old shares are CLI-only.",
   "settings.sources.apiKey": "API key",
   "settings.sources.apiKeyStored":
     "A key is stored. Type a new one to replace it.",
