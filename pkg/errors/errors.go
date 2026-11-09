@@ -76,12 +76,12 @@ const (
 	ErrCodeActionUnavailable Code = "ACTION_UNAVAILABLE"
 	ErrCodeActionFailed      Code = "ACTION_FAILED"
 
-	ErrCodeShareExpired          Code = "SHARE_EXPIRED"
-	ErrCodeShareInvalid          Code = "SHARE_INVALID"
-	ErrCodeShareRevoked          Code = "SHARE_REVOKED"
-	ErrCodeGameNotRegistered     Code = "GAME_NOT_REGISTERED"
-	ErrCodeIntegrityMismatch     Code = "INTEGRITY_MISMATCH"
-	ErrCodeShareNotFound         Code = "SHARE_NOT_FOUND"
+	ErrCodeShareExpired      Code = "SHARE_EXPIRED"
+	ErrCodeShareInvalid      Code = "SHARE_INVALID"
+	ErrCodeShareRevoked      Code = "SHARE_REVOKED"
+	ErrCodeGameNotRegistered Code = "GAME_NOT_REGISTERED"
+	ErrCodeIntegrityMismatch Code = "INTEGRITY_MISMATCH"
+	ErrCodeShareNotFound     Code = "SHARE_NOT_FOUND"
 )
 
 // AppError is the concrete error type returned by every service. Construct one

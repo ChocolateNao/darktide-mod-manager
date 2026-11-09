@@ -259,10 +259,10 @@ const (
 // ConflictReport is a single detected conflict between two mods.
 type ConflictReport struct {
 	// ID is the identity the resolution path takes.
-	ID             string           `json:"id"`
-	Type           ConflictType     `json:"type"`
-	ModA           *Mod             `json:"mod_a,omitempty"`
-	ModB           *Mod             `json:"mod_b,omitempty"`
+	ID   string       `json:"id"`
+	Type ConflictType `json:"type"`
+	ModA *Mod         `json:"mod_a,omitempty"`
+	ModB *Mod         `json:"mod_b,omitempty"`
 	// DependencyID names the missing dependency when there is no second mod to
 	// point at, so the UI can offer to install it.
 	DependencyID   string           `json:"dependency_id,omitempty"`

@@ -1235,6 +1235,7 @@ func (s *ModService) unpack(
 
 	if err := os.Rename(staging, destDir); err != nil {
 		_ = os.Rename(backup, destDir)
+
 		return nil, appErrors.Wrap(
 			err,
 			appErrors.ErrCodeInstallFailed,

@@ -112,9 +112,9 @@ type P2PShareServiceDeps struct {
 	// GameLocator answers which game is active, for shares whose mods carry no
 	// game id of their own.
 	GameLocator ShareGameLocator
-// ModInstaller installs a verified archive. It is the same installer a mod from a
-// source goes through, so a mod that arrives over a data channel is unpacked,
-// registered and enabled by exactly that code path.
+	// ModInstaller installs a verified archive. It is the same installer a mod from a
+	// source goes through, so a mod that arrives over a data channel is unpacked,
+	// registered and enabled by exactly that code path.
 	ModInstaller ModInstaller
 	// Logger receives share lifecycle events.
 	Logger zerolog.Logger
