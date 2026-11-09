@@ -56,5 +56,5 @@ o oldest: -
 o newest: -
 ! exit 0
 $ dmm --config <config> --cache <cache> --storage <storage> cache prune --max-size-gb not-a-number
-e error: invalid argument "not-a-number" for "--max-size-gb" flag: strconv.ParseFloat: parsing "not-a-number": invalid syntax
+e error: invalid argument "not-a-number" for "--max-size-gb" flag: must be a number
 ! exit 1
