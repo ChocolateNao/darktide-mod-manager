@@ -46,11 +46,6 @@ o   "enabled": false,
 o   "download_automatically": false,
 o   "notify_on_update": true
 o   },
-o   "cloud_sharing": {
-o   "default_provider": "",
-o   "share_expiry_days": 30,
-o   "auto_install": false
-o   },
 o   "sharing": {
 o   "p2p": {
 o   "expiry_days": 0
